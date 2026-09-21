@@ -55,7 +55,7 @@ export default function ChatScreen() {
       Animated.timing(keyboardHeightAnim, {
         toValue: e.endCoordinates.height,
         duration: e.duration || 250,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start();
     });
 
@@ -63,7 +63,7 @@ export default function ChatScreen() {
       Animated.timing(keyboardHeightAnim, {
         toValue: 0,
         duration: e.duration || 200,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start();
     });
 
@@ -81,12 +81,12 @@ export default function ChatScreen() {
         toValue: 0,
         duration: 250,
         easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
+        useNativeDriver: true,
       }),
       Animated.timing(backdropOpacity, {
         toValue: 0.5,
         duration: 250,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }),
     ]).start();
   };
@@ -97,12 +97,12 @@ export default function ChatScreen() {
         toValue: -DRAWER_WIDTH,
         duration: 200,
         easing: Easing.in(Easing.ease),
-        useNativeDriver: false,
+        useNativeDriver: true,
       }),
       Animated.timing(backdropOpacity, {
         toValue: 0,
         duration: 200,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }),
     ]).start(() => {
       setShowOverlay(false);
