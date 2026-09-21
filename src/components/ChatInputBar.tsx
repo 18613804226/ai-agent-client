@@ -7,22 +7,23 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-// 💡 注入现代极简滚动条样式
+
+// 💡 优雅的现代滚动条样式：默认接近隐形，滚动或悬停时才显现
 if (Platform.OS === 'web') {
-  const styleId = 'web-custom-scrollbar';
+  const styleId = 'web-modern-scrollbar';
   if (!document.getElementById(styleId)) {
     const style = document.createElement('style');
     style.id = styleId;
     style.innerHTML = `
       textarea::-webkit-scrollbar {
-        width: 4px;
+        width: 5px;
       }
       textarea::-webkit-scrollbar-track {
         background: transparent;
       }
       textarea::-webkit-scrollbar-thumb {
-        background: rgba(150, 150, 150, 0.3);
-        border-radius: 4px;
+        background: rgba(150, 150, 150, 0.2);
+        border-radius: 10px;
       }
       textarea::-webkit-scrollbar-thumb:hover {
         background: rgba(150, 150, 150, 0.5);
@@ -31,6 +32,7 @@ if (Platform.OS === 'web') {
     document.head.appendChild(style);
   }
 }
+
 interface ChatInputBarProps {
   inputText: string;
   setInputText: (text: string) => void;
@@ -47,7 +49,6 @@ export default function ChatInputBar({
   const [isHovered, setIsHovered] = useState(false);
   const hasText = Boolean(inputText.trim());
 
-  // 悬停或者有文字时的背景色计算
   const buttonBg = !hasText
     ? theme.sendBtnDisabled
     : isHovered
@@ -70,17 +71,25 @@ export default function ChatInputBar({
           onChangeText={setInputText}
           multiline
           textAlignVertical="center"
+          // @ts-ignore
+          onKeyPress={(e: any) => {
+            if (Platform.OS === 'web' && e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              if (hasText) {
+                onSend();
+              }
+            }
+          }}
         />
         <TouchableOpacity
           style={[
             styles.sendButton,
             { backgroundColor: buttonBg },
-            // 💡 关键：直接在 Web 端内联安全的拆分 transition 属性
             ...Platform.select({
               web: [
                 {
                   transitionProperty: 'background-color, transform',
-                  transitionDuration: '0.8s',
+                  transitionDuration: '0.2s',
                   transitionTimingFunction: 'ease',
                   cursor: hasText ? 'pointer' : 'default',
                 },
@@ -92,27 +101,11 @@ export default function ChatInputBar({
           onPress={onSend}
           disabled={!hasText}
           activeOpacity={0.8}
+          // @ts-ignore
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          <Text
-            style={styles.sendButtonText}
-            // 💡 核心：监听 Web 端的键盘按键
-            // @ts-ignore
-            onKeyPress={(e: any) => {
-              if (Platform.OS === 'web') {
-                // 如果按下了 Enter，且没有按 Shift
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault(); // 阻止文本框默认的换行
-                  if (hasText) {
-                    onSend(); // 触发发送
-                  }
-                }
-              }
-            }}
-          >
-            ↑
-          </Text>
+          <Text style={styles.sendButtonText}>↑</Text>
         </TouchableOpacity>
       </View>
       <Text style={[styles.footerTip, { color: theme.textMuted }]}>
@@ -134,7 +127,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    alignItems: 'center',
+    alignItems: 'flex-end', // 保持多行时按钮在右下侧
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
@@ -143,9 +136,9 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    maxHeight: 120,
+    maxHeight: 280,
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 30,
     paddingTop: Platform.OS === 'ios' ? 4 : 2,
     paddingBottom: Platform.OS === 'ios' ? 4 : 2,
     textAlignVertical: 'center',
@@ -155,7 +148,9 @@ const styles = StyleSheet.create({
       web: {
         outlineStyle: 'none',
         resize: 'none',
-        overflow: 'y',
+        overflowY: 'auto',
+        height: 'auto', // 💡 解决高度拉满的核心
+        fieldSizing: 'content', // 💡 解决自动撑开的核心
       } as any,
     }),
   },
@@ -166,6 +161,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
+    marginBottom: 2,
   },
   sendButtonText: {
     color: '#FFFFFF',
