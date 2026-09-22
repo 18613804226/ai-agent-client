@@ -78,9 +78,10 @@ npm install
 
 # 2. 启动开发服务器
 npx expo start
-
+或
+npm run start
 ```
-
+尽量不要使用pnpm，否则会报错，因为pnpm的node_modules结构跟npm不同，导致无法找到依赖包。
 ---
 
 ## 📈 商用落地与演进方向
