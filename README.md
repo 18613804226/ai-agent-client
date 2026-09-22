@@ -17,8 +17,7 @@
 
 ### 前端（多端统一）
 
-* **React Native / Expo**：移动端跨平台开发，基于 Expo Router 构建，完美适配移动端与桌面端。
-* **React Web**：网页端应用渲染。
+* **React Native / Expo**：移动端跨平台开发，基于 Expo Router 构建，完美适配web端、移动端、桌面端。
 * **流式通信**：SSE（Server-Sent Events）流式订阅、`ReadableStream` 实时流处理。
 * **交互体验**：多端 UI 自适应、抽屉式侧边栏、多格式文件解析上传。
 
