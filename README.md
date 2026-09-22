@@ -36,24 +36,23 @@
 项目整体采用清晰的现代前端工程化分层设计，核心源码结构如下：
 
 ```text
-ai-agent-client/
-├── app/                  # Expo Router 路由与页面入口层
-│   ├── App.css           # 全局样式与 Web 滚动条补丁
-│   └── index.tsx         # 根路由与多端布局入口
-├── src/                  # 核心业务逻辑与组件库
-│   ├── components/       # 界面 UI 组件
-│   │   ├── ChatArea.tsx        # 聊天消息流与滚动区域组件
-│   │   ├── ChatInput.tsx       # 自适应多行输入与发送栏
-│   │   ├── CustomDialog.tsx    # 现代化自定义模态弹窗
-│   │   └── Sidebar.tsx         # 知识库侧边栏/抽屉导航
-│   ├── services/         # 网络请求与 API 对接层
-│   │   └── api.ts              # SSE 流式请求与后端接口封装
-│   ├── store/            # 状态管理层（会话与知识库状态）
-│   └── utils/            # 公共工具函数与辅助方法
-├── assets/               # 静态资源（图标、图片等）
-├── App.tsx               # 根组件（全局 Provider 与样式注入）
-├── app.json              # Expo 跨平台配置文件
-└── package.json          # 项目依赖与运行脚本配置
+├── app/                  # Expo Router 页面根目录（或主页面入口）
+│   └── index.tsx         # 主页面（仅负责布局组装与状态调度）
+├── src/
+│   ├── components/       # UI 组件库
+│   │   ├── Sidebar.tsx       # 侧边栏（会话列表与主题切换）
+│   │   ├── ChatArea.tsx      # 聊天消息展示区域
+│   │   ├── ChatInputBar.tsx  # 底部输入框与发送/终止按钮
+│   │   ├── MobileHeader.tsx  # 移动端顶部导航栏
+│   │   └── MobileDrawer.tsx  # 移动端侧边栏抽屉与蒙层
+│   ├── constants/        # 常量与配置
+│   │   └── theme.ts          # Light / Dark 主题配色方案
+│   ├── hooks/            # 自定义 Hooks（业务逻辑与动画封装）
+│   │   ├── useChatManager.ts       # 会话管理、AsyncStorage 缓存、SSE 流式请求
+│   │   └── useKeyboardAnimation.ts # 跨平台软键盘弹出高度与动画监听
+│   └── services/         # 网络服务层
+│       └── api.ts            # 后端 API 接口封装
+└── package.json
 
 ```
 
