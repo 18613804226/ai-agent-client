@@ -8,7 +8,6 @@ import {
   Platform,
 } from 'react-native';
 
-// 💡 优雅的现代滚动条样式：默认接近隐形，滚动或悬停时才显现
 if (Platform.OS === 'web') {
   const styleId = 'web-modern-scrollbar';
   if (!document.getElementById(styleId)) {
@@ -37,23 +36,32 @@ interface ChatInputBarProps {
   inputText: string;
   setInputText: (text: string) => void;
   onSend: () => void;
+  onStop: () => void; // 💡 1. 引入停止回调
+  isGenerating: boolean; // 💡 2. 引入是否正在生成的状态
   theme: any;
+  isKeyboardUp: boolean;
 }
 
 export default function ChatInputBar({
   inputText,
   setInputText,
   onSend,
+  onStop,
+  isGenerating,
   theme,
+  isKeyboardUp = false,
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false);
   const hasText = Boolean(inputText.trim());
 
-  const buttonBg = !hasText
-    ? theme.sendBtnDisabled
-    : isHovered
-      ? theme.sendBtnHover
-      : theme.sendBtnActive;
+  // 💡 3. 如果正在生成，按钮表现为“停止”状态；否则根据有没有文字决定发送状态
+  const buttonBg = isGenerating
+    ? '#ef4444' // 正在生成时显示醒目的红色/停止色
+    : !hasText
+      ? theme.sendBtnDisabled
+      : isHovered
+        ? theme.sendBtnHover
+        : theme.sendBtnActive;
 
   return (
     <View style={styles.inputAreaWrapper}>
@@ -65,17 +73,18 @@ export default function ChatInputBar({
       >
         <TextInput
           style={[styles.input, { color: theme.textMain }]}
-          placeholder="问问 AI 智能体..."
+          placeholder={isGenerating ? 'AI 正在思考中...' : '问问 AI 智能体...'}
           placeholderTextColor={theme.textMuted}
           value={inputText}
           onChangeText={setInputText}
+          editable={!isGenerating} // 💡 正在生成时可以锁定输入框或保持可输入
           multiline
           textAlignVertical="center"
           // @ts-ignore
           onKeyPress={(e: any) => {
             if (Platform.OS === 'web' && e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              if (hasText) {
+              if (hasText && !isGenerating) {
                 onSend();
               }
             }
@@ -91,26 +100,31 @@ export default function ChatInputBar({
                   transitionProperty: 'background-color, transform',
                   transitionDuration: '0.2s',
                   transitionTimingFunction: 'ease',
-                  cursor: hasText ? 'pointer' : 'default',
+                  cursor: isGenerating || hasText ? 'pointer' : 'default',
                 },
-                isHovered && hasText ? { transform: [{ scale: 1.05 }] } : {},
+                isHovered && (hasText || isGenerating)
+                  ? { transform: [{ scale: 1.05 }] }
+                  : {},
               ] as any,
               default: [],
             }),
           ]}
-          onPress={onSend}
-          disabled={!hasText}
+          onPress={isGenerating ? onStop : onSend} // 💡 4. 根据状态决定是触发“停止”还是“发送”
+          disabled={!isGenerating && !hasText}
           activeOpacity={0.8}
           // @ts-ignore
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          <Text style={styles.sendButtonText}>↑</Text>
+          {/* 💡 5. 正在生成时显示停止图标 ■，平时显示发送箭头 ↑ */}
+          <Text style={styles.sendButtonText}>{isGenerating ? '■' : '↑'}</Text>
         </TouchableOpacity>
       </View>
-      <Text style={[styles.footerTip, { color: theme.textMuted }]}>
-        AI 智能体可能会产生错误信息。
-      </Text>
+      {!isKeyboardUp ? (
+        <Text style={[styles.footerTip, { color: theme.textMuted }]}>
+          AI 智能体可能会产生错误信息。
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -127,7 +141,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    alignItems: 'flex-end', // 保持多行时按钮在右下侧
+    alignItems: 'flex-end',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
@@ -149,8 +163,8 @@ const styles = StyleSheet.create({
         outlineStyle: 'none',
         resize: 'none',
         overflowY: 'auto',
-        height: 'auto', // 💡 解决高度拉满的核心
-        fieldSizing: 'content', // 💡 解决自动撑开的核心
+        height: 'auto',
+        fieldSizing: 'content',
       } as any,
     }),
   },
@@ -166,7 +180,7 @@ const styles = StyleSheet.create({
   sendButtonText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 14,
   },
   footerTip: {
     fontSize: 11,
