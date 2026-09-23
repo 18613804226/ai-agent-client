@@ -1,5 +1,5 @@
 export const darkTheme = {
-  bgApp: '#131314',
+  bgApp: '#000',
   bgSidebar: '#1E1F20',
   border: '#2A2B2D',
   textMain: '#E3E3E3',
@@ -22,7 +22,7 @@ export const darkTheme = {
 };
 
 export const lightTheme = {
-  bgApp: '#F9FBFD',
+  bgApp: '#fff',
   bgSidebar: '#F0F4F9',
   border: '#D8DEE4',
   textMain: '#1F1F1F',

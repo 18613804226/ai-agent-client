@@ -9,7 +9,6 @@ import {
   Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import Toast from 'react-native-root-toast';
 import Svg, { Path, Rect } from 'react-native-svg';
 import Markdown from 'react-native-markdown-display';
 import Animated, {
@@ -18,6 +17,7 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
+import { MyToast } from './GlobalToast';
 
 interface ChatAreaProps {
   messages: any[];
@@ -146,17 +146,20 @@ function CopyButton({ content, theme }: { content: string; theme: any }) {
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(content);
-    Toast.show('已复制到剪贴板', {
-      duration: Toast.durations.SHORT,
-      position: Toast.positions.TOP,
-      shadow: true,
-      animation: true,
-      hideOnPress: true,
-      delay: 0,
-      containerStyle: {
-        marginBottom: 40,
-      },
-    });
+    // Toast.show('已复制到剪贴板', {
+    //   duration: Toast.durations.SHORT,
+    //   position: Toast.positions.BOTTOM,
+    //   shadow: true,
+    //   animation: true,
+    //   hideOnPress: true,
+    //   delay: 0,
+    //   containerStyle: {
+    //     marginBottom: 140,
+    //     zIndex: 999999, // 💡 强制把 Toast 的层级拉到最高
+    //     elevation: 999,   // 针对 Android 的绝对高度
+    //   },
+    // });
+    MyToast.show('已复制到剪贴板');
   };
 
   return (

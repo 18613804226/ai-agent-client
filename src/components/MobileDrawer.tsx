@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, TouchableOpacity, Animated, StyleSheet } from 'react-native';
+import { BlurView } from 'expo-blur'; // 💡 这样导入
 import Sidebar from './Sidebar';
 
 interface MobileDrawerProps {
@@ -19,6 +20,9 @@ interface MobileDrawerProps {
 
 const DRAWER_WIDTH = 280;
 
+// 让 Animated 支持 BlurView 组件
+const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
+
 export function MobileDrawer({
   showOverlay,
   backdropOpacity,
@@ -37,13 +41,19 @@ export function MobileDrawer({
 
   return (
     <View style={styles.mobileOverlayContainer}>
-      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+      {/* 💡 结合 Animated 实现渐显渐隐的毛玻璃遮罩 */}
+      <AnimatedBlurView
+        style={[styles.backdrop, { opacity: backdropOpacity }]}
+        intensity={90} // 模糊强度 (1-100)
+        tint={isDarkMode ? 'dark' : 'light'} // 根据暗黑模式切换毛玻璃色调
+      >
         <TouchableOpacity
           style={{ flex: 1 }}
           activeOpacity={1}
           onPress={onClose}
         />
-      </Animated.View>
+      </AnimatedBlurView>
+
       <Animated.View
         style={[
           styles.sidebarMobileDrawer,
@@ -73,7 +83,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 999,
+    zIndex: 9,
   },
   backdrop: {
     position: 'absolute',
@@ -81,8 +91,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#000000',
-    zIndex: 1000,
+    zIndex: 10,
   },
   sidebarMobileDrawer: {
     position: 'absolute',
@@ -91,6 +100,6 @@ const styles = StyleSheet.create({
     width: DRAWER_WIDTH,
     height: '100%',
     borderRightWidth: 1,
-    zIndex: 1001,
+    zIndex: 11,
   },
 });

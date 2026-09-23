@@ -25,6 +25,7 @@ import { MobileDrawer } from '../src/components/MobileDrawer';
 import { darkTheme, lightTheme } from '../src/constants/theme';
 import { useKeyboardAnimation } from '../src/hooks/useKeyboardAnimation';
 import { useChatManager } from '../src/hooks/useChatManager';
+import GlobalToastContainer from '../src/components/GlobalToast';
 
 const DRAWER_WIDTH = 280;
 
@@ -198,8 +199,10 @@ export default function ChatScreen() {
             onDeleteChat={handleDeleteChat}
             onToggleTheme={() => setIsDarkMode(!isDarkMode)}
           />
+
         </View>
       </View>
+      <GlobalToastContainer />
     </RootSiblingParent>
   );
 }
