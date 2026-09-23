@@ -27,7 +27,13 @@ interface ChatAreaProps {
 }
 
 // 深度思考折叠组件
-function ThoughtCollapsible({ thought, theme }: { thought: string; theme: any }) {
+function ThoughtCollapsible({
+  thought,
+  theme,
+}: {
+  thought: string;
+  theme: any;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const progress = useSharedValue(0);
 
@@ -80,7 +86,9 @@ function ThoughtCollapsible({ thought, theme }: { thought: string; theme: any })
           🧠 已深度思考
         </Text>
         <View style={styles.thoughtRightAction}>
-          <Text style={{ color: theme.textMuted, fontSize: 12, marginRight: 4 }}>
+          <Text
+            style={{ color: theme.textMuted, fontSize: 12, marginRight: 4 }}
+          >
             {isOpen ? '收起' : '展开'}
           </Text>
           <Animated.View style={arrowAnimatedStyle}>
@@ -140,7 +148,8 @@ function CopyButton({ content, theme }: { content: string; theme: any }) {
         { scale: 0.92 + tooltipProgress.value * 0.08 },
       ],
       // 动画完全消失时自动关闭 pointerEvents，防止不可见时阻挡鼠标
-      pointerEvents: tooltipProgress.value === 0 ? ('none' as const) : ('auto' as const),
+      pointerEvents:
+        tooltipProgress.value === 0 ? ('none' as const) : ('auto' as const),
     };
   });
 
@@ -241,11 +250,34 @@ export default function ChatArea({
     body: { fontSize: 15, lineHeight: 22, color: theme.textMain },
     strong: { fontWeight: 'bold', color: theme.textMain },
     paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
-    heading1: { fontSize: 20, fontWeight: 'bold', color: theme.textMain, marginTop: 14, marginBottom: 6, lineHeight: 28 },
-    heading2: { fontSize: 18, fontWeight: 'bold', color: theme.textMain, marginTop: 12, marginBottom: 6, lineHeight: 24 },
-    heading3: { fontSize: 16, fontWeight: 'bold', color: theme.textMain, marginTop: 10, marginBottom: 4, lineHeight: 22 },
+    heading1: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: theme.textMain,
+      marginTop: 14,
+      marginBottom: 6,
+      lineHeight: 28,
+    },
+    heading2: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.textMain,
+      marginTop: 12,
+      marginBottom: 6,
+      lineHeight: 24,
+    },
+    heading3: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: theme.textMain,
+      marginTop: 10,
+      marginBottom: 4,
+      lineHeight: 22,
+    },
     code_inline: {
-      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+      backgroundColor: theme.isDark
+        ? 'rgba(255,255,255,0.1)'
+        : 'rgba(0,0,0,0.06)',
       color: theme.textMain,
       borderRadius: 4,
       paddingHorizontal: 4,
@@ -270,7 +302,9 @@ export default function ChatArea({
       marginVertical: 6,
     },
     blockquote: {
-      backgroundColor: theme.isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+      backgroundColor: theme.isDark
+        ? 'rgba(255, 255, 255, 0.05)'
+        : 'rgba(0, 0, 0, 0.04)',
       borderLeftColor: theme.isDark ? '#3b82f6' : '#2563eb',
       borderLeftWidth: 1,
       paddingHorizontal: 12,
@@ -289,9 +323,9 @@ export default function ChatArea({
       style={
         Platform.OS === 'web'
           ? ({
-            scrollbarWidth: 'thin',
-            scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent',
-          } as any)
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent',
+            } as any)
           : undefined
       }
     >
@@ -311,12 +345,12 @@ export default function ChatArea({
                 isUser
                   ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
                   : [
-                    styles.bubbleAi,
-                    {
-                      backgroundColor: theme.bubbleAiBg,
-                      borderColor: theme.border,
-                    },
-                  ],
+                      styles.bubbleAi,
+                      {
+                        backgroundColor: theme.bubbleAiBg,
+                        borderColor: theme.border,
+                      },
+                    ],
               ]}
             >
               {isThinking ? (
@@ -354,14 +388,14 @@ export default function ChatArea({
               )}
 
               <View style={styles.footerRow}>
-                <Text
+                {/* <Text
                   style={[
                     styles.timeText,
                     { color: isUser ? theme.timeUserText : theme.timeAiText },
                   ]}
                 >
                   {item.time}
-                </Text>
+                </Text> */}
 
                 {/* 💡 直接使用封装好的 CopyButton 组件 */}
                 {!isUser && !isThinking && (

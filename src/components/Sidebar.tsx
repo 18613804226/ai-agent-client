@@ -28,6 +28,8 @@ export default function Sidebar({
   onToggleTheme,
   theme,
 }: SidebarProps) {
+  // 💡 这里不需要再写 api.getSessions() 了，数据由父组件通过 conversations 传入
+
   return (
     <View style={[styles.sidebarInner, { backgroundColor: theme.bgSidebar }]}>
       <View style={styles.sidebarTop}>
@@ -110,6 +112,7 @@ export default function Sidebar({
   );
 }
 
+// styles 保持不变...
 const styles = StyleSheet.create({
   sidebarInner: { flex: 1, padding: 12, justifyContent: 'space-between' },
   sidebarTop: { marginBottom: 12 },

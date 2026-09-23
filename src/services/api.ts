@@ -38,12 +38,20 @@ export const api = {
   createSession: async (title = '新对话') => {
     return httpClient.post('/chat/session', { title });
   },
-
+  // 2. 更新会话标题
+  updateSessionTitle: async (id: string, title: string) => {
+    return httpClient.put(`/chat/sessions/${id}`, { title }); // 请根据后端的实际路由前缀调整 /chat/ 前缀
+  },
   // 2. 获取会话列表
   getSessions: async () => {
     return httpClient.get('/chat/sessions');
   },
-
+  getSessionDetail: async (id: string) => {
+    return httpClient.get(`/chat/sessions/${id}`);
+  },
+  deleteSession: async (id: string) => {
+    return httpClient.delete(`/chat/sessions/${id}`);
+  },
   // 3. 发送消息（触发 RAG 问答）
   sendMessage: async (sessionId: string, content: string) => {
     return httpClient.post(`/chat/${sessionId}/message`, { content });
