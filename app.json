@@ -2,6 +2,7 @@
   "expo": {
     "name": "ai-agent-client",
     "slug": "ai-agent-client",
+    "scheme": "ai-agent-client-toto",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

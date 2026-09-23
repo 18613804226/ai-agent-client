@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,14 +10,212 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-root-toast';
-// 💡 引入 React Native SVG 库来画复制图标（Expo 项目通常自带，或可直接用 react-native-svg）
-import Svg, { Rect } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 import Markdown from 'react-native-markdown-display';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+
 interface ChatAreaProps {
   messages: any[];
   scrollViewRef: React.RefObject<ScrollView>;
   theme: any;
-  isMobile?: boolean; // 💡 1. 增加移动端判断属性
+  isMobile?: boolean;
+}
+
+// 深度思考折叠组件
+function ThoughtCollapsible({ thought, theme }: { thought: string; theme: any }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const progress = useSharedValue(0);
+
+  const toggleOpen = () => {
+    const nextState = !isOpen;
+    setIsOpen(nextState);
+    progress.value = withTiming(nextState ? 1 : 0, {
+      duration: 250,
+      easing: Easing.bezier(0.25, 1, 0.5, 1),
+    });
+  };
+
+  const bodyAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: progress.value,
+      transform: [
+        {
+          translateY: (1 - progress.value) * -8,
+        },
+      ],
+      maxHeight: progress.value * 600,
+      overflow: 'hidden' as const,
+    };
+  });
+
+  const arrowAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ rotate: `${progress.value * 180}deg` }],
+    };
+  });
+
+  return (
+    <View
+      style={[
+        styles.thoughtBox,
+        {
+          borderColor: theme.border,
+          backgroundColor: theme.isDark
+            ? 'rgba(255,255,255,0.03)'
+            : 'rgba(0,0,0,0.03)',
+        },
+      ]}
+    >
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={toggleOpen}
+        style={styles.thoughtHeader}
+      >
+        <Text style={[styles.thoughtTitle, { color: theme.textMuted }]}>
+          🧠 已深度思考
+        </Text>
+        <View style={styles.thoughtRightAction}>
+          <Text style={{ color: theme.textMuted, fontSize: 12, marginRight: 4 }}>
+            {isOpen ? '收起' : '展开'}
+          </Text>
+          <Animated.View style={arrowAnimatedStyle}>
+            <Svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M6 9l6 6 6-6"
+                stroke={theme.textMuted}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </Animated.View>
+        </View>
+      </TouchableOpacity>
+
+      <Animated.View style={bodyAnimatedStyle}>
+        <Text
+          style={[
+            styles.thoughtContent,
+            { color: theme.textMuted, marginTop: 4 },
+          ]}
+        >
+          {thought}
+        </Text>
+      </Animated.View>
+    </View>
+  );
+}
+
+// 💡 修正后的 CopyButton：把 hover 事件放在外层的 View 上，完美绕过 TouchableOpacity 的 TS 类型限制
+// 💡 完美且无需 runOnJS 的 CopyButton 组件
+function CopyButton({ content, theme }: { content: string; theme: any }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const tooltipProgress = useSharedValue(0);
+
+  // 监听 hover 状态变化，丝滑驱动显隐动画
+  useEffect(() => {
+    if (isHovered) {
+      tooltipProgress.value = withTiming(1, {
+        duration: 150,
+        easing: Easing.bezier(0.25, 1, 0.5, 1),
+      });
+    } else {
+      tooltipProgress.value = withTiming(0, {
+        duration: 120,
+        easing: Easing.bezier(0.25, 1, 0.5, 1),
+      });
+    }
+  }, [isHovered]);
+
+  const tooltipAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: tooltipProgress.value,
+      transform: [
+        { translateY: (1 - tooltipProgress.value) * 4 }, // 微妙的上浮下沉
+        { scale: 0.92 + tooltipProgress.value * 0.08 },
+      ],
+      // 动画完全消失时自动关闭 pointerEvents，防止不可见时阻挡鼠标
+      pointerEvents: tooltipProgress.value === 0 ? ('none' as const) : ('auto' as const),
+    };
+  });
+
+  const handleCopy = async () => {
+    await Clipboard.setStringAsync(content);
+    Toast.show('已复制到剪贴板', {
+      duration: Toast.durations.SHORT,
+      position: Toast.positions.TOP,
+      shadow: true,
+      animation: true,
+      hideOnPress: true,
+      delay: 0,
+      containerStyle: {
+        marginBottom: 40,
+      },
+    });
+  };
+
+  return (
+    <View
+      style={styles.copyBtnWrapper}
+      {...({
+        onMouseEnter: () => setIsHovered(true),
+        onMouseLeave: () => setIsHovered(false),
+      } as any)}
+    >
+      <TouchableOpacity
+        style={[
+          styles.copyIconBtn,
+          isHovered && {
+            backgroundColor: theme.isDark
+              ? 'rgba(255, 255, 255, 0.15)'
+              : 'rgba(0, 0, 0, 0.1)',
+          },
+        ]}
+        onPress={handleCopy}
+        accessibilityLabel="复制代码"
+      >
+        <Svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <Rect
+            x="9"
+            y="9"
+            width="13"
+            height="13"
+            rx="2"
+            stroke={theme.textMuted}
+            strokeWidth="2"
+          />
+          <Rect
+            x="2"
+            y="2"
+            width="13"
+            height="13"
+            rx="2"
+            stroke={theme.textMuted}
+            strokeWidth="2"
+            fill={theme.bubbleAiBg}
+          />
+        </Svg>
+      </TouchableOpacity>
+
+      {/* 💡 动画提示框 */}
+      <Animated.View
+        style={[
+          styles.tooltipBox,
+          {
+            backgroundColor: theme.isDark ? '#eee' : '#eee',
+          },
+          tooltipAnimatedStyle,
+        ]}
+      >
+        <Text style={styles.tooltipText}>复制代码</Text>
+      </Animated.View>
+    </View>
+  );
 }
 
 export default function ChatArea({
@@ -26,73 +224,34 @@ export default function ChatArea({
   theme,
   isMobile = false,
 }: ChatAreaProps) {
-  const handleCopy = async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    Toast.show('已复制到剪贴板', {
-      duration: Toast.durations.SHORT,
-      position: Toast.positions.BOTTOM,
-      shadow: true,
-      animation: true,
-      hideOnPress: true,
-      delay: 0,
-    });
-  };
-  // 💡 2. 将 markdownStyles 改为动态函数，完美适配白天/黑夜模式的文字颜色
+  const prevMessagesLengthRef = useRef(messages.length);
+
+  useEffect(() => {
+    const currentLength = messages.length;
+    if (currentLength > prevMessagesLengthRef.current) {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }
+    prevMessagesLengthRef.current = currentLength;
+  }, [messages]);
+
   const dynamicMarkdownStyles = StyleSheet.create({
-    body: {
-      fontSize: 15,
-      lineHeight: 22,
-      color: theme.textMain,
-    },
-    strong: {
-      fontWeight: 'bold',
-      color: theme.textMain,
-    },
-    paragraph: {
-      marginTop: 0,
-      marginBottom: 8,
-      color: theme.textMain,
-    },
-    // 💡 新增：为各级标题增加舒适的上下间距和行高
-    heading1: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: theme.textMain,
-      marginTop: 14,
-      marginBottom: 6,
-      lineHeight: 28,
-    },
-    heading2: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: theme.textMain,
-      marginTop: 12,
-      marginBottom: 6,
-      lineHeight: 24,
-    },
-    heading3: {
-      fontSize: 16,
-      fontWeight: 'bold',
-      color: theme.textMain,
-      marginTop: 10,
-      marginBottom: 4,
-      lineHeight: 22,
-    },
-    // 💡 1. 适配行内小代码块（比如 `code`）
+    body: { fontSize: 15, lineHeight: 22, color: theme.textMain },
+    strong: { fontWeight: 'bold', color: theme.textMain },
+    paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
+    heading1: { fontSize: 20, fontWeight: 'bold', color: theme.textMain, marginTop: 14, marginBottom: 6, lineHeight: 28 },
+    heading2: { fontSize: 18, fontWeight: 'bold', color: theme.textMain, marginTop: 12, marginBottom: 6, lineHeight: 24 },
+    heading3: { fontSize: 16, fontWeight: 'bold', color: theme.textMain, marginTop: 10, marginBottom: 4, lineHeight: 22 },
     code_inline: {
-      backgroundColor: theme.isDark
-        ? 'rgba(255,255,255,0.1)'
-        : 'rgba(0,0,0,0.06)',
+      backgroundColor: theme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
       color: theme.textMain,
       borderRadius: 4,
       paddingHorizontal: 4,
       paddingVertical: 2,
       fontSize: 14,
     },
-    // 💡 2. 适配多行大代码块（Markdown 里的 ``` 代码块会被解析为 fence 和 code_block）
     fence: {
-      backgroundColor: theme.isDark ? '#000' : '#eee', // 暗黑模式用深灰/黑色，白天模式用浅灰
-      color: theme.isDark ? '#d4d4d4' : '#333333', // 代码文字颜色
+      backgroundColor: theme.isDark ? '#000' : '#eee',
+      color: theme.isDark ? '#d4d4d4' : '#333333',
       borderRadius: 8,
       padding: 12,
       marginVertical: 6,
@@ -107,33 +266,29 @@ export default function ChatArea({
       padding: 12,
       marginVertical: 6,
     },
+    blockquote: {
+      backgroundColor: theme.isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)',
+      borderLeftColor: theme.isDark ? '#3b82f6' : '#2563eb',
+      borderLeftWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 4,
+      marginVertical: 6,
+    },
+    list_item: { color: theme.textMain, marginVertical: 2 },
   });
-  // 在 Web 端，你可以直接用普通 View 实现完美滚动的容器
-  const ScrollContainer = Platform.OS === 'web' ? View : ScrollView;
 
-  // 给它配上 Web 端的滚动样式
-  const webScrollStyles =
-    Platform.OS === 'web'
-      ? {
-          overflowY: 'auto' as const,
-          maxHeight: '100%', // 根据你的布局需要设置高度
-        }
-      : {};
   return (
     <ScrollView
       ref={scrollViewRef}
       contentContainerStyle={styles.scrollContent}
-      onContentSizeChange={() =>
-        scrollViewRef.current?.scrollToEnd({ animated: true })
-      }
       nativeID="chat-custom-scroll"
-      // 💡 直接将 Web 标准滚动条样式写在 ScrollView 的 style 里
       style={
         Platform.OS === 'web'
           ? ({
-              scrollbarWidth: 'thin', // 纤细滚动条
-              scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent', // [滑块颜色, 轨道颜色]
-            } as any)
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgba(255, 255, 255, 0.3) transparent',
+          } as any)
           : undefined
       }
     >
@@ -149,17 +304,16 @@ export default function ChatArea({
             <View
               style={[
                 styles.bubble,
-                // 💡 3. 手机端气泡宽度撑满（设为 100%），电脑端保持 75%
                 { maxWidth: isMobile ? '100%' : '100%' },
                 isUser
                   ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
                   : [
-                      styles.bubbleAi,
-                      {
-                        backgroundColor: theme.bubbleAiBg,
-                        borderColor: theme.border,
-                      },
-                    ],
+                    styles.bubbleAi,
+                    {
+                      backgroundColor: theme.bubbleAiBg,
+                      borderColor: theme.border,
+                    },
+                  ],
               ]}
             >
               {isThinking ? (
@@ -179,20 +333,23 @@ export default function ChatArea({
                   </Text>
                 </View>
               ) : isUser ? (
-                // 💡 用户消息保持普通文本
                 <Text
                   style={[styles.messageText, { color: theme.bubbleUserText }]}
                 >
                   {item.content}
                 </Text>
               ) : (
-                // 💡 AI 消息使用 Markdown 组件渲染，完美支持 **加粗** 和列表
-                <Markdown style={dynamicMarkdownStyles}>
-                  {item.content}
-                </Markdown>
+                <View>
+                  {item.thought ? (
+                    <ThoughtCollapsible thought={item.thought} theme={theme} />
+                  ) : null}
+
+                  <Markdown style={dynamicMarkdownStyles}>
+                    {item.content || (isThinking ? '思考中...' : '')}
+                  </Markdown>
+                </View>
               )}
 
-              {/* 底部信息栏 */}
               <View style={styles.footerRow}>
                 <Text
                   style={[
@@ -203,35 +360,10 @@ export default function ChatArea({
                   {item.time}
                 </Text>
 
-                {/* 💡 只有【非用户】且【非思考中】时，才显示双矩形复制图标 */}
-                {/* {!isUser && !isThinking && (
-                  <TouchableOpacity
-                    style={styles.copyIconBtn}
-                    onPress={() => handleCopy(item.content)}
-                  >
-                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <Rect
-                        x="9"
-                        y="9"
-                        width="13"
-                        height="13"
-                        rx="2"
-                        stroke={theme.textMuted}
-                        strokeWidth="2"
-                      />
-                      <Rect
-                        x="2"
-                        y="2"
-                        width="13"
-                        height="13"
-                        rx="2"
-                        stroke={theme.textMuted}
-                        strokeWidth="2"
-                        fill={theme.bubbleAiBg}
-                      />
-                    </Svg>
-                  </TouchableOpacity>
-                )} */}
+                {/* 💡 直接使用封装好的 CopyButton 组件 */}
+                {!isUser && !isThinking && (
+                  <CopyButton content={item.content} theme={theme} />
+                )}
               </View>
             </View>
           </View>
@@ -241,7 +373,6 @@ export default function ChatArea({
   );
 }
 
-// 移除了写死的 markdownStyles 常量，改在组件内部用 dynamicMarkdownStyles
 const styles = StyleSheet.create({
   scrollContent: { padding: 16, paddingBottom: 20 },
   messageRow: {
@@ -251,7 +382,7 @@ const styles = StyleSheet.create({
   },
   rowUser: { justifyContent: 'flex-end' },
   rowAi: { justifyContent: 'flex-start' },
-  bubble: { padding: 14, borderRadius: 16 }, // 移除了固定的 maxWidth，交由行内根据 isMobile 动态控制
+  bubble: { padding: 14, borderRadius: 16 },
   bubbleUser: { borderTopRightRadius: 4 },
   bubbleAi: { borderTopLeftRadius: 4, borderWidth: 1 },
   thinkingContainer: {
@@ -267,10 +398,61 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   timeText: { fontSize: 10, flex: 1 },
+  copyBtnWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    marginLeft: 6,
+  },
   copyIconBtn: {
     padding: 4,
-    marginLeft: 6,
     borderRadius: 4,
     backgroundColor: 'rgba(128,128,128,0.1)',
+  },
+  tooltipBox: {
+    position: 'absolute',
+    bottom: -30, // 浮动在按钮正上方
+    right: -25,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    zIndex: 99,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  tooltipText: {
+    color: '#000',
+    fontSize: 14,
+    whiteSpace: 'nowrap',
+  } as any,
+  thoughtBox: {
+    borderLeftWidth: 0,
+    borderLeftColor: '#4b92ee',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 10,
+    borderRadius: 4,
+  },
+  thoughtRightAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  thoughtHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  thoughtTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    paddingRight: 2,
+  },
+  thoughtContent: {
+    fontSize: 13,
+    fontStyle: 'italic',
+    lineHeight: 18,
   },
 });

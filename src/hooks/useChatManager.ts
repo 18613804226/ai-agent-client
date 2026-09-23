@@ -8,6 +8,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   time: string;
+  thought?: string; // 💡 新增：用于存放思考过程
 }
 
 export interface Conversation {
@@ -173,13 +174,56 @@ export function useChatManager() {
     );
   };
 
+  // 💡 辅助函数：同时支持更新 content 或 thought
+  const updateAiMessageFields = (
+    msgId: string,
+    fields: { content?: string; thought?: string },
+  ) => {
+    setConversations((prev) =>
+      prev.map((conv) => {
+        if (conv.id === activeId) {
+          return {
+            ...conv,
+            messages: conv.messages.map((msg) =>
+              msg.id === msgId ? { ...msg, ...fields } : msg,
+            ),
+          };
+        }
+        return conv;
+      }),
+    );
+  };
+
+  // 💡 重构后的流式接收器：支持 type 分流
+  // 💡 定义一个干净的清洗函数
+  const cleanAiMessageText = (rawText: string) => {
+    if (!rawText) return { thought: '', content: '' };
+    let thought = '';
+    let content = rawText;
+
+    const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
+    if (fullMatch) {
+      thought = fullMatch[1].trim();
+      content = rawText.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart();
+    } else if (rawText.includes('</think>')) {
+      const parts = rawText.split('</think>');
+      thought = parts[0].replace(/<think>/g, '').trim();
+      content = parts.slice(1).join('</think>').trimStart();
+    } else if (rawText.includes('<think>')) {
+      const parts = rawText.split('<think>');
+      content = parts[0].trim();
+      thought = parts.slice(1).join('<think>').trim();
+    }
+
+    return { thought, content };
+  };
+
   const runTypewriterEffect = async (
     reader: ReadableStreamDefaultReader<Uint8Array>,
     thinkingMsgId: string,
   ) => {
     const decoder = new TextDecoder();
-    let accumulatedText = '';
-    let isFirstChunk = true;
+    let rawAccumulatedText = '';
     let buffer = '';
 
     while (true) {
@@ -198,16 +242,22 @@ export function useChatManager() {
             if (jsonText === '[DONE]') continue;
 
             const parsed = JSON.parse(jsonText);
-            if (parsed.content) {
-              if (isFirstChunk) {
-                accumulatedText = '';
-                isFirstChunk = false;
-              }
-              accumulatedText += parsed.content;
-              updateAiMessageContent(thinkingMsgId, accumulatedText);
+            const chunkText = parsed.content || parsed.text || '';
+            if (chunkText) {
+              rawAccumulatedText += chunkText;
+
+              // 💡 核心修改：直接调用封装好的清洗函数
+              const { thought: currentThought, content: currentContent } =
+                cleanAiMessageText(rawAccumulatedText);
+
+              // 更新到前端状态
+              updateAiMessageFields(thinkingMsgId, {
+                thought: currentThought,
+                content: currentContent,
+              });
             }
           } catch (e) {
-            // 忽略小错误
+            // 忽略非 JSON 行
           }
         }
       }
