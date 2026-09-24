@@ -11,6 +11,7 @@
     "expo-blur": "~57.0.3",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.19",
+    "expo-document-picker": "~57.0.2",
     "expo-linking": "~57.0.10",
     "expo-router": "~57.0.22",
     "expo-status-bar": "~57.0.1",

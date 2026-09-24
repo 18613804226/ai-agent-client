@@ -26,7 +26,9 @@ import { darkTheme, lightTheme } from '../src/constants/theme';
 import { useKeyboardAnimation } from '../src/hooks/useKeyboardAnimation';
 import { useChatManager } from '../src/hooks/useChatManager';
 import GlobalToastContainer from '../src/components/GlobalToast';
-
+import { useKnowledgeFiles } from '../src/hooks/useKnowledgeFiles'; // 💡 引入刚才写的 Hook
+const { uploadedFiles, handleUploadFile, handleDeleteFile } =
+  useKnowledgeFiles();
 const DRAWER_WIDTH = 280;
 
 export default function ChatScreen() {
@@ -141,6 +143,9 @@ export default function ChatScreen() {
                 isDarkMode={isDarkMode}
                 onToggleTheme={() => setIsDarkMode(!isDarkMode)}
                 theme={theme}
+                uploadedFiles={uploadedFiles}
+                onUploadFile={handleUploadFile}
+                onDeleteFile={handleDeleteFile}
               />
             </View>
           )}
@@ -198,8 +203,10 @@ export default function ChatScreen() {
             }}
             onDeleteChat={handleDeleteChat}
             onToggleTheme={() => setIsDarkMode(!isDarkMode)}
+            uploadedFiles={uploadedFiles}
+            onUploadFile={handleUploadFile}
+            onDeleteFile={handleDeleteFile}
           />
-
         </View>
       </View>
       <GlobalToastContainer />

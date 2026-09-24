@@ -199,69 +199,108 @@ export function useChatManager() {
     );
   };
 
-  const cleanAiMessageText = (rawText: string) => {
-    if (!rawText) return { thought: '', content: '' };
-    let thought = '';
-    let content = rawText;
+  // const cleanAiMessageText = (rawText: string) => {
+  //   if (!rawText) return { thought: '', content: '' };
+  //   let thought = '';
+  //   let content = rawText;
 
-    const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
-    if (fullMatch) {
-      thought = fullMatch[1].trim();
-      content = rawText.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart();
-    } else if (rawText.includes('</think>')) {
-      const parts = rawText.split('</think>');
-      thought = parts[0].replace(/<think>/g, '').trim();
-      content = parts.slice(1).join('</think>').trimStart();
-    } else if (rawText.includes('<think>')) {
-      const parts = rawText.split('<think>');
-      content = parts[0].trim();
-      thought = parts.slice(1).join('<think>').trim();
-    }
+  //   const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
+  //   if (fullMatch) {
+  //     thought = fullMatch[1].trim();
+  //     content = rawText.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart();
+  //   } else if (rawText.includes('</think>')) {
+  //     const parts = rawText.split('</think>');
+  //     thought = parts[0].replace(/<think>/g, '').trim();
+  //     content = parts.slice(1).join('</think>').trimStart();
+  //   } else if (rawText.includes('<think>')) {
+  //     const parts = rawText.split('<think>');
+  //     content = parts[0].trim();
+  //     thought = parts.slice(1).join('<think>').trim();
+  //   }
 
-    return { thought, content };
-  };
+  //   return { thought, content };
+  // };
 
   const runTypewriterEffect = async (
     reader: ReadableStreamDefaultReader<Uint8Array>,
     thinkingMsgId: string,
   ) => {
     const decoder = new TextDecoder();
-    let rawAccumulatedText = '';
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    let directThought = '';
+    let directContent = '';
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (trimmedLine.startsWith('data:')) {
-          try {
-            const jsonText = trimmedLine.replace('data:', '').trim();
-            if (jsonText === '[DONE]') continue;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-            const parsed = JSON.parse(jsonText);
-            const chunkText = parsed.content || parsed.text || '';
-            if (chunkText) {
-              rawAccumulatedText += chunkText;
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          const jsonText = trimmedLine.replace('data:', '').trim();
+          if (jsonText === '[DONE]') continue;
+          if (trimmedLine.startsWith('data:')) {
+            try {
+              const parsed = JSON.parse(jsonText);
+              const delta = parsed.choices?.[0]?.delta || {};
 
-              const { thought: currentThought, content: currentContent } =
-                cleanAiMessageText(rawAccumulatedText);
+              let chunkThought = '';
+              let chunkContent = '';
 
+              if (parsed.type === 'thought') {
+                chunkThought =
+                  parsed.thought || parsed.content || parsed.text || '';
+              } else if (parsed.type === 'content') {
+                chunkContent = parsed.content || parsed.text || '';
+              } else {
+                chunkThought =
+                  delta.reasoning_content ||
+                  delta.reasoning ||
+                  parsed.reasoning_content ||
+                  parsed.thought ||
+                  '';
+
+                chunkContent =
+                  delta.content ||
+                  parsed.content ||
+                  parsed.text ||
+                  parsed.message ||
+                  '';
+              }
+
+              // 💡 直接累加，不经过任何队列延迟
+              if (chunkThought) {
+                directThought += chunkThought;
+              }
+
+              if (chunkContent) {
+                directContent += chunkContent;
+              }
+
+              // 💡 收到数据立刻触发更新，后端吐多快前端就刷多快
               updateAiMessageFields(thinkingMsgId, {
-                thought: currentThought,
-                content: currentContent,
+                thought: directThought,
+                content: directContent || '...',
               });
+            } catch (e) {
+              if (jsonText) {
+                directContent += jsonText;
+                updateAiMessageFields(thinkingMsgId, {
+                  thought: directThought,
+                  content: directContent || '...',
+                });
+              }
             }
-          } catch (e) {
-            // 忽略非 JSON 行
           }
         }
       }
+    } catch (error) {
+      console.error('流式读取异常:', error);
     }
   };
 
@@ -282,7 +321,7 @@ export function useChatManager() {
     const thinkingMsg: Message = {
       id: thinkingMsgId,
       role: 'assistant',
-      content: '思考中...',
+      content: '...',
       // time: dayjs().format('HH:mm'),
     };
 

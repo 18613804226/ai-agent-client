@@ -34,8 +34,8 @@ function ThoughtCollapsible({
   thought: string;
   theme: any;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const progress = useSharedValue(0);
+  const [isOpen, setIsOpen] = useState(true);
+  const progress = useSharedValue(1);
 
   const toggleOpen = () => {
     const nextState = !isOpen;
@@ -313,6 +313,18 @@ export default function ChatArea({
       marginVertical: 6,
     },
     list_item: { color: theme.textMain, marginVertical: 2 },
+    // 💡 新增：给表格和分割线加上下间距
+    table: {
+      marginVertical: 10, // 表格整体上下留白
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: 6,
+    },
+    hr: {
+      backgroundColor: theme.border,
+      height: 1,
+      marginVertical: 12, // 分割线上下留白
+    },
   });
 
   return (
@@ -331,7 +343,10 @@ export default function ChatArea({
     >
       {messages.map((item) => {
         const isUser = item.role === 'user';
-        const isThinking = !isUser && item.content === '思考中...';
+        // 💡 修正判断：只要正文有实质内容，或者深度思考过程已经开始输出了，就不再是单纯的“思考中”加载状态
+        const hasContent = item.content && item.content !== '...';
+        const hasThought = !!item.thought;
+        const isThinking = !isUser && !hasContent && !hasThought;
 
         return (
           <View
@@ -382,7 +397,7 @@ export default function ChatArea({
                   ) : null}
 
                   <Markdown style={dynamicMarkdownStyles}>
-                    {item.content || (isThinking ? '思考中...' : '')}
+                    {item.content || (isThinking ? '...' : '')}
                   </Markdown>
                 </View>
               )}

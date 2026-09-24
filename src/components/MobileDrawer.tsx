@@ -2,6 +2,7 @@ import React from 'react';
 import { View, TouchableOpacity, Animated, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur'; // 💡 这样导入
 import Sidebar from './Sidebar';
+import { useKnowledgeFiles } from '../hooks/useKnowledgeFiles'; // 💡 引入刚才写的 Hook
 
 interface MobileDrawerProps {
   showOverlay: boolean;
@@ -16,6 +17,10 @@ interface MobileDrawerProps {
   onSelectChat: (id: string) => void;
   onDeleteChat: (e: any, id: string) => void;
   onToggleTheme: () => void;
+  // 💡 加上这三行对应的类型定义
+  uploadedFiles: any[];
+  onUploadFile: () => void;
+  onDeleteFile: (fileId: string) => void;
 }
 
 const DRAWER_WIDTH = 280;
@@ -38,7 +43,8 @@ export function MobileDrawer({
   onToggleTheme,
 }: MobileDrawerProps) {
   if (!showOverlay) return null;
-
+  const { uploadedFiles, handleUploadFile, handleDeleteFile } =
+    useKnowledgeFiles();
   return (
     <View style={styles.mobileOverlayContainer}>
       {/* 💡 结合 Animated 实现渐显渐隐的毛玻璃遮罩 */}
@@ -70,6 +76,9 @@ export function MobileDrawer({
           isDarkMode={isDarkMode}
           onToggleTheme={onToggleTheme}
           theme={theme}
+          uploadedFiles={uploadedFiles}
+          onUploadFile={handleUploadFile}
+          onDeleteFile={handleDeleteFile}
         />
       </Animated.View>
     </View>
