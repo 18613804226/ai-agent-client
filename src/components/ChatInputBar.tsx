@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
   inputBar: {
     flexDirection: 'row',
     borderWidth: 1,
-    borderRadius: 28,
+    borderRadius: 24,
     paddingHorizontal: 16,
     paddingVertical: 10,
     alignItems: 'flex-end',

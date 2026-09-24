@@ -33,11 +33,12 @@ export function useChatManager() {
         const sessions: any = await api.getSessions();
 
         if (sessions && sessions.length > 0) {
+          // 先把会话列表赋上
           setConversations(sessions);
           const firstId = sessions[0].id;
           setActiveId(firstId);
 
-          // 顺便把第一个会话的具体消息详情查出来
+          // 查第一个会话的详情
           const detail: any = await api.getSessionDetail(firstId);
           setConversations((prev) =>
             prev.map((c) =>
@@ -47,22 +48,9 @@ export function useChatManager() {
           return;
         }
 
-        // 如果后端没有任何会话，自动创建一个新会话
-        const sessionData: any = await api.createSession();
-        const defaultConv: Conversation = {
-          id: sessionData.id,
-          title: sessionData.title || '',
-          messages: [
-            {
-              id: '1',
-              role: 'assistant',
-              content: '你好！已连接至 AI 智能助手，请输入你想探讨的课题。',
-              // time: dayjs().format('HH:mm'),
-            },
-          ],
-        };
-        setConversations([defaultConv]);
-        setActiveId(sessionData.id);
+        // 如果没有会话，保持空白
+        setConversations([]);
+        setActiveId('');
       } catch (error) {
         console.error('初始化后端会话失败:', error);
       }
@@ -122,7 +110,9 @@ export function useChatManager() {
 
   // 4. 删除会话
   const handleDeleteChat = async (e: any, id: string) => {
-    e.stopPropagation();
+    if (e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
 
     try {
       await api.deleteSession(id);
@@ -132,52 +122,47 @@ export function useChatManager() {
     }
 
     const nextConversations = conversations.filter((c) => c.id !== id);
-
-    if (nextConversations.length === 0) {
-      try {
-        const sessionData: any = await api.createSession();
-        const newConv: Conversation = {
-          id: sessionData.id,
-          title: sessionData.title || '',
-          messages: [
-            {
-              id: Date.now().toString(),
-              role: 'assistant',
-              content: '新会话已开启，请输入你想探讨的课题。',
-              // time: dayjs().format('HH:mm'),
-            },
-          ],
-        };
-        setConversations([newConv]);
-        setActiveId(sessionData.id);
-      } catch (error) {
-        console.error('重建默认会话失败:', error);
-      }
-      return;
-    }
-
     setConversations(nextConversations);
+
+    // 如果删的是当前选中的会话
     if (activeId === id) {
-      setActiveId(nextConversations[0].id);
-      // 如果切换到了新的当前会话，也可以顺便拉取一下它的详情
-      handleSelectChat(nextConversations[0].id);
+      if (nextConversations.length > 0) {
+        // 如果还有其他会话，切换到第一个
+        setActiveId(nextConversations[0].id);
+        handleSelectChat(nextConversations[0].id);
+      } else {
+        // 💡 如果全部删光了：不自动创建，而是清空 activeId，让右侧输入框/主界面也进入空闲状态
+        setActiveId('');
+        // 也可以顺便清空右侧的聊天消息状态，根据你的项目逻辑来
+      }
     }
   };
 
-  const updateAiMessageContent = (msgId: string, newContent: string) => {
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id === activeId) {
-          return {
-            ...conv,
-            messages: conv.messages.map((msg) =>
-              msg.id === msgId ? { ...msg, content: newContent } : msg,
-            ),
-          };
-        }
-        return conv;
-      }),
-    );
+  // 💡 修复后的更新 AI 消息内容函数
+  const updateAiMessageContent = (msgId: string, chunk: string) => {
+    setConversations((prev: any) => {
+      return prev.map((conv: any) => {
+        // 确保在该会话中找到对应的消息 ID
+        const hasMessage =
+          conv.messages?.some((m: any) => m.id === msgId) || false;
+        if (!hasMessage) return conv;
+
+        return {
+          ...conv,
+          messages: conv.messages.map((msg: any) => {
+            if (msg.id === msgId) {
+              // 如果原始内容是 '...'，第一次收到数据时清空并替换，之后进行字符串追加
+              const currentContent = msg.content === '...' ? '' : msg.content;
+              return {
+                ...msg,
+                content: currentContent + chunk,
+              };
+            }
+            return msg;
+          }),
+        };
+      });
+    });
   };
 
   const updateAiMessageFields = (
@@ -186,40 +171,20 @@ export function useChatManager() {
   ) => {
     setConversations((prev) =>
       prev.map((conv) => {
-        if (conv.id === activeId) {
-          return {
-            ...conv,
-            messages: conv.messages.map((msg) =>
-              msg.id === msgId ? { ...msg, ...fields } : msg,
-            ),
-          };
-        }
-        return conv;
+        // 💡 修复：只要该会话包含了这条消息 ID，不管外层 activeId 此时有没有同步完，直接更新它！
+        const hasMessage =
+          conv.messages?.some((m: any) => m.id === msgId) || false;
+        if (!hasMessage) return conv;
+
+        return {
+          ...conv,
+          messages: conv.messages.map((msg) =>
+            msg.id === msgId ? { ...msg, ...fields } : msg,
+          ),
+        };
       }),
     );
   };
-
-  // const cleanAiMessageText = (rawText: string) => {
-  //   if (!rawText) return { thought: '', content: '' };
-  //   let thought = '';
-  //   let content = rawText;
-
-  //   const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
-  //   if (fullMatch) {
-  //     thought = fullMatch[1].trim();
-  //     content = rawText.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart();
-  //   } else if (rawText.includes('</think>')) {
-  //     const parts = rawText.split('</think>');
-  //     thought = parts[0].replace(/<think>/g, '').trim();
-  //     content = parts.slice(1).join('</think>').trimStart();
-  //   } else if (rawText.includes('<think>')) {
-  //     const parts = rawText.split('<think>');
-  //     content = parts[0].trim();
-  //     thought = parts.slice(1).join('<think>').trim();
-  //   }
-
-  //   return { thought, content };
-  // };
 
   const runTypewriterEffect = async (
     reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -288,12 +253,18 @@ export function useChatManager() {
                 content: directContent || '...',
               });
             } catch (e) {
-              if (jsonText) {
-                directContent += jsonText;
-                updateAiMessageFields(thinkingMsgId, {
-                  thought: directThought,
-                  content: directContent || '...',
-                });
+              if (jsonText && jsonText !== '[DONE]') {
+                // 如果这段文本还没被加到 directContent 里，才追加
+                if (
+                  !directContent.endsWith(jsonText) &&
+                  !directContent.includes(jsonText)
+                ) {
+                  directContent += jsonText;
+                  updateAiMessageFields(thinkingMsgId, {
+                    thought: directThought,
+                    content: directContent || '...',
+                  });
+                }
               }
             }
           }
@@ -301,11 +272,31 @@ export function useChatManager() {
       }
     } catch (error) {
       console.error('流式读取异常:', error);
+    } finally {
+      // 💡 绝对保证：只要流结束或报错，一定解除生成状态和转圈！
+      setIsGenerating(false);
+      abortControllerRef.current = null;
     }
   };
 
   const handleSend = async () => {
-    if (!inputText.trim() || !activeId) return;
+    if (!inputText.trim()) return;
+
+    let currentActiveId = activeId;
+    let isBrandNewSession = false;
+
+    // 1. 如果当前没有选中的会话 ID，先调接口创建
+    if (!currentActiveId) {
+      try {
+        const sessionData: any = await api.createSession();
+        currentActiveId = sessionData.id;
+        setActiveId(currentActiveId);
+        isBrandNewSession = true;
+      } catch (error) {
+        console.error('自动创建会话失败:', error);
+        return;
+      }
+    }
 
     const currentInput = inputText;
     setInputText('');
@@ -314,7 +305,6 @@ export function useChatManager() {
       id: Date.now().toString(),
       role: 'user',
       content: currentInput,
-      // time: dayjs().format('HH:mm'),
     };
 
     const thinkingMsgId = (Date.now() + 1).toString();
@@ -322,45 +312,75 @@ export function useChatManager() {
       id: thinkingMsgId,
       role: 'assistant',
       content: '...',
-      // time: dayjs().format('HH:mm'),
     };
 
-    const currentConv = conversations.find((c) => c.id === activeId);
-    const isFirstMessage = currentConv && currentConv.messages.length === 1;
+    // 1. 在外面直接算好标题！不要在 setConversations 里面去改它
+    const currentConv = conversations.find(
+      (c: any) => c.id === currentActiveId,
+    );
+    const isFirst = !currentConv || currentConv.messages.length <= 2;
 
-    const newTitle = isFirstMessage
-      ? currentInput.slice(0, 14) + '...'
-      : currentConv?.title || '';
+    // 直接用 currentInput 算
+    const updatedTitle =
+      isFirst || !currentConv?.title
+        ? currentInput.slice(0, 14) + '...'
+        : currentConv.title;
 
-    if (isFirstMessage) {
-      api.updateSessionTitle(activeId, newTitle).catch((err) => {
+    setConversations((prev: any) => {
+      const existsIndex = prev.findIndex((c: any) => c.id === currentActiveId);
+
+      if (existsIndex !== -1) {
+        const targetConv = prev[existsIndex];
+
+        const newConv = {
+          ...targetConv,
+          title: updatedTitle,
+          messages: [...targetConv.messages, userMsg, thinkingMsg],
+        };
+
+        const nextPrev = [...prev];
+        nextPrev[existsIndex] = newConv;
+        return nextPrev;
+      } else {
+        // 如果列表里完全没有（刚创建的空会话）
+        // updatedTitle = currentInput.slice(0, 14) + '...';
+        const newConvItem = {
+          id: currentActiveId,
+          title: updatedTitle,
+          messages: [
+            // {
+            //   id: 'init-' + Date.now(),
+            //   role: 'assistant',
+            //   content: '新会话已开启，请输入你想探讨的课题。',
+            // },
+            userMsg,
+            thinkingMsg,
+          ],
+        };
+        return [newConvItem, ...prev];
+      }
+    });
+    // 3. 异步更新后端标题（直接传字符串，因为 api.ts 内部已经帮你包成 { title } 了）
+    if (isBrandNewSession || updatedTitle) {
+      api.updateSessionTitle(currentActiveId, updatedTitle).catch((err) => {
         console.error('更新会话标题失败:', err);
       });
     }
 
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id === activeId) {
-          return {
-            ...conv,
-            title: newTitle,
-            messages: [...conv.messages, userMsg, thinkingMsg],
-          };
-        }
-        return conv;
-      }),
-    );
-
+    // 4. 发起流式请求
     abortControllerRef.current = new AbortController();
     setIsGenerating(true);
 
     try {
-      const response = await fetch(`${baseURL}/chat/${activeId}/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: currentInput }),
-        signal: abortControllerRef.current.signal,
-      });
+      const response = await fetch(
+        `${baseURL}/chat/${currentActiveId}/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: currentInput }),
+          signal: abortControllerRef.current.signal,
+        },
+      );
 
       if (!response.body) {
         throw new Error('ReadableStream not supported');
@@ -381,7 +401,6 @@ export function useChatManager() {
       abortControllerRef.current = null;
     }
   };
-
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();

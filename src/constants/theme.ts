@@ -18,6 +18,7 @@ export const darkTheme = {
   sendBtnActive: '#4b92ee',
   sendBtnHover: '#1977f1',
   sendBtnDisabled: '#333538',
+  uploadBorder: '#004a77',
   isDark: true,
 };
 
@@ -41,5 +42,6 @@ export const lightTheme = {
   sendBtnActive: '#4b92ee',
   sendBtnHover: '#1977f1',
   sendBtnDisabled: '#D8DEE4',
+  uploadBorder: '#d3e3fd',
   isDark: false,
 };

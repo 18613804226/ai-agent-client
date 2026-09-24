@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -229,7 +229,158 @@ function CopyButton({ content, theme }: { content: string; theme: any }) {
     </View>
   );
 }
+// 💡 1. 将单条消息抽离为独立组件，并用 React.memo 做性能优化
+const ChatMessageItem = memo(
+  ({ item, theme, isMobile }: { item: any; theme: any; isMobile: boolean }) => {
+    const isUser = item.role === 'user';
+    const hasContent = item.content && item.content !== '...';
+    const hasThought = !!item.thought;
+    const isThinking = !isUser && !hasContent && !hasThought;
 
+    // Markdown 样式可以在组件内部定义或提到外面
+    const dynamicMarkdownStyles = {
+      body: { fontSize: 15, lineHeight: 22, color: theme.textMain },
+      strong: { fontWeight: 'bold' as const, color: theme.textMain },
+      paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
+      heading1: {
+        fontSize: 20,
+        fontWeight: 'bold' as const,
+        color: theme.textMain,
+        marginTop: 14,
+        marginBottom: 6,
+        lineHeight: 28,
+      },
+      heading2: {
+        fontSize: 18,
+        fontWeight: 'bold' as const,
+        color: theme.textMain,
+        marginTop: 12,
+        marginBottom: 6,
+        lineHeight: 24,
+      },
+      heading3: {
+        fontSize: 16,
+        fontWeight: 'bold' as const,
+        color: theme.textMain,
+        marginTop: 10,
+        marginBottom: 4,
+        lineHeight: 22,
+      },
+      code_inline: {
+        backgroundColor: theme.isDark
+          ? 'rgba(255,255,255,0.1)'
+          : 'rgba(0,0,0,0.06)',
+        color: theme.textMain,
+        borderRadius: 4,
+        paddingHorizontal: 4,
+        paddingVertical: 2,
+        fontSize: 14,
+      },
+      fence: {
+        backgroundColor: theme.isDark ? '#000' : '#eee',
+        color: theme.isDark ? '#d4d4d4' : '#333333',
+        borderRadius: 8,
+        padding: 12,
+        marginVertical: 6,
+        borderWidth: 1,
+        borderColor: theme.border,
+        fontFamily: 'JetBrains Mono',
+      },
+      code_block: {
+        backgroundColor: theme.isDark ? '#1e1e1e' : '#f5f5f5',
+        color: theme.isDark ? '#d4d4d4' : '#333333',
+        borderRadius: 8,
+        padding: 12,
+        marginVertical: 6,
+      },
+      blockquote: {
+        backgroundColor: theme.isDark
+          ? 'rgba(255, 255, 255, 0.05)'
+          : 'rgba(0, 0, 0, 0.04)',
+        borderLeftColor: theme.isDark ? '#3b82f6' : '#2563eb',
+        borderLeftWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 4,
+        marginVertical: 6,
+      },
+      list_item: { color: theme.textMain, marginVertical: 2 },
+      table: {
+        marginVertical: 10,
+        borderWidth: 1,
+        borderColor: theme.border,
+        borderRadius: 6,
+      },
+      hr: { backgroundColor: theme.border, height: 1, marginVertical: 12 },
+    };
+
+    return (
+      <View style={[styles.messageRow, isUser ? styles.rowUser : styles.rowAi]}>
+        <View
+          style={[
+            styles.bubble,
+            { maxWidth: isMobile ? '100%' : '100%' },
+            isUser
+              ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
+              : [
+                  styles.bubbleAi,
+                  {
+                    backgroundColor: theme.bubbleAiBg,
+                    borderColor: theme.border,
+                  },
+                ],
+          ]}
+        >
+          {isThinking ? (
+            <View style={styles.thinkingContainer}>
+              <ActivityIndicator
+                size="small"
+                color={theme.textMuted}
+                style={{ marginRight: 8 }}
+              />
+              <Text
+                style={[
+                  styles.messageText,
+                  { color: theme.textMuted, fontStyle: 'italic' },
+                ]}
+              >
+                思考中...
+              </Text>
+            </View>
+          ) : isUser ? (
+            <Text style={[styles.messageText, { color: theme.bubbleUserText }]}>
+              {item.content}
+            </Text>
+          ) : (
+            <View>
+              {item.thought ? (
+                <ThoughtCollapsible thought={item.thought} theme={theme} />
+              ) : null}
+              <Markdown style={dynamicMarkdownStyles}>
+                {item.content || (isThinking ? '...' : '')}
+              </Markdown>
+            </View>
+          )}
+
+          <View style={styles.footerRow}>
+            {!isUser && !isThinking && (
+              <CopyButton content={item.content} theme={theme} />
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  },
+  (prevProps, nextProps) => {
+    // 💡 精准控制何时重渲染：只有当前消息的内容、思考状态发生变化时才重渲染
+    return (
+      prevProps.item.id === nextProps.item.id &&
+      prevProps.item.content === nextProps.item.content &&
+      prevProps.item.thought === nextProps.item.thought &&
+      prevProps.theme === nextProps.theme
+    );
+  },
+);
 export default function ChatArea({
   messages,
   scrollViewRef,
@@ -246,87 +397,6 @@ export default function ChatArea({
     prevMessagesLengthRef.current = currentLength;
   }, [messages]);
 
-  const dynamicMarkdownStyles = StyleSheet.create({
-    body: { fontSize: 15, lineHeight: 22, color: theme.textMain },
-    strong: { fontWeight: 'bold', color: theme.textMain },
-    paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
-    heading1: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: theme.textMain,
-      marginTop: 14,
-      marginBottom: 6,
-      lineHeight: 28,
-    },
-    heading2: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: theme.textMain,
-      marginTop: 12,
-      marginBottom: 6,
-      lineHeight: 24,
-    },
-    heading3: {
-      fontSize: 16,
-      fontWeight: 'bold',
-      color: theme.textMain,
-      marginTop: 10,
-      marginBottom: 4,
-      lineHeight: 22,
-    },
-    code_inline: {
-      backgroundColor: theme.isDark
-        ? 'rgba(255,255,255,0.1)'
-        : 'rgba(0,0,0,0.06)',
-      color: theme.textMain,
-      borderRadius: 4,
-      paddingHorizontal: 4,
-      paddingVertical: 2,
-      fontSize: 14,
-    },
-    fence: {
-      backgroundColor: theme.isDark ? '#000' : '#eee',
-      color: theme.isDark ? '#d4d4d4' : '#333333',
-      borderRadius: 8,
-      padding: 12,
-      marginVertical: 6,
-      borderWidth: 1,
-      borderColor: theme.border,
-      fontFamily: 'JetBrains Mono',
-    },
-    code_block: {
-      backgroundColor: theme.isDark ? '#1e1e1e' : '#f5f5f5',
-      color: theme.isDark ? '#d4d4d4' : '#333333',
-      borderRadius: 8,
-      padding: 12,
-      marginVertical: 6,
-    },
-    blockquote: {
-      backgroundColor: theme.isDark
-        ? 'rgba(255, 255, 255, 0.05)'
-        : 'rgba(0, 0, 0, 0.04)',
-      borderLeftColor: theme.isDark ? '#3b82f6' : '#2563eb',
-      borderLeftWidth: 1,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 4,
-      marginVertical: 6,
-    },
-    list_item: { color: theme.textMain, marginVertical: 2 },
-    // 💡 新增：给表格和分割线加上下间距
-    table: {
-      marginVertical: 10, // 表格整体上下留白
-      borderWidth: 1,
-      borderColor: theme.border,
-      borderRadius: 6,
-    },
-    hr: {
-      backgroundColor: theme.border,
-      height: 1,
-      marginVertical: 12, // 分割线上下留白
-    },
-  });
-
   return (
     <ScrollView
       ref={scrollViewRef}
@@ -341,86 +411,14 @@ export default function ChatArea({
           : undefined
       }
     >
-      {messages.map((item) => {
-        const isUser = item.role === 'user';
-        // 💡 修正判断：只要正文有实质内容，或者深度思考过程已经开始输出了，就不再是单纯的“思考中”加载状态
-        const hasContent = item.content && item.content !== '...';
-        const hasThought = !!item.thought;
-        const isThinking = !isUser && !hasContent && !hasThought;
-
-        return (
-          <View
-            key={item.id}
-            style={[styles.messageRow, isUser ? styles.rowUser : styles.rowAi]}
-          >
-            <View
-              style={[
-                styles.bubble,
-                { maxWidth: isMobile ? '100%' : '100%' },
-                isUser
-                  ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
-                  : [
-                      styles.bubbleAi,
-                      {
-                        backgroundColor: theme.bubbleAiBg,
-                        borderColor: theme.border,
-                      },
-                    ],
-              ]}
-            >
-              {isThinking ? (
-                <View style={styles.thinkingContainer}>
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.textMuted}
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text
-                    style={[
-                      styles.messageText,
-                      { color: theme.textMuted, fontStyle: 'italic' },
-                    ]}
-                  >
-                    思考中...
-                  </Text>
-                </View>
-              ) : isUser ? (
-                <Text
-                  style={[styles.messageText, { color: theme.bubbleUserText }]}
-                >
-                  {item.content}
-                </Text>
-              ) : (
-                <View>
-                  {item.thought ? (
-                    <ThoughtCollapsible thought={item.thought} theme={theme} />
-                  ) : null}
-
-                  <Markdown style={dynamicMarkdownStyles}>
-                    {item.content || (isThinking ? '...' : '')}
-                  </Markdown>
-                </View>
-              )}
-
-              <View style={styles.footerRow}>
-                {/* <Text
-                  style={[
-                    styles.timeText,
-                    { color: isUser ? theme.timeUserText : theme.timeAiText },
-                  ]}
-                >
-                  {item.time}
-                </Text> */}
-
-                {/* 💡 直接使用封装好的 CopyButton 组件 */}
-                {!isUser && !isThinking && (
-                  <CopyButton content={item.content} theme={theme} />
-                )}
-              </View>
-            </View>
-          </View>
-        );
-      })}
+      {messages.map((item) => (
+        <ChatMessageItem
+          key={item.id}
+          item={item}
+          theme={theme}
+          isMobile={isMobile}
+        />
+      ))}
     </ScrollView>
   );
 }

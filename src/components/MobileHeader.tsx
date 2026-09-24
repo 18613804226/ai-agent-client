@@ -37,12 +37,12 @@ export function MobileHeader({
       <TouchableOpacity style={styles.menuToggleBtn} onPress={onToggleDrawer}>
         <Text style={{ fontSize: 18, color: theme.textMain }}>☰</Text>
       </TouchableOpacity>
-      <Text
+      {/* <Text
         style={[styles.mobileTopTitle, { color: theme.textMain }]}
         numberOfLines={1}
       >
         {title || '加载中...'}
-      </Text>
+      </Text> */}
       <View style={{ width: 30 }} />
     </View>
   );
