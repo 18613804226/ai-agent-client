@@ -24,6 +24,7 @@ interface ChatAreaProps {
   scrollViewRef: React.RefObject<ScrollView>;
   theme: any;
   isMobile?: boolean;
+  isKeyboardUp?: boolean;
 }
 
 // 深度思考折叠组件
@@ -386,6 +387,7 @@ export default function ChatArea({
   scrollViewRef,
   theme,
   isMobile = false,
+  isKeyboardUp = false,
 }: ChatAreaProps) {
   const prevMessagesLengthRef = useRef(messages.length);
 
@@ -397,10 +399,16 @@ export default function ChatArea({
     prevMessagesLengthRef.current = currentLength;
   }, [messages]);
 
+  // 判断是否处于没有对话的空状态
+  // const isEmpty = !messages || messages.length === 0;
+  const showWelcome = (!messages || messages.length === 0) && !isKeyboardUp;
   return (
     <ScrollView
       ref={scrollViewRef}
-      contentContainerStyle={styles.scrollContent}
+      contentContainerStyle={[
+        styles.scrollContent,
+        showWelcome && styles.emptyScrollContainer,
+      ]}
       nativeID="chat-custom-scroll"
       style={
         Platform.OS === 'web'
@@ -411,20 +419,59 @@ export default function ChatArea({
           : undefined
       }
     >
-      {messages.map((item) => (
-        <ChatMessageItem
-          key={item.id}
-          item={item}
-          theme={theme}
-          isMobile={isMobile}
-        />
-      ))}
+      {showWelcome ? (
+        // 💡 欢迎空状态展示
+        <View style={styles.emptyContainer}>
+          <Text style={styles.welcomeEmoji}>👋</Text>
+          <Text style={[styles.welcomeTitle, { color: theme.textMain }]}>
+            你好，欢迎使用 AI 智能体
+          </Text>
+          <Text style={[styles.welcomeSubtitle, { color: theme.textMuted }]}>
+            今天有什么想探讨的课题？随时向我提问吧！
+          </Text>
+        </View>
+      ) : (
+        // 正常消息列表
+        messages.map((item) => (
+          <ChatMessageItem
+            key={item.id}
+            item={item}
+            theme={theme}
+            isMobile={isMobile}
+          />
+        ))
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   scrollContent: { padding: 16, paddingBottom: 20 },
+  // 💡 让空状态撑满整个滚动区域并垂直居中
+  emptyScrollContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  welcomeEmoji: {
+    fontSize: 42,
+    marginBottom: 12,
+  },
+  welcomeTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  welcomeSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   messageRow: {
     flexDirection: 'row',
     marginBottom: 20,

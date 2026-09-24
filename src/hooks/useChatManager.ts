@@ -13,7 +13,7 @@ export interface Message {
 export interface Conversation {
   id: string;
   title: string;
-  messages: Message[];
+  messages?: Message[];
 }
 
 const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
@@ -69,14 +69,14 @@ export function useChatManager() {
       const newConv: Conversation = {
         id: sessionData.id,
         title: sessionData.title || '',
-        messages: [
-          {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: '新会话已开启，请输入你想探讨的课题。',
-            // time: dayjs().format('HH:mm'),
-          },
-        ],
+        // messages: [
+        //   {
+        //     id: Date.now().toString(),
+        //     role: 'assistant',
+        //     content: '新会话已开启，请输入你想探讨的课题。',
+        //     // time: dayjs().format('HH:mm'),
+        //   },
+        // ],
       };
 
       setConversations((prev) => {

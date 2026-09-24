@@ -171,6 +171,7 @@ export default function ChatScreen() {
                 scrollViewRef={scrollViewRef}
                 theme={theme}
                 isMobile={isMobile}
+                isKeyboardUp={isKeyboardUp}
               />
               <ChatInputBar
                 inputText={inputText}
