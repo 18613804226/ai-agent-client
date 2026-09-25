@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import dayjs from 'dayjs';
 import { api } from '../services/api';
+import { Platform, Vibration } from 'react-native';
 
 export interface Message {
   id: string;
@@ -25,7 +26,10 @@ export function useChatManager() {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-
+  const [autoRead, setAutoRead] = useState(false);
+  const toggleAutoRead = () => {
+    setAutoRead((prev) => !prev);
+  };
   // 1. 初始化：从后端获取会话列表，并加载第一个会话的详情
   useEffect(() => {
     const initChatData = async () => {
@@ -63,45 +67,56 @@ export function useChatManager() {
 
   // 2. 创建新会话
   const handleNewChat = async () => {
+    // 1. 【乐观更新】瞬间在本地伪造一个临时会话，让 UI 零延迟响应！
+    const tempId = 'temp_' + Date.now();
+    const newConv = {
+      id: tempId,
+      title: '新对话',
+    };
+
+    // 瞬间把新会话推到最顶端并设为激活态，用户点击的一瞬间页面就变了，绝对丝滑零延迟
+    setConversations((prev) => [newConv, ...prev].slice(0, 20));
+    setActiveId(tempId);
+
     try {
+      // 2. 在后台悄悄请求后端创建真实会话
       const sessionData: any = await api.createSession();
+      const realId = sessionData.id;
 
-      const newConv: Conversation = {
-        id: sessionData.id,
-        title: sessionData.title || '',
-        // messages: [
-        //   {
-        //     id: Date.now().toString(),
-        //     role: 'assistant',
-        //     content: '新会话已开启，请输入你想探讨的课题。',
-        //     // time: dayjs().format('HH:mm'),
-        //   },
-        // ],
-      };
+      // 3. 后端返回真实 ID 后，悄悄把刚才的临时 ID 替换成真实的 ID
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === tempId
+            ? { ...c, id: realId, title: sessionData.title || '新对话' }
+            : c,
+        ),
+      );
+      setActiveId(realId);
 
-      setConversations((prev) => {
-        // 💡 先把新会话加到最前面，然后用 slice 严格限制最多保留 20 个
-        // 超过 20 个时，数组末尾最旧的会话会被自动丢弃（先进先出）
-        const updated = [newConv, ...prev];
-        return updated.length > 20 ? updated.slice(0, 20) : updated;
-      });
-
-      setActiveId(sessionData.id);
-      return sessionData.id;
+      return realId;
     } catch (error) {
       console.error('创建会话失败', error);
+      // 如果后端真的报错了，再把刚才那个临时加的删掉回滚
+      setConversations((prev) => prev.filter((c) => c.id !== tempId));
     }
   };
 
   // 3. 切换会话：点击左侧历史记录时，按需从后端加载该会话的详情消息
+  // 1. 单独用一个状态存当前窗口的消息，而不是去改整个 conversations 列表
+  // const [currentMessages, setCurrentMessages] = useState<any[]>([]);
+
+  // 3. 切换会话：点击左侧历史记录时，按需从后端加载该会话的详情消息
   const handleSelectChat = async (id: string) => {
-    setActiveId(id);
+    setActiveId(id); // 瞬间激活该会话
+
     try {
+      // 请求后端获取该会话的完整消息详情
       const detail: any = await api.getSessionDetail(id);
+      const messages = detail.messages || [];
+
+      // 💡 核心修复：把获取到的消息安全地写回到 conversations 对应的会话中！
       setConversations((prev) =>
-        prev.map((conv) =>
-          conv.id === id ? { ...conv, messages: detail.messages || [] } : conv,
-        ),
+        prev.map((c) => (c.id === id ? { ...c, messages: messages } : c)),
       );
     } catch (error) {
       console.error('获取会话详情失败:', error);
@@ -113,7 +128,6 @@ export function useChatManager() {
     if (e && typeof e.stopPropagation === 'function') {
       e.stopPropagation();
     }
-
     try {
       await api.deleteSession(id);
     } catch (error) {
@@ -178,7 +192,7 @@ export function useChatManager() {
 
         return {
           ...conv,
-          messages: conv.messages.map((msg) =>
+          messages: (conv.messages || []).map((msg) =>
             msg.id === msgId ? { ...msg, ...fields } : msg,
           ),
         };
@@ -318,7 +332,7 @@ export function useChatManager() {
     const currentConv = conversations.find(
       (c: any) => c.id === currentActiveId,
     );
-    const isFirst = !currentConv || currentConv.messages.length <= 2;
+    const isFirst = !currentConv || (currentConv.messages?.length || 0) <= 2;
 
     // 直接用 currentInput 算
     const updatedTitle =
@@ -335,7 +349,7 @@ export function useChatManager() {
         const newConv = {
           ...targetConv,
           title: updatedTitle,
-          messages: [...targetConv.messages, userMsg, thinkingMsg],
+          messages: [...(targetConv.messages || []), userMsg, thinkingMsg],
         };
 
         const nextPrev = [...prev];
@@ -399,8 +413,12 @@ export function useChatManager() {
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
+      if (Platform.OS !== 'web') {
+        Vibration.vibrate(100); // 震动 100 毫秒
+      }
     }
   };
+
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -421,5 +439,8 @@ export function useChatManager() {
     handleDeleteChat,
     handleSend,
     handleStopGeneration,
+    autoRead,
+    setAutoRead,
+    toggleAutoRead,
   };
 }

@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
-
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 interface UploadedFile {
   id: string;
   name: string;
@@ -27,6 +29,50 @@ interface SidebarProps {
   onDeleteFile: (id: string) => void;
 }
 
+// 💡 统一的 Hover 组件：全部采用“新建对话按钮”同款的悬停变色逻辑（悬停时叠加统一的半透明遮罩/高亮层）
+interface HoverItemProps {
+  style?: any;
+  hoverBg?: string;
+  onPress?: () => void;
+  activeOpacity?: number;
+  children: React.ReactNode;
+  [key: string]: any;
+}
+
+function HoverTouchable({
+  style,
+  hoverBg = 'rgba(0, 0, 0, 0.06)', // 默认采用新建对话同款的轻量悬停加深/提亮效果
+  onPress,
+  activeOpacity = 0.7,
+  children,
+  ...props
+}: HoverItemProps) {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <TouchableOpacity
+      style={[
+        style,
+        Platform.OS === 'web' && {
+          transitionProperty: 'background-color',
+          transitionDuration: '0.15s',
+          transitionTimingFunction: 'ease',
+          cursor: 'pointer',
+        },
+        Platform.OS === 'web' && isHovered && { backgroundColor: hoverBg },
+      ]}
+      onPress={onPress}
+      activeOpacity={activeOpacity}
+      // @ts-ignore
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      {...props}
+    >
+      {children}
+    </TouchableOpacity>
+  );
+}
+
 export default function Sidebar({
   conversations,
   activeId,
@@ -40,34 +86,41 @@ export default function Sidebar({
   onUploadFile,
   onDeleteFile,
 }: SidebarProps) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={[styles.sidebarInner, { backgroundColor: theme.bgSidebar }]}>
-      {/* 1. 顶部：新建对话按钮 (统一圆角与高度) */}
+    <View
+      style={[
+        styles.sidebarInner,
+        { backgroundColor: theme.bgSidebar },
+        {
+          paddingTop: Platform.OS === 'web' ? 40 : insets.top + 10,
+        },
+      ]}
+    >
+      {/* 1. 顶部：新建对话按钮 */}
       <View style={styles.sidebarTop}>
-        <TouchableOpacity
+        <HoverTouchable
           style={[styles.newChatBtn, { backgroundColor: theme.btnBg }]}
+          hoverBg={theme.historyActiveBg}
           onPress={onNewChat}
-          activeOpacity={0.8}
         >
           <Text style={[styles.newChatBtnText, { color: theme.btnText }]}>
             + 发起新对话
           </Text>
-        </TouchableOpacity>
+        </HoverTouchable>
       </View>
 
-      {/* 2. 中部：知识库上传区块 (优化卡片质感) */}
-      <TouchableOpacity
-        activeOpacity={0.7}
+      {/* 2. 中部：知识库上传区块 */}
+      <HoverTouchable
+        style={[styles.uploadSection, { borderColor: theme.uploadBorder }]}
+        hoverBg={theme.historyActiveBg}
         onPress={onUploadFile}
-        style={[
-          styles.uploadSection,
-          { borderColor: theme.uploadBorder || '#3b82f6' },
-        ]}
       >
         <Text style={[styles.uploadText, { color: theme.textMain }]}>
           📁 知识库上传
         </Text>
-      </TouchableOpacity>
+      </HoverTouchable>
 
       {/* 3. 已上传文件列表展示区 */}
       {uploadedFiles && uploadedFiles.length > 0 && (
@@ -80,7 +133,7 @@ export default function Sidebar({
             showsVerticalScrollIndicator={false}
           >
             {uploadedFiles.map((file) => (
-              <View
+              <HoverTouchable
                 key={file.id}
                 style={[
                   styles.fileItem,
@@ -89,6 +142,8 @@ export default function Sidebar({
                       theme.historyActiveBg || 'rgba(255,255,255,0.05)',
                   },
                 ]}
+                hoverBg="rgba(150, 150, 150, 0.15)"
+                activeOpacity={1}
               >
                 <Text
                   style={[styles.fileText, { color: theme.textMain }]}
@@ -103,10 +158,21 @@ export default function Sidebar({
                   <Text
                     style={[styles.deleteBtnText, { color: theme.textMuted }]}
                   >
-                    ×
+                    <Svg
+                      width={14}
+                      height={14}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke={theme.textMuted} // 直接用你的主题色
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <Path d="M18 6L6 18M6 6l12 12" />
+                    </Svg>
                   </Text>
                 </TouchableOpacity>
-              </View>
+              </HoverTouchable>
             ))}
           </ScrollView>
         </View>
@@ -124,14 +190,14 @@ export default function Sidebar({
           {conversations.map((conv) => {
             const isActive = conv.id === activeId;
             return (
-              <TouchableOpacity
+              <HoverTouchable
                 key={conv.id}
                 style={[
                   styles.historyItem,
                   isActive && { backgroundColor: theme.historyActiveBg },
                 ]}
+                hoverBg={theme.historyActiveBg}
                 onPress={() => onSelectChat(conv.id)}
-                activeOpacity={0.7}
               >
                 <Text
                   style={[
@@ -147,18 +213,41 @@ export default function Sidebar({
                 >
                   {conv.title}
                 </Text>
-                <TouchableOpacity
+
+                {/* 💡 方案：用 HoverTouchable 包裹删除按钮，或者让删除按钮自身响应悬停 */}
+                <HoverTouchable
                   style={styles.deleteBtn}
-                  onPress={(e) => onDeleteChat(e, conv.id)}
+                  onPress={() => onDeleteChat(null, conv.id)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  // 鼠标移到删除按钮上时，让背景微微亮起（可选）
+                  hoverBg={theme.deleteHoverBg || 'rgba(255, 0, 0, 0.1)'}
                 >
-                  <Text
-                    style={[styles.deleteBtnText, { color: theme.textMuted }]}
+                  {/* 使用函数返回或者利用子组件状态，但在简易封装中，
+                      最简单的办法是：如果 HoverTouchable 不支持直接传 hover 状态给子组件，
+                      我们可以写一个内联的 Web 态 hover 样式，或者把 SVG 的颜色交由外部控制 */}
+                  <Svg
+                    width={14}
+                    height={14}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    // 💡 如果当前会话是高亮态，图标用激活色；平时用 muted 色。
+                    // Web 端如果想要更细致的 hover 变色，可以通过下面的样式 Hack 搞定
+                    stroke={
+                      isActive ? theme.historyActiveText : theme.textMuted
+                    }
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={
+                      Platform.OS === 'web'
+                        ? ({ cursor: 'pointer' } as any)
+                        : undefined
+                    }
                   >
-                    ×
-                  </Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
+                    <Path d="M18 6L6 18M6 6l12 12" />
+                  </Svg>
+                </HoverTouchable>
+              </HoverTouchable>
             );
           })}
         </ScrollView>
@@ -171,16 +260,16 @@ export default function Sidebar({
           { borderTopColor: theme.border || 'rgba(255,255,255,0.1)' },
         ]}
       >
-        <TouchableOpacity
+        <HoverTouchable
           style={styles.footerItem}
+          hoverBg={theme.historyActiveBg}
           onPress={onToggleTheme}
-          activeOpacity={0.7}
         >
           <Text style={{ fontSize: 16 }}>{isDarkMode ? '🌞' : '🌙'}</Text>
           <Text style={[styles.footerText, { color: theme.textMain }]}>
             {isDarkMode ? '浅色模式' : '暗黑模式'}
           </Text>
-        </TouchableOpacity>
+        </HoverTouchable>
         <View style={styles.userProfile}>
           <View style={styles.avatarMini}>
             <Text style={styles.avatarMiniText}>王</Text>
@@ -209,7 +298,7 @@ const styles = StyleSheet.create({
   newChatBtn: {
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 16, // 统一精致圆角
+    borderRadius: 16,
     alignItems: 'center',
   },
   newChatBtnText: {
@@ -275,11 +364,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   deleteBtn: {
-    padding: 2,
+    padding: 3,
     marginLeft: 6,
+    borderRadius: 12,
   },
   deleteBtnText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
   },
   sidebarFooter: {
@@ -292,7 +382,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 8,
-    borderRadius: 16,
+    borderRadius: 14,
   },
   footerText: {
     fontSize: 14,

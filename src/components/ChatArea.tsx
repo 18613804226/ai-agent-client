@@ -18,7 +18,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { MyToast } from './GlobalToast';
-
+import * as Speech from 'expo-speech';
 interface ChatAreaProps {
   messages: any[];
   scrollViewRef: React.RefObject<ScrollView>;
@@ -141,18 +141,18 @@ function CopyButton({ content, theme }: { content: string; theme: any }) {
     }
   }, [isHovered]);
 
-  const tooltipAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: tooltipProgress.value,
-      transform: [
-        { translateY: (1 - tooltipProgress.value) * 4 }, // 微妙的上浮下沉
-        { scale: 0.92 + tooltipProgress.value * 0.08 },
-      ],
-      // 动画完全消失时自动关闭 pointerEvents，防止不可见时阻挡鼠标
-      pointerEvents:
-        tooltipProgress.value === 0 ? ('none' as const) : ('auto' as const),
-    };
-  });
+  // const tooltipAnimatedStyle = useAnimatedStyle(() => {
+  //   return {
+  //     opacity: tooltipProgress.value,
+  //     transform: [
+  //       { translateY: (1 - tooltipProgress.value) * 4 }, // 微妙的上浮下沉
+  //       { scale: 0.92 + tooltipProgress.value * 0.08 },
+  //     ],
+  //     // 动画完全消失时自动关闭 pointerEvents，防止不可见时阻挡鼠标
+  //     pointerEvents:
+  //       tooltipProgress.value === 0 ? ('none' as const) : ('auto' as const),
+  //   };
+  // });
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(content);
@@ -216,7 +216,7 @@ function CopyButton({ content, theme }: { content: string; theme: any }) {
       </TouchableOpacity>
 
       {/* 💡 动画提示框 */}
-      <Animated.View
+      {/* <Animated.View
         style={[
           styles.tooltipBox,
           {
@@ -226,8 +226,165 @@ function CopyButton({ content, theme }: { content: string; theme: any }) {
         ]}
       >
         <Text style={styles.tooltipText}>复制代码</Text>
-      </Animated.View>
+      </Animated.View> */}
     </View>
+  );
+}
+
+// 静止状态喇叭图标 (SVG)
+const IconSpeaker = ({ color }: { color: string }) => (
+  <Svg
+    width={14}
+    height={14}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07" />
+  </Svg>
+);
+// 🔇 静止/禁用状态的斜杠喇叭图标 (SVG)
+const IconMuteSpeaker = ({ color }: { color: string }) => (
+  <Svg
+    width={16}
+    height={16}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    {/* 喇叭主体 */}
+    <Path d="M11 5L6 9H2v6h4l5 4V5z" />
+    {/* 斜杠符号 */}
+    <Path d="M23 9l-6 6M17 9l6 6" />
+  </Svg>
+);
+// 播放状态喇叭图标 (SVG - 示例，旁边加了三道声波)
+const IconPlaying = ({ color }: { color: string }) => (
+  <Svg
+    width={16}
+    height={16}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14M17.32 6.68a7.5 7.5 0 0 1 0 10.6" />
+  </Svg>
+);
+
+// --- 主组件 ---
+interface SpeakButtonProps {
+  content: string;
+  theme: any;
+  // 💡 关键优化：每个按钮需要一个唯一 ID（如消息 ID），
+  // 这样才能精确控制是哪一个按钮变动，防止列表滚动复用导致的 UI 错乱
+  messageId: string;
+}
+
+// 导出并在外部维护一个全局状态，用来记录当前是哪个 ID 在播放
+let currentlyPlayingId: string | null = null;
+
+export function SpeakButton({ content, theme, messageId }: SpeakButtonProps) {
+  // 💡 本地状态：当前按钮是否处于播放状态
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // 当组件挂载或卸载时，或者全局播放 ID 变动时，检查自己的状态
+  useEffect(() => {
+    // 检查全局状态，如果当前播放的 ID 不是自己，强制把自己设为静止
+    if (currentlyPlayingId !== messageId && isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [currentlyPlayingId, messageId, isPlaying]);
+
+  const handleToggleSpeech = async () => {
+    if (isPlaying) {
+      // 如果已经在播放，点击则停止
+      await Speech.stop();
+      setIsPlaying(false);
+      currentlyPlayingId = null;
+    } else {
+      // 💡 如果是静止状态，点击则开始播放
+
+      // 0. 先停止可能存在的其他朗读
+      await Speech.stop();
+
+      // 1. 更新全局状态和本地 UI
+      currentlyPlayingId = messageId;
+      setIsPlaying(true);
+
+      // 2. 开始朗读
+      Speech.speak(content, {
+        language: 'zh-CN',
+        pitch: 1.0,
+        rate: 1.0,
+
+        // 💡 核心回调：朗读完成时触发
+        onDone: () => {
+          console.log(`朗读完成: ${messageId}`);
+          setIsPlaying(false);
+          if (currentlyPlayingId === messageId) {
+            currentlyPlayingId = null;
+          }
+        },
+        // 💡 核心回调：朗读出错时触发
+        onError: (err) => {
+          console.error(`朗读出错: ${messageId}`, err);
+          setIsPlaying(false);
+          if (currentlyPlayingId === messageId) {
+            currentlyPlayingId = null;
+          }
+        },
+      });
+    }
+  };
+
+  // 根据 isPlaying 状态动态选择图标和文字颜色
+  const iconColor = isPlaying ? theme.historyActiveText : theme.textMuted;
+  const textColor = isPlaying ? theme.historyActiveText : theme.textMuted;
+  const bgColor = isPlaying ? 'rgba(29, 161, 242, 0.1)' : 'transparent'; // 播放时加个微弱背景高亮
+
+  return (
+    <TouchableOpacity
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 4,
+          paddingHorizontal: 6,
+          marginLeft: 8,
+          borderRadius: 12, // 配合背景色
+        },
+        Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : undefined,
+        { backgroundColor: bgColor },
+      ]}
+      onPress={handleToggleSpeech}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      {/* 💡 根据状态切换图标 */}
+      {isPlaying ? (
+        <IconPlaying color={iconColor} />
+      ) : (
+        <IconMuteSpeaker color={iconColor} />
+      )}
+      <Text
+        style={{
+          fontSize: 12,
+          color: textColor,
+          marginLeft: 6,
+          fontWeight: isPlaying ? '600' : '400',
+        }}
+      >
+        {/* {isPlaying ? '正在播放' : '朗读'} */}
+      </Text>
+    </TouchableOpacity>
   );
 }
 // 💡 1. 将单条消息抽离为独立组件，并用 React.memo 做性能优化
@@ -365,7 +522,16 @@ const ChatMessageItem = memo(
 
           <View style={styles.footerRow}>
             {!isUser && !isThinking && (
-              <CopyButton content={item.content} theme={theme} />
+              <>
+                {/* 1. 原本的复制按钮 */}
+                <CopyButton content={item.content} theme={theme} />
+                {/* 💡 2. 新增的朗读按钮（和复制按钮并排） */}
+                <SpeakButton
+                  content={item.content}
+                  theme={theme}
+                  messageId={item.id} // 确保你的 Message 对象里有唯一的 id 字段
+                />
+              </>
             )}
           </View>
         </View>
@@ -389,26 +555,36 @@ export default function ChatArea({
   isMobile = false,
   isKeyboardUp = false,
 }: ChatAreaProps) {
-  const prevMessagesLengthRef = useRef(messages.length);
+  // const prevMessagesLengthRef = useRef(messages.length);
+  // useEffect(() => {
+  //   const currentLength = messages.length;
+  //   if (currentLength > prevMessagesLengthRef.current) {
+  //     scrollViewRef.current?.scrollToEnd({ animated: true });
+  //   }
+  //   prevMessagesLengthRef.current = currentLength;
+  // }, [messages]);
 
+  // 💡 核心修复：不管是组件因切换重新挂载，还是 messages 内容发生增加，都稳稳滚到底部
   useEffect(() => {
-    const currentLength = messages.length;
-    if (currentLength > prevMessagesLengthRef.current) {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }
-    prevMessagesLengthRef.current = currentLength;
-  }, [messages]);
+    // 使用双重 requestAnimationFrame / setTimeout，确保 DOM/Layout 渲染完成后再计算高度并滚动
+    const timer = setTimeout(() => {
+      if (scrollViewRef.current) {
+        scrollViewRef.current.scrollToEnd({ animated: true });
+      }
+    }, 60);
 
+    return () => clearTimeout(timer);
+  }, [messages]); // 只要 messages 变动（包括切会话引发的列表替换）就会触发
   // 判断是否处于没有对话的空状态
   // const isEmpty = !messages || messages.length === 0;
   const showWelcome = (!messages || messages.length === 0) && !isKeyboardUp;
   return (
     <ScrollView
       ref={scrollViewRef}
-      contentContainerStyle={[
-        styles.scrollContent,
-        showWelcome && styles.emptyScrollContainer,
-      ]}
+      // 💡 关键修改：不论是不是空状态，都不要给 contentContainerStyle 加 flex: 1！
+      contentContainerStyle={styles.scrollContent}
+      // 💡 加上这一行：当内容不够一屏时，禁止无意义的上下弹性滚动（消灭滑动的根源）
+      alwaysBounceVertical={false}
       nativeID="chat-custom-scroll"
       style={
         Platform.OS === 'web'
@@ -446,16 +622,17 @@ export default function ChatArea({
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { padding: 16, paddingBottom: 20 },
-  // 💡 让空状态撑满整个滚动区域并垂直居中
-  emptyScrollContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 20,
+    // 💡 如果空状态需要居中，在这里通过flexGrow控制，但绝对不要设 flex: 1 导致可滚动
   },
+  // ❌ 把旧的 emptyScrollContainer 删掉，换成下面这个不会引起多余滚动的空状态样式：
   emptyContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 24,
+    paddingTop: 240, // 用固定的顶部间距让它好看地居中，绝不触发 ScrollView 滚动
   },
   welcomeEmoji: {
     fontSize: 42,

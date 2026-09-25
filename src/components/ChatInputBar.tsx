@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,6 +6,10 @@ import {
   TextInput,
   TouchableOpacity,
   Platform,
+  Keyboard,
+  Image,
+  ScrollView,
+  useWindowDimensions, // 💡 引入窗口尺寸 Hook
 } from 'react-native';
 
 if (Platform.OS === 'web') {
@@ -36,10 +40,13 @@ interface ChatInputBarProps {
   inputText: string;
   setInputText: (text: string) => void;
   onSend: () => void;
-  onStop: () => void; // 💡 1. 引入停止回调
-  isGenerating: boolean; // 💡 2. 引入是否正在生成的状态
+  onStop: () => void;
+  isGenerating: boolean;
   theme: any;
   isKeyboardUp: boolean;
+  selectedImages?: string[];
+  setSelectedImages?: (images: string[]) => void;
+  onPickImage?: () => void;
 }
 
 export default function ChatInputBar({
@@ -50,46 +57,148 @@ export default function ChatInputBar({
   isGenerating,
   theme,
   isKeyboardUp = false,
+  selectedImages = [],
+  setSelectedImages = () => {},
+  onPickImage,
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false);
-  const hasText = Boolean(inputText.trim());
 
-  // 💡 3. 如果正在生成，按钮表现为“停止”状态；否则根据有没有文字决定发送状态
+  // 💡 1. 引入屏幕宽度和端判断逻辑
+  const { width } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isDesktopWeb = isWeb && width >= 768; // 屏幕宽度 >= 768px 视为桌面端 Web
+
+  const hasText = Boolean(inputText.trim());
+  const hasImages = selectedImages.length > 0;
+
+  const canSubmit = (hasText || hasImages) && !isGenerating;
+
   const buttonBg = isGenerating
-    ? '#ef4444' // 正在生成时显示醒目的红色/停止色
-    : !hasText
+    ? '#ef4444'
+    : !canSubmit
       ? theme.sendBtnDisabled
       : isHovered
         ? theme.sendBtnHover
         : theme.sendBtnActive;
 
+  // 移除某张已选择的图片
+  const handleRemoveImage = (index: number) => {
+    const newImages = selectedImages.filter((_, i) => i !== index);
+    setSelectedImages(newImages);
+  };
+
+  // 💡 2. 核心：仅在桌面端 Web（isDesktopWeb）开启剪贴板粘贴监听
+  const inputRef = useRef<any>(null);
+  useEffect(() => {
+    if (isDesktopWeb && inputRef.current) {
+      const nativeElement = inputRef.current;
+
+      const handleDOMPaste = (e: ClipboardEvent) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            const blob = items[i].getAsFile();
+            if (blob) {
+              e.preventDefault();
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const base64String = event.target?.result as string;
+                if (base64String) {
+                  setSelectedImages([...selectedImages, base64String]);
+                }
+              };
+              reader.readAsDataURL(blob);
+            }
+          }
+        }
+      };
+
+      nativeElement.addEventListener('paste', handleDOMPaste as EventListener);
+      return () => {
+        nativeElement.removeEventListener(
+          'paste',
+          handleDOMPaste as EventListener,
+        );
+      };
+    }
+  }, [isDesktopWeb, selectedImages, setSelectedImages]);
+
   return (
     <View style={styles.inputAreaWrapper}>
+      {/* 图片预览区域 */}
+      {selectedImages.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.previewContainer}
+          contentContainerStyle={styles.previewContentContainer}
+        >
+          {selectedImages.map((imgUri, index) => (
+            <View key={index} style={styles.previewItem}>
+              <Image source={{ uri: imgUri }} style={styles.previewImage} />
+              <TouchableOpacity
+                style={styles.deleteBadge}
+                onPress={() => handleRemoveImage(index)}
+              >
+                <Text style={styles.deleteBadgeText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
       <View
         style={[
           styles.inputBar,
           { backgroundColor: theme.inputBg, borderColor: theme.border },
         ]}
       >
+        {/* 💡 3. 灵活控制：如果不是桌面端Web（即 H5网页 或 App），或者你希望两端都有加号按钮，可在此显示 */}
+        {(!isDesktopWeb || onPickImage) && (
+          <TouchableOpacity
+            style={styles.attachButton}
+            onPress={onPickImage}
+            disabled={isGenerating}
+          >
+            <Text style={[styles.attachButtonText, { color: theme.textMuted }]}>
+              +
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <TextInput
-          style={[styles.input, { color: theme.textMain }]}
-          placeholder={isGenerating ? 'AI 正在思考中...' : '问问 AI 智能体...'}
+          ref={inputRef}
+          style={[
+            styles.input,
+            { color: theme.textMain },
+            !isDesktopWeb || onPickImage ? { paddingLeft: 4 } : {},
+          ]}
+          placeholder={
+            isGenerating
+              ? 'AI 正在思考中...'
+              : isDesktopWeb
+                ? '问问 AI 智能体或直接粘贴图片...'
+                : '问问 AI 智能体...'
+          }
           placeholderTextColor={theme.textMuted}
           value={inputText}
           onChangeText={setInputText}
-          editable={!isGenerating} // 💡 正在生成时可以锁定输入框或保持可输入
+          editable={!isGenerating}
           multiline
           textAlignVertical="center"
           // @ts-ignore
           onKeyPress={(e: any) => {
-            if (Platform.OS === 'web' && e.key === 'Enter' && !e.shiftKey) {
+            if (isWeb && e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              if (hasText && !isGenerating) {
+              if (canSubmit) {
                 onSend();
               }
             }
           }}
         />
+
         <TouchableOpacity
           style={[
             styles.sendButton,
@@ -100,29 +209,38 @@ export default function ChatInputBar({
                   transitionProperty: 'background-color, transform',
                   transitionDuration: '0.2s',
                   transitionTimingFunction: 'ease',
-                  cursor: isGenerating || hasText ? 'pointer' : 'default',
+                  cursor: isGenerating || canSubmit ? 'pointer' : 'default',
                 },
-                isHovered && (hasText || isGenerating)
+                isHovered && (canSubmit || isGenerating)
                   ? { transform: [{ scale: 1.05 }] }
                   : {},
               ] as any,
               default: [],
             }),
           ]}
-          onPress={isGenerating ? onStop : onSend} // 💡 4. 根据状态决定是触发“停止”还是“发送”
-          disabled={!isGenerating && !hasText}
+          onPress={() => {
+            if (isGenerating) {
+              onStop();
+            } else {
+              Keyboard.dismiss();
+              onSend();
+            }
+          }}
+          disabled={!isGenerating && !canSubmit}
           activeOpacity={0.8}
           // @ts-ignore
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          {/* 💡 5. 正在生成时显示停止图标 ■，平时显示发送箭头 ↑ */}
           <Text style={styles.sendButtonText}>{isGenerating ? '■' : '↑'}</Text>
         </TouchableOpacity>
       </View>
+
       {!isKeyboardUp ? (
         <Text style={[styles.footerTip, { color: theme.textMuted }]}>
-          AI 智能体可能会产生错误信息。
+          {isDesktopWeb
+            ? 'AI 智能体可能会产生错误信息。支持直接粘贴截图。'
+            : 'AI 智能体可能会产生错误信息。'}
         </Text>
       ) : null}
     </View>
@@ -135,7 +253,48 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 8,
   },
+  previewContainer: {
+    maxHeight: 80,
+    marginBottom: 8,
+  },
+  previewContentContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  previewItem: {
+    position: 'relative',
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f3f4f6',
+    overflow: 'hidden',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  deleteBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   inputBar: {
+    position: 'relative',
+    minHeight: 56,
     flexDirection: 'row',
     borderWidth: 1,
     borderRadius: 24,
@@ -147,12 +306,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
+    paddingRight: 56,
+  },
+  attachButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    backgroundColor: 'rgba(150, 150, 150, 0.1)',
+  },
+  attachButtonText: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: -3,
   },
   input: {
     flex: 1,
     maxHeight: 280,
     fontSize: 15,
-    // lineHeight: 34,
     paddingTop: Platform.OS === 'ios' ? 4 : 2,
     paddingBottom: Platform.OS === 'ios' ? 4 : 2,
     textAlignVertical: 'center',
@@ -169,12 +342,14 @@ const styles = StyleSheet.create({
     }),
   },
   sendButton: {
+    position: 'absolute',
+    right: 7,
+    bottom: 7,
     width: 40,
     height: 40,
     borderRadius: 19,
     justifyContent: 'center',
     alignItems: 'center',
-    // marginBottom: 1.5,
   },
   sendButtonText: {
     color: '#FFFFFF',
