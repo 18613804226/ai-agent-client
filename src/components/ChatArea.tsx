@@ -5,7 +5,7 @@ import React, {
   useState,
   useCallback,
   useMemo,
-} from 'react';
+} from "react";
 import {
   StyleSheet,
   Text,
@@ -14,24 +14,25 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Platform,
-} from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import Svg, { Path, Rect } from 'react-native-svg';
-import Markdown from 'react-native-markdown-display';
+} from "react-native";
+import * as Clipboard from "expo-clipboard";
+import Svg, { Path, Rect } from "react-native-svg";
+import Markdown from "react-native-markdown-display";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   Easing,
-} from 'react-native-reanimated';
-import { MyToast } from './GlobalToast';
-import { useChat } from '../../app/_layout';
-import { Audio } from 'expo-av';
-import { api } from '../services/api';
+} from "react-native-reanimated";
+import { MyToast } from "./GlobalToast";
+import { useChat } from "../../app/_layout";
+import { playText, stopSpeech } from "../services/speechPlayer";
+import { api } from "../services/api";
+
 // ===================== 类型定义 =====================
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   thought?: string;
   isStreaming?: boolean;
@@ -61,6 +62,7 @@ interface ChatAreaProps {
   isKeyboardUp?: boolean;
   activeId: string;
   streamingRenderMsg?: StreamingRenderMsg | null;
+  autoRead?: boolean; // 💡 新增：自动朗读开关
 }
 
 interface ThoughtCollapsibleProps {
@@ -87,7 +89,7 @@ const ThoughtCollapsible = memo(
       opacity: progress.value,
       transform: [{ translateY: (1 - progress.value) * -8 }],
       maxHeight: progress.value * 600,
-      overflow: 'hidden' as const,
+      overflow: "hidden" as const,
     }));
 
     const arrowAnimatedStyle = useAnimatedStyle(() => ({
@@ -101,8 +103,8 @@ const ThoughtCollapsible = memo(
           {
             borderColor: theme.border,
             backgroundColor: theme.isDark
-              ? 'rgba(255,255,255,0.03)'
-              : 'rgba(0,0,0,0.03)',
+              ? "rgba(255,255,255,0.03)"
+              : "rgba(0,0,0,0.03)",
           },
         ]}
       >
@@ -118,7 +120,7 @@ const ThoughtCollapsible = memo(
             <Text
               style={{ color: theme.textMuted, fontSize: 12, marginRight: 4 }}
             >
-              {isOpen ? '收起' : '展开'}
+              {isOpen ? "收起" : "展开"}
             </Text>
             <Animated.View style={arrowAnimatedStyle}>
               <Svg width="12" height="12" viewBox="0 0 24 24" fill="none">
@@ -160,7 +162,7 @@ const CopyButton = memo(
 
     const handleCopy = async () => {
       await Clipboard.setStringAsync(content);
-      MyToast.show('已复制到剪贴板');
+      MyToast.show("已复制到剪贴板");
     };
 
     return (
@@ -176,8 +178,8 @@ const CopyButton = memo(
             styles.copyIconBtn,
             isHovered && {
               backgroundColor: theme.isDark
-                ? 'rgba(255, 255, 255, 0.15)'
-                : 'rgba(0, 0, 0, 0.1)',
+                ? "rgba(255, 255, 255, 0.15)"
+                : "rgba(0, 0, 0, 0.1)",
             },
           ]}
           onPress={handleCopy}
@@ -260,104 +262,30 @@ const SpeakButton = memo(
     setPlayingMsgId,
   }: SpeakButtonProps) {
     const isPlaying = playingMsgId === messageId;
-    const soundRef = useRef<any>(null);
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-      return () => {
-        // 卸载时停止
-        if (soundRef.current) {
-          try {
-            if (Platform.OS === 'web') {
-              soundRef.current.pause?.();
-              soundRef.current.src = '';
-            } else {
-              soundRef.current.unloadAsync?.().catch(() => {});
-            }
-          } catch {}
-          soundRef.current = null;
-        }
-      };
-    }, []);
-
-    const stopCurrent = async () => {
-      if (soundRef.current) {
-        try {
-          if (Platform.OS === 'web') {
-            soundRef.current.pause?.();
-            soundRef.current.currentTime = 0;
-            soundRef.current.src = '';
-          } else {
-            await soundRef.current.stopAsync?.();
-            await soundRef.current.unloadAsync?.();
-          }
-        } catch {}
-        soundRef.current = null;
-      }
-      setPlayingMsgId(null);
-    };
-
-    const playOnWeb = (uri: string) => {
-      const audio = new window.Audio(uri);
-      audio.onended = () => {
-        setPlayingMsgId(null);
-        soundRef.current = null;
-      };
-      audio.onerror = (e) => {
-        setPlayingMsgId(null);
-        soundRef.current = null;
-        MyToast.show('播放失败');
-        console.error('Audio error:', e, 'readyState:', audio.readyState);
-      };
-      soundRef.current = audio;
-      return audio.play();
-    };
-
-    const playOnNative = async (uri: string) => {
-      // 运行时再加载，避免 Web 打包时报错
-      const { Audio } = require('expo-av');
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-      });
-      const { sound } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: true },
-        (status: any) => {
-          if (!status.isLoaded) return;
-          if (status.didJustFinish) {
-            setPlayingMsgId(null);
-            sound.unloadAsync().catch(() => {});
-            soundRef.current = null;
-          }
-        },
-      );
-      soundRef.current = sound;
-    };
-
     const handleToggleSpeech = async () => {
+      // 正在播这条 → 停止
       if (isPlaying) {
-        await stopCurrent();
+        stopSpeech();
+        setPlayingMsgId(null);
         return;
       }
-
-      await stopCurrent();
-
+      // 先停掉其他播放（包括自动朗读正在播的内容）
+      stopSpeech();
       try {
         setLoading(true);
         setPlayingMsgId(messageId);
-
-        const data = await api.textToSpeech(content, 'longanyang');
-        const audioUri = data.url;
-
-        if (Platform.OS === 'web') {
-          await playOnWeb(audioUri);
-        } else {
-          await playOnNative(audioUri);
-        }
+        await playText(content, {
+          fetchUrl: async (sentence) => {
+            const data = await api.textToSpeech(sentence, "longwanjun_v3");
+            return data.url;
+          },
+          onEnd: () => setPlayingMsgId(null),
+        });
       } catch (err) {
-        console.error('通义 TTS 播放失败:', err);
-        MyToast.show('语音合成失败，请稍后重试');
+        console.error("通义 TTS 播放失败:", err);
+        MyToast.show("语音合成失败，请稍后重试");
         setPlayingMsgId(null);
       } finally {
         setLoading(false);
@@ -367,20 +295,20 @@ const SpeakButton = memo(
     const iconColor =
       isPlaying || loading ? theme.historyActiveText : theme.textMuted;
     const bgColor =
-      isPlaying || loading ? 'rgba(29, 161, 242, 0.1)' : 'transparent';
+      isPlaying || loading ? "rgba(29, 161, 242, 0.1)" : "transparent";
 
     return (
       <TouchableOpacity
         style={[
           {
-            flexDirection: 'row',
-            alignItems: 'center',
+            flexDirection: "row",
+            alignItems: "center",
             paddingVertical: 4,
             paddingHorizontal: 6,
             marginLeft: 8,
             borderRadius: 12,
           },
-          Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : undefined,
+          Platform.OS === "web" ? ({ cursor: "pointer" } as any) : undefined,
           { backgroundColor: bgColor },
         ]}
         onPress={handleToggleSpeech}
@@ -421,15 +349,15 @@ const ChatMessageItem = memo(
     playingMsgId: string | null;
     setPlayingMsgId: (id: string | null) => void;
   }) => {
-    const isUser = item.role === 'user';
-    const hasContent = !!(item.content && item.content !== '...');
+    const isUser = item.role === "user";
+    const hasContent = !!(item.content && item.content !== "...");
     const hasThought = !!item.thought;
     const isThinking = !isUser && !hasContent && !hasThought;
 
     const bubbleStyle = useMemo(
       () => [
         styles.bubble,
-        { maxWidth: '100%' as const },
+        { maxWidth: "100%" as const },
         isUser
           ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
           : [
@@ -446,11 +374,11 @@ const ChatMessageItem = memo(
     const dynamicMarkdownStyles = useMemo(
       () => ({
         body: { fontSize: 15, lineHeight: 22, color: theme.textMain },
-        strong: { fontWeight: 'bold' as const, color: theme.textMain },
+        strong: { fontWeight: "bold" as const, color: theme.textMain },
         paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
         heading1: {
           fontSize: 20,
-          fontWeight: 'bold' as const,
+          fontWeight: "bold" as const,
           color: theme.textMain,
           marginTop: 14,
           marginBottom: 6,
@@ -458,7 +386,7 @@ const ChatMessageItem = memo(
         },
         heading2: {
           fontSize: 18,
-          fontWeight: 'bold' as const,
+          fontWeight: "bold" as const,
           color: theme.textMain,
           marginTop: 12,
           marginBottom: 6,
@@ -466,7 +394,7 @@ const ChatMessageItem = memo(
         },
         heading3: {
           fontSize: 16,
-          fontWeight: 'bold' as const,
+          fontWeight: "bold" as const,
           color: theme.textMain,
           marginTop: 10,
           marginBottom: 4,
@@ -474,8 +402,8 @@ const ChatMessageItem = memo(
         },
         code_inline: {
           backgroundColor: theme.isDark
-            ? 'rgba(255,255,255,0.1)'
-            : 'rgba(0,0,0,0.06)',
+            ? "rgba(255,255,255,0.1)"
+            : "rgba(0,0,0,0.06)",
           color: theme.textMain,
           borderRadius: 4,
           paddingHorizontal: 4,
@@ -483,27 +411,27 @@ const ChatMessageItem = memo(
           fontSize: 14,
         },
         fence: {
-          backgroundColor: theme.isDark ? '#000' : '#eee',
-          color: theme.isDark ? '#d4d4d4' : '#333333',
+          backgroundColor: theme.isDark ? "#000" : "#eee",
+          color: theme.isDark ? "#d4d4d4" : "#333333",
           borderRadius: 8,
           padding: 12,
           marginVertical: 6,
           borderWidth: 1,
           borderColor: theme.border,
-          fontFamily: 'JetBrains Mono',
+          fontFamily: "JetBrains Mono",
         },
         code_block: {
-          backgroundColor: theme.isDark ? '#1e1e1e' : '#f5f5f5',
-          color: theme.isDark ? '#d4d4d4' : '#333333',
+          backgroundColor: theme.isDark ? "#1e1e1e" : "#f5f5f5",
+          color: theme.isDark ? "#d4d4d4" : "#333333",
           borderRadius: 8,
           padding: 12,
           marginVertical: 6,
         },
         blockquote: {
           backgroundColor: theme.isDark
-            ? 'rgba(255, 255, 255, 0.05)'
-            : 'rgba(0, 0, 0, 0.04)',
-          borderLeftColor: theme.isDark ? '#3b82f6' : '#2563eb',
+            ? "rgba(255, 255, 255, 0.05)"
+            : "rgba(0, 0, 0, 0.04)",
+          borderLeftColor: theme.isDark ? "#3b82f6" : "#2563eb",
           borderLeftWidth: 1,
           paddingHorizontal: 12,
           paddingVertical: 8,
@@ -535,7 +463,7 @@ const ChatMessageItem = memo(
               <Text
                 style={[
                   styles.messageText,
-                  { color: theme.textMuted, fontStyle: 'italic' },
+                  { color: theme.textMuted, fontStyle: "italic" },
                 ]}
               >
                 思考中...
@@ -564,7 +492,7 @@ const ChatMessageItem = memo(
                 </Text>
               ) : (
                 <Markdown style={dynamicMarkdownStyles}>
-                  {item.content || ''}
+                  {item.content || ""}
                 </Markdown>
               )}
             </View>
@@ -604,6 +532,7 @@ export default function ChatArea({
   isKeyboardUp = false,
   activeId,
   streamingRenderMsg = null,
+  autoRead = false, // 💡 新增
 }: ChatAreaProps) {
   const {
     handleScroll: originalHandleScroll,
@@ -615,6 +544,10 @@ export default function ChatArea({
 
   // ✅ 用 state 控制「回到底部」按钮显示
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  // 💡 自动朗读相关引用
+  const lastAutoReadKeyRef = useRef<string | null>(null);
+  const autoPlayingRef = useRef(false);
 
   // 合并流式临时内容
   const displayMessages = useMemo(() => {
@@ -667,6 +600,50 @@ export default function ChatArea({
     return () => clearTimeout(timer);
   }, [streamingRenderMsg?.msgId, safeScrollBottom]);
 
+  // 💡 自动朗读：最新一条 AI 回复流式结束后播放
+  useEffect(() => {
+    if (!autoRead) return;
+    const last = displayMessages[displayMessages.length - 1];
+    if (!last || last.role !== "assistant") return;
+    if (last.isStreaming || !last.content || last.content === "...") return;
+
+    const key = `${activeId}:${last.id}`; // 带会话 ID，切会话不会误触发
+    if (lastAutoReadKeyRef.current === key) return;
+    lastAutoReadKeyRef.current = key;
+    autoPlayingRef.current = true;
+    (async () => {
+      try {
+        setPlayingMsgId(last.id);
+        await playText(last.content, {
+          fetchUrl: async (sentence) => {
+            const data = await api.textToSpeech(sentence, "longwanjun_v3");
+            return data.url;
+          },
+          onEnd: () => {
+            autoPlayingRef.current = false;
+            setPlayingMsgId(null);
+          },
+        });
+      } catch (e) {
+        console.error("自动朗读失败:", e);
+        autoPlayingRef.current = false;
+        setPlayingMsgId(null);
+      }
+    })();
+  }, [displayMessages, autoRead, activeId]);
+
+  // 💡 播放中关闭自动朗读开关 → 停止自动播放（手动播放不受影响）
+  useEffect(() => {
+    if (!autoRead && autoPlayingRef.current) {
+      autoPlayingRef.current = false;
+      stopSpeech();
+      setPlayingMsgId(null);
+    }
+  }, [autoRead]);
+
+  // 💡 离开聊天页时停止播放
+  useEffect(() => () => stopSpeech(), []);
+
   const showWelcome =
     (!displayMessages || displayMessages.length === 0) && !isKeyboardUp;
 
@@ -704,10 +681,10 @@ export default function ChatArea({
         alwaysBounceVertical={false}
         nativeID="chat-scroll"
         style={
-          Platform.OS === 'web'
+          Platform.OS === "web"
             ? ({
-                scrollbarWidth: 'thin',
-                scrollbarColor: 'rgba(255,255,255,0.3) transparent',
+                scrollbarWidth: "thin",
+                scrollbarColor: "rgba(255,255,255,0.3) transparent",
               } as any)
             : undefined
         }
@@ -750,10 +727,10 @@ export default function ChatArea({
               styles.scrollToBottomBtn,
               {
                 backgroundColor: theme.isDark
-                  ? 'rgba(40,40,40,0.92)'
-                  : 'rgba(255,255,255,0.95)',
+                  ? "rgba(40,40,40,0.92)"
+                  : "rgba(255,255,255,0.95)",
                 borderColor: theme.border,
-                shadowColor: '#000',
+                shadowColor: "#000",
               },
             ]}
           >
@@ -780,8 +757,8 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 24,
     paddingTop: 240,
   },
@@ -791,81 +768,81 @@ const styles = StyleSheet.create({
   },
   welcomeTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   welcomeSubtitle: {
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 20,
   },
   messageRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 20,
-    alignItems: 'flex-start',
+    alignItems: "flex-start",
   },
-  rowUser: { justifyContent: 'flex-end' },
-  rowAi: { justifyContent: 'flex-start' },
+  rowUser: { justifyContent: "flex-end" },
+  rowAi: { justifyContent: "flex-start" },
   bubble: { padding: 14, borderRadius: 16 },
   bubbleUser: { borderTopRightRadius: 4 },
   bubbleAi: { borderTopLeftRadius: 4, borderWidth: 1 },
   thinkingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 2,
   },
   messageText: { fontSize: 15, lineHeight: 22 },
   footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
     marginTop: 6,
   },
   copyBtnWrapper: {
-    position: 'relative',
-    alignItems: 'center',
+    position: "relative",
+    alignItems: "center",
     marginLeft: 6,
   },
   copyIconBtn: {
     padding: 4,
     borderRadius: 4,
-    backgroundColor: 'rgba(128,128,128,0.1)',
+    backgroundColor: "rgba(128,128,128,0.1)",
   },
   thoughtBox: {
     borderLeftWidth: 0,
-    borderLeftColor: '#4b92ee',
+    borderLeftColor: "#4b92ee",
     paddingVertical: 6,
     paddingHorizontal: 8,
     marginBottom: 10,
     borderRadius: 4,
   },
   thoughtRightAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   thoughtHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 4,
   },
   thoughtTitle: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     paddingRight: 2,
   },
   thoughtContent: {
     fontSize: 13,
-    fontStyle: 'italic',
+    fontStyle: "italic",
     lineHeight: 18,
-  }, // 在 StyleSheet 里加上
+  },
   scrollToBottomWrapper: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
-    bottom: 16, // 距离底部的距离，按需调整
-    alignItems: 'center', // 水平居中
+    bottom: 16,
+    alignItems: "center",
     zIndex: 10,
   },
   scrollToBottomBtn: {
@@ -873,8 +850,8 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
