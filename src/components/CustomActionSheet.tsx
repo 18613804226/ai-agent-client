@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  ViewStyle,
 } from 'react-native';
 
 export interface MenuItem {
@@ -55,7 +56,7 @@ export default function CustomActionSheet({
               backgroundColor: isDarkMode ? '#212225' : '#FFFFFF',
               borderColor: theme.border || '#333',
             },
-            positionStyle, // 💡 允许外部传入精确定位
+            positionStyle as ViewStyle, // 💡 允许外部传入精确定位
           ]}
           onPress={(e) => e.stopPropagation()}
         >

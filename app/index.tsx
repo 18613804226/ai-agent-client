@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -49,6 +49,10 @@ export default function ChatScreen() {
     handleStopGeneration,
     autoRead, // 💡 新增
     toggleAutoRead,
+    isAtBottomRef,
+    scrollViewRef,
+    handleScroll,
+    streamingRenderMsg,
   } = useChat();
 
   const {
@@ -92,8 +96,6 @@ export default function ChatScreen() {
     useKnowledgeFiles();
   const { keyboardHeightAnim, isKeyboardUp } = useKeyboardAnimation();
 
-  const scrollViewRef = useRef<ScrollView>(null!);
-
   const handleSendWithImages = () => {
     // 这里你可以把 selectedImages 传给后端或你的全局状态
     console.log('准备发送文字:', inputText);
@@ -102,6 +104,25 @@ export default function ChatScreen() {
     handleSend(); // 调用原发送
     clearImages(); // 发送完毕后清空图片
   };
+
+  // 组装消息，流式消息临时替换
+  const allMessages = useMemo(() => {
+    const msgList = currentChat?.messages ?? [];
+    if (!streamingRenderMsg) return msgList;
+
+    return msgList.map((msg) => {
+      if (msg.id === streamingRenderMsg.msgId) {
+        return {
+          ...msg,
+          content: streamingRenderMsg.content,
+          thought: streamingRenderMsg.thought,
+          isStreaming: true,
+        };
+      }
+      return msg;
+    });
+  }, [currentChat?.messages, streamingRenderMsg]);
+
   // 💡 三端精准判断
   const screenWidth = Dimensions.get('window').width;
   const isPCWeb = Platform.OS === 'web' && screenWidth > 768; // 电脑端网页
@@ -237,11 +258,12 @@ export default function ChatScreen() {
             <View style={styles.chatCenterContainer}>
               <ChatArea
                 key={activeId}
-                messages={currentChat?.messages || []}
-                scrollViewRef={scrollViewRef}
+                messages={allMessages}
+                streamingRenderMsg={streamingRenderMsg}
                 theme={theme}
                 isMobile={!isPCWeb}
                 isKeyboardUp={isKeyboardUp}
+                activeId={activeId}
               />
               <ChatInputBar
                 inputText={inputText}

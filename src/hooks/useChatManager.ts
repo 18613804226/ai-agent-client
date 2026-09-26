@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
-import dayjs from 'dayjs';
-import { api } from '../services/api';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Platform, Vibration } from 'react-native';
+import { api } from '../services/api';
 
 export interface Message {
   id: string;
@@ -19,6 +18,8 @@ export interface Conversation {
 
 const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
+type StreamChunk = { type: 'thought' | 'content'; text: string };
+
 export function useChatManager() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string>('');
@@ -27,22 +28,44 @@ export function useChatManager() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const [autoRead, setAutoRead] = useState(false);
-  const toggleAutoRead = () => {
-    setAutoRead((prev) => !prev);
-  };
-  // 1. 初始化：从后端获取会话列表，并加载第一个会话的详情
+  const toggleAutoRead = () => setAutoRead((prev) => !prev);
+
+  // ==================== 流式相关 ====================
+  const [streamingRenderMsg, setStreamingRenderMsg] = useState<{
+    msgId: string;
+    thought: string;
+    content: string;
+  } | null>(null);
+
+  const queueRef = useRef<StreamChunk[]>([]);
+  const currentThoughtRef = useRef('');
+  const currentContentRef = useRef('');
+  const streamingRenderedTextRef = useRef('');
+  const lastMarkdownUpdateRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  const isConsumingRef = useRef(false);
+  const streamFinishedRef = useRef(false);
+  const currentStreamingMsgIdRef = useRef<string>('');
+
+  const autoFollowRef = useRef(true);
+  const isAtBottomRef = useRef(true);
+  const scrollViewRef = useRef<any>(null);
+
+  const BUFFER_CHAR_THRESHOLD = 8;
+  const BUFFER_TIME_THRESHOLD = 50;
+  const SCROLL_THROTTLE_MS = 50;
+  const MAX_PER_FRAME = 12;
+
+  // 1. 初始化
   useEffect(() => {
     const initChatData = async () => {
       try {
         const sessions: any = await api.getSessions();
-
         if (sessions && sessions.length > 0) {
-          // 先把会话列表赋上
           setConversations(sessions);
           const firstId = sessions[0].id;
           setActiveId(firstId);
 
-          // 查第一个会话的详情
           const detail: any = await api.getSessionDetail(firstId);
           setConversations((prev) =>
             prev.map((c) =>
@@ -51,8 +74,6 @@ export function useChatManager() {
           );
           return;
         }
-
-        // 如果没有会话，保持空白
         setConversations([]);
         setActiveId('');
       } catch (error) {
@@ -67,23 +88,16 @@ export function useChatManager() {
 
   // 2. 创建新会话
   const handleNewChat = async () => {
-    // 1. 【乐观更新】瞬间在本地伪造一个临时会话，让 UI 零延迟响应！
     const tempId = 'temp_' + Date.now();
-    const newConv = {
-      id: tempId,
-      title: '新对话',
-    };
+    const newConv = { id: tempId, title: '新对话' };
 
-    // 瞬间把新会话推到最顶端并设为激活态，用户点击的一瞬间页面就变了，绝对丝滑零延迟
     setConversations((prev) => [newConv, ...prev].slice(0, 20));
     setActiveId(tempId);
 
     try {
-      // 2. 在后台悄悄请求后端创建真实会话
       const sessionData: any = await api.createSession();
       const realId = sessionData.id;
 
-      // 3. 后端返回真实 ID 后，悄悄把刚才的临时 ID 替换成真实的 ID
       setConversations((prev) =>
         prev.map((c) =>
           c.id === tempId
@@ -92,31 +106,34 @@ export function useChatManager() {
         ),
       );
       setActiveId(realId);
-
       return realId;
     } catch (error) {
       console.error('创建会话失败', error);
-      // 如果后端真的报错了，再把刚才那个临时加的删掉回滚
       setConversations((prev) => prev.filter((c) => c.id !== tempId));
     }
   };
 
-  // 3. 切换会话：点击左侧历史记录时，按需从后端加载该会话的详情消息
-  // 1. 单独用一个状态存当前窗口的消息，而不是去改整个 conversations 列表
-  // const [currentMessages, setCurrentMessages] = useState<any[]>([]);
-
-  // 3. 切换会话：点击左侧历史记录时，按需从后端加载该会话的详情消息
+  // 3. 切换会话
   const handleSelectChat = async (id: string) => {
-    setActiveId(id); // 瞬间激活该会话
+    // 切换时清理流式状态，防止串文字
+    setStreamingRenderMsg(null);
+    queueRef.current = [];
+    currentThoughtRef.current = '';
+    currentContentRef.current = '';
+    streamFinishedRef.current = true;
+    isConsumingRef.current = false;
+    if (timerRef.current) {
+      cancelAnimationFrame(timerRef.current);
+      timerRef.current = null;
+    }
+    autoFollowRef.current = true;
+    setActiveId(id);
 
     try {
-      // 请求后端获取该会话的完整消息详情
       const detail: any = await api.getSessionDetail(id);
       const messages = detail.messages || [];
-
-      // 💡 核心修复：把获取到的消息安全地写回到 conversations 对应的会话中！
       setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, messages: messages } : c)),
+        prev.map((c) => (c.id === id ? { ...c, messages } : c)),
       );
     } catch (error) {
       console.error('获取会话详情失败:', error);
@@ -138,168 +155,336 @@ export function useChatManager() {
     const nextConversations = conversations.filter((c) => c.id !== id);
     setConversations(nextConversations);
 
-    // 如果删的是当前选中的会话
     if (activeId === id) {
       if (nextConversations.length > 0) {
-        // 如果还有其他会话，切换到第一个
         setActiveId(nextConversations[0].id);
         handleSelectChat(nextConversations[0].id);
       } else {
-        // 💡 如果全部删光了：不自动创建，而是清空 activeId，让右侧输入框/主界面也进入空闲状态
         setActiveId('');
-        // 也可以顺便清空右侧的聊天消息状态，根据你的项目逻辑来
       }
     }
   };
 
-  // 💡 修复后的更新 AI 消息内容函数
-  const updateAiMessageContent = (msgId: string, chunk: string) => {
-    setConversations((prev: any) => {
-      return prev.map((conv: any) => {
-        // 确保在该会话中找到对应的消息 ID
-        const hasMessage =
-          conv.messages?.some((m: any) => m.id === msgId) || false;
-        if (!hasMessage) return conv;
+  const updateAiMessageFields = useCallback(
+    (msgId: string, fields: { content?: string; thought?: string }) => {
+      setConversations((prev) =>
+        prev.map((conv) => {
+          const hasMessage =
+            conv.messages?.some((m: any) => m.id === msgId) || false;
+          if (!hasMessage) return conv;
 
-        return {
-          ...conv,
-          messages: conv.messages.map((msg: any) => {
-            if (msg.id === msgId) {
-              // 如果原始内容是 '...'，第一次收到数据时清空并替换，之后进行字符串追加
-              const currentContent = msg.content === '...' ? '' : msg.content;
-              return {
-                ...msg,
-                content: currentContent + chunk,
-              };
-            }
-            return msg;
-          }),
-        };
+          return {
+            ...conv,
+            messages: (conv.messages || []).map((msg) =>
+              msg.id === msgId ? { ...msg, ...fields } : msg,
+            ),
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  const updateStreamingMarkdownState = useCallback(
+    (content: string, thought: string, msgId: string) => {
+      if (streamFinishedRef.current && queueRef.current.length === 0) {
+        // 已结束且队列空，不再更新临时状态
+        return;
+      }
+      setStreamingRenderMsg({
+        msgId,
+        thought,
+        content,
       });
-    });
-  };
+      streamingRenderedTextRef.current = content;
+      lastMarkdownUpdateRef.current = Date.now();
+    },
+    [],
+  );
 
-  const updateAiMessageFields = (
-    msgId: string,
-    fields: { content?: string; thought?: string },
-  ) => {
-    setConversations((prev) =>
-      prev.map((conv) => {
-        // 💡 修复：只要该会话包含了这条消息 ID，不管外层 activeId 此时有没有同步完，直接更新它！
-        const hasMessage =
-          conv.messages?.some((m: any) => m.id === msgId) || false;
-        if (!hasMessage) return conv;
+  // ==================== 核心：无空转 + 合并队列的消费者 ====================
+  const startSmoothConsumer = useCallback(
+    (targetMsgId: string) => {
+      if (isConsumingRef.current) return;
+      isConsumingRef.current = true;
 
-        return {
-          ...conv,
-          messages: (conv.messages || []).map((msg) =>
-            msg.id === msgId ? { ...msg, ...fields } : msg,
-          ),
-        };
-      }),
-    );
-  };
+      let lastScroll = 0;
 
-  const runTypewriterEffect = async (
-    reader: ReadableStreamDefaultReader<Uint8Array>,
-    thinkingMsgId: string,
-  ) => {
-    const decoder = new TextDecoder();
-    let buffer = '';
+      const consumeFrame = () => {
+        const queue = queueRef.current;
+        let remain = MAX_PER_FRAME;
 
-    let directThought = '';
-    let directContent = '';
+        // 消费队列
+        while (remain > 0 && queue.length > 0) {
+          const chunk = queue[0];
+          const take = Math.min(remain, chunk.text.length);
+
+          if (chunk.type === 'thought') {
+            currentThoughtRef.current += chunk.text.slice(0, take);
+          } else {
+            currentContentRef.current += chunk.text.slice(0, take);
+          }
+
+          if (take >= chunk.text.length) {
+            queue.shift();
+          } else {
+            chunk.text = chunk.text.slice(take);
+          }
+          remain -= take;
+        }
+
+        // 缓冲更新 Markdown
+        const now = Date.now();
+        const deltaChars =
+          currentContentRef.current.length -
+          streamingRenderedTextRef.current.length;
+
+        if (
+          deltaChars >= BUFFER_CHAR_THRESHOLD ||
+          now - lastMarkdownUpdateRef.current > BUFFER_TIME_THRESHOLD
+        ) {
+          updateStreamingMarkdownState(
+            currentContentRef.current,
+            currentThoughtRef.current,
+            targetMsgId,
+          );
+        }
+
+        // 滚动节流
+        if (
+          autoFollowRef.current &&
+          scrollViewRef.current &&
+          now - lastScroll > SCROLL_THROTTLE_MS
+        ) {
+          scrollViewRef.current.scrollToEnd({ animated: false });
+          lastScroll = now;
+        }
+
+        // ===== 关键：有数据继续，没数据就停（彻底去掉空转）=====
+        if (queue.length > 0) {
+          timerRef.current = requestAnimationFrame(consumeFrame);
+        } else if (streamFinishedRef.current) {
+          // 流结束 + 队列空 → 最终落盘
+          isConsumingRef.current = false;
+          timerRef.current = null;
+
+          updateStreamingMarkdownState(
+            currentContentRef.current,
+            currentThoughtRef.current,
+            targetMsgId,
+          );
+
+          updateAiMessageFields(targetMsgId, {
+            thought: currentThoughtRef.current || undefined,
+            content: currentContentRef.current,
+          });
+
+          setStreamingRenderMsg(null);
+
+          if (autoFollowRef.current && scrollViewRef.current) {
+            setTimeout(() => {
+              scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 60);
+          }
+
+          if (Platform.OS !== 'web') {
+            Vibration.vibrate(100);
+          }
+        } else {
+          // 队列空但流还没结束 → 停止 RAF，等待新数据唤醒
+          isConsumingRef.current = false;
+          timerRef.current = null;
+        }
+      };
+
+      timerRef.current = requestAnimationFrame(consumeFrame);
+    },
+    [updateStreamingMarkdownState, updateAiMessageFields],
+  );
+
+  // 推送并自动唤醒
+  const enqueue = useCallback(
+    (type: 'thought' | 'content', text: string) => {
+      if (!text) return;
+      queueRef.current.push({ type, text });
+
+      // 唤醒消费者
+      if (!isConsumingRef.current) {
+        startSmoothConsumer(currentStreamingMsgIdRef.current);
+      }
+    },
+    [startSmoothConsumer],
+  );
+
+  // ==================== SSE 解析公共逻辑 ====================
+  const processSSELine = (line: string) => {
+    const trimmedLine = line.trim();
+    if (!trimmedLine.startsWith('data:')) return;
+
+    const jsonText = trimmedLine.replace('data:', '').trim();
+    if (jsonText === '[DONE]') return;
 
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      const parsed = JSON.parse(jsonText);
+      const delta = parsed.choices?.[0]?.delta || {};
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+      let chunkThought = '';
+      let chunkContent = '';
 
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          const jsonText = trimmedLine.replace('data:', '').trim();
-          if (jsonText === '[DONE]') continue;
-          if (trimmedLine.startsWith('data:')) {
-            try {
-              const parsed = JSON.parse(jsonText);
-              const delta = parsed.choices?.[0]?.delta || {};
-
-              let chunkThought = '';
-              let chunkContent = '';
-
-              if (parsed.type === 'thought') {
-                chunkThought =
-                  parsed.thought || parsed.content || parsed.text || '';
-              } else if (parsed.type === 'content') {
-                chunkContent = parsed.content || parsed.text || '';
-              } else {
-                chunkThought =
-                  delta.reasoning_content ||
-                  delta.reasoning ||
-                  parsed.reasoning_content ||
-                  parsed.thought ||
-                  '';
-
-                chunkContent =
-                  delta.content ||
-                  parsed.content ||
-                  parsed.text ||
-                  parsed.message ||
-                  '';
-              }
-
-              // 💡 直接累加，不经过任何队列延迟
-              if (chunkThought) {
-                directThought += chunkThought;
-              }
-
-              if (chunkContent) {
-                directContent += chunkContent;
-              }
-
-              // 💡 收到数据立刻触发更新，后端吐多快前端就刷多快
-              updateAiMessageFields(thinkingMsgId, {
-                thought: directThought,
-                content: directContent || '...',
-              });
-            } catch (e) {
-              if (jsonText && jsonText !== '[DONE]') {
-                // 如果这段文本还没被加到 directContent 里，才追加
-                if (
-                  !directContent.endsWith(jsonText) &&
-                  !directContent.includes(jsonText)
-                ) {
-                  directContent += jsonText;
-                  updateAiMessageFields(thinkingMsgId, {
-                    thought: directThought,
-                    content: directContent || '...',
-                  });
-                }
-              }
-            }
-          }
-        }
+      if (parsed.type === 'thought') {
+        chunkThought = parsed.thought || parsed.content || '';
+      } else if (parsed.type === 'content') {
+        chunkContent = parsed.content || '';
+      } else {
+        chunkThought =
+          delta.reasoning_content || parsed.reasoning_content || '';
+        chunkContent = delta.content || parsed.content || '';
       }
-    } catch (error) {
-      console.error('流式读取异常:', error);
-    } finally {
-      // 💡 绝对保证：只要流结束或报错，一定解除生成状态和转圈！
-      setIsGenerating(false);
-      abortControllerRef.current = null;
+
+      if (chunkThought) enqueue('thought', chunkThought);
+      if (chunkContent) enqueue('content', chunkContent);
+    } catch {
+      // 解析失败忽略
     }
   };
 
+  // ==================== 流式读取 ====================
+  const runTypewriterEffect = async (
+    thinkingMsgId: string,
+    sessionId: string,
+    queryText: string,
+  ) => {
+    // 重置状态
+    streamFinishedRef.current = false;
+    isConsumingRef.current = false;
+    queueRef.current = [];
+    currentThoughtRef.current = '';
+    currentContentRef.current = '';
+    streamingRenderedTextRef.current = '';
+    lastMarkdownUpdateRef.current = 0;
+    currentStreamingMsgIdRef.current = thinkingMsgId;
+    setStreamingRenderMsg(null);
+
+    if (timerRef.current) {
+      cancelAnimationFrame(timerRef.current);
+      timerRef.current = null;
+    }
+
+    startSmoothConsumer(thinkingMsgId);
+
+    const url = `${baseURL}/chat/${sessionId}/stream`;
+
+    // ========== WEB：fetch + ReadableStream ==========
+    if (Platform.OS === 'web') {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: queryText }),
+          signal: abortControllerRef.current!.signal,
+        });
+
+        if (!response.body) {
+          throw new Error('ReadableStream not supported');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            streamFinishedRef.current = true;
+            // 唤醒一次，让消费者走结束逻辑
+            if (!isConsumingRef.current) {
+              startSmoothConsumer(thinkingMsgId);
+            }
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            processSSELine(line);
+          }
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error('web stream error', err);
+          updateAiMessageFields(thinkingMsgId, {
+            content: '服务器开小差了，请检查网络或后端连接。',
+          });
+          setStreamingRenderMsg(null);
+        }
+        streamFinishedRef.current = true;
+      }
+    }
+    // ========== 移动端：XHR onprogress ==========
+    else {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      let lastReadPos = 0;
+
+      xhr.onprogress = () => {
+        const chunkRaw = xhr.responseText.substring(lastReadPos);
+        lastReadPos = xhr.responseText.length;
+        const lines = chunkRaw.split('\n');
+
+        for (const line of lines) {
+          processSSELine(line);
+        }
+      };
+
+      xhr.onload = () => {
+        streamFinishedRef.current = true;
+        if (!isConsumingRef.current) {
+          startSmoothConsumer(thinkingMsgId);
+        }
+      };
+
+      xhr.onerror = () => {
+        updateAiMessageFields(thinkingMsgId, {
+          content: '服务器开小差了，请检查网络或后端连接。',
+        });
+        setIsGenerating(false);
+        setStreamingRenderMsg(null);
+        streamFinishedRef.current = true;
+      };
+
+      abortControllerRef.current!.signal.addEventListener('abort', () => {
+        xhr.abort();
+      });
+
+      xhr.send(JSON.stringify({ query: queryText }));
+    }
+  };
+
+  // ==================== 滚动处理 ====================
+  const handleScroll = (event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const offsetY = contentOffset.y;
+    const viewH = layoutMeasurement.height;
+    const contentH = contentSize.height;
+    const isCloseToBottom = offsetY + viewH >= contentH - 50;
+
+    autoFollowRef.current = isCloseToBottom;
+    isAtBottomRef.current = isCloseToBottom;
+  };
+
+  // ==================== 发送消息 ====================
   const handleSend = async () => {
     if (!inputText.trim()) return;
 
     let currentActiveId = activeId;
     let isBrandNewSession = false;
 
-    // 1. 如果当前没有选中的会话 ID，先调接口创建
+    isAtBottomRef.current = true;
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+
     if (!currentActiveId) {
       try {
         const sessionData: any = await api.createSession();
@@ -328,13 +513,11 @@ export function useChatManager() {
       content: '...',
     };
 
-    // 1. 在外面直接算好标题！不要在 setConversations 里面去改它
     const currentConv = conversations.find(
       (c: any) => c.id === currentActiveId,
     );
     const isFirst = !currentConv || (currentConv.messages?.length || 0) <= 2;
 
-    // 直接用 currentInput 算
     const updatedTitle =
       isFirst || !currentConv?.title
         ? currentInput.slice(0, 14) + '...'
@@ -345,85 +528,79 @@ export function useChatManager() {
 
       if (existsIndex !== -1) {
         const targetConv = prev[existsIndex];
-
         const newConv = {
           ...targetConv,
           title: updatedTitle,
           messages: [...(targetConv.messages || []), userMsg, thinkingMsg],
         };
-
         const nextPrev = [...prev];
         nextPrev[existsIndex] = newConv;
         return nextPrev;
       } else {
-        // 如果列表里完全没有（刚创建的空会话）
-        // updatedTitle = currentInput.slice(0, 14) + '...';
-        const newConvItem = {
-          id: currentActiveId,
-          title: updatedTitle,
-          messages: [
-            // {
-            //   id: 'init-' + Date.now(),
-            //   role: 'assistant',
-            //   content: '新会话已开启，请输入你想探讨的课题。',
-            // },
-            userMsg,
-            thinkingMsg,
-          ],
-        };
-        return [newConvItem, ...prev];
+        return [
+          {
+            id: currentActiveId,
+            title: updatedTitle,
+            messages: [userMsg, thinkingMsg],
+          },
+          ...prev,
+        ];
       }
     });
-    // 3. 异步更新后端标题（直接传字符串，因为 api.ts 内部已经帮你包成 { title } 了）
+
     if (isBrandNewSession || updatedTitle) {
       api.updateSessionTitle(currentActiveId, updatedTitle).catch((err) => {
         console.error('更新会话标题失败:', err);
       });
     }
 
-    // 4. 发起流式请求
     abortControllerRef.current = new AbortController();
     setIsGenerating(true);
 
     try {
-      const response = await fetch(
-        `${baseURL}/chat/${currentActiveId}/stream`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: currentInput }),
-          signal: abortControllerRef.current.signal,
-        },
-      );
-
-      if (!response.body) {
-        throw new Error('ReadableStream not supported');
-      }
-
-      const reader = response.body.getReader();
-      await runTypewriterEffect(reader, thinkingMsgId);
+      await runTypewriterEffect(thinkingMsgId, currentActiveId, currentInput);
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         console.error('发送消息失败:', error);
-        updateAiMessageContent(
-          thinkingMsgId,
-          '抱歉，服务器开小差了，请检查网络或后端连接。',
-        );
+        updateAiMessageFields(thinkingMsgId, {
+          content: '抱歉，服务器开小差了，请检查网络或后端连接。',
+        });
       }
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
-      if (Platform.OS !== 'web') {
-        Vibration.vibrate(100); // 震动 100 毫秒
-      }
     }
   };
 
+  // ==================== 停止生成 ====================
   const handleStopGeneration = () => {
+    streamFinishedRef.current = true;
+
+    // 1. 终止网络请求
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+
+    // 2. 取消 RAF
+    if (timerRef.current) {
+      cancelAnimationFrame(timerRef.current);
+      timerRef.current = null;
+    }
+    isConsumingRef.current = false;
+
+    // 3. 保存当前已输出内容
+    const msgId = currentStreamingMsgIdRef.current;
+    if (msgId && (currentContentRef.current || currentThoughtRef.current)) {
+      updateAiMessageFields(msgId, {
+        thought: currentThoughtRef.current || undefined,
+        content: currentContentRef.current || '...',
+      });
+    }
+
+    // 4. 清空队列和临时状态
+    queueRef.current = [];
+    setStreamingRenderMsg(null);
     setIsGenerating(false);
   };
 
@@ -442,5 +619,10 @@ export function useChatManager() {
     autoRead,
     setAutoRead,
     toggleAutoRead,
+    handleScroll,
+    isAtBottomRef,
+    scrollViewRef,
+    autoFollowRef,
+    streamingRenderMsg,
   };
 }

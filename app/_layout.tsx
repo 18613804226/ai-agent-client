@@ -65,6 +65,8 @@ export default function RootLayout() {
               headerShown: false,
               drawerType: 'slide',
               overlayColor: 'rgba(0, 0, 0, 0.5)',
+              swipeMinDistance: 30,
+              swipeEdgeWidth: 45,
               drawerStyle: {
                 width: 280,
                 backgroundColor: theme.bgSidebar,

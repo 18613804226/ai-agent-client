@@ -9,7 +9,7 @@ import {
   Keyboard,
   Image,
   ScrollView,
-  useWindowDimensions, // 💡 引入窗口尺寸 Hook
+  useWindowDimensions,
 } from 'react-native';
 
 if (Platform.OS === 'web') {
@@ -63,10 +63,9 @@ export default function ChatInputBar({
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false);
 
-  // 💡 1. 引入屏幕宽度和端判断逻辑
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
-  const isDesktopWeb = isWeb && width >= 768; // 屏幕宽度 >= 768px 视为桌面端 Web
+  const isDesktopWeb = isWeb && width >= 768;
 
   const hasText = Boolean(inputText.trim());
   const hasImages = selectedImages.length > 0;
@@ -81,13 +80,11 @@ export default function ChatInputBar({
         ? theme.sendBtnHover
         : theme.sendBtnActive;
 
-  // 移除某张已选择的图片
   const handleRemoveImage = (index: number) => {
     const newImages = selectedImages.filter((_, i) => i !== index);
     setSelectedImages(newImages);
   };
 
-  // 💡 2. 核心：仅在桌面端 Web（isDesktopWeb）开启剪贴板粘贴监听
   const inputRef = useRef<any>(null);
   useEffect(() => {
     if (isDesktopWeb && inputRef.current) {
@@ -155,7 +152,6 @@ export default function ChatInputBar({
           { backgroundColor: theme.inputBg, borderColor: theme.border },
         ]}
       >
-        {/* 💡 3. 灵活控制：如果不是桌面端Web（即 H5网页 或 App），或者你希望两端都有加号按钮，可在此显示 */}
         {(!isDesktopWeb || onPickImage) && (
           <TouchableOpacity
             style={styles.attachButton}
@@ -293,28 +289,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   inputBar: {
-    position: 'relative',
     minHeight: 56,
     flexDirection: 'row',
+    alignItems: 'flex-end',
     borderWidth: 1,
     borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    alignItems: 'center',
+    paddingVertical: 8,
+    paddingLeft: 8, // 左侧贴边
+    paddingRight: 8, // 右侧贴边
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
-    paddingRight: 56,
   },
   attachButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
     backgroundColor: 'rgba(150, 150, 150, 0.1)',
   },
   attachButtonText: {
@@ -326,8 +320,8 @@ const styles = StyleSheet.create({
     flex: 1,
     maxHeight: 280,
     fontSize: 15,
-    paddingTop: Platform.OS === 'ios' ? 4 : 2,
-    paddingBottom: Platform.OS === 'ios' ? 4 : 2,
+    paddingTop: Platform.OS === 'ios' ? 10 : 9,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 9,
     textAlignVertical: 'center',
     borderWidth: 0,
     backgroundColor: 'transparent',
@@ -342,12 +336,9 @@ const styles = StyleSheet.create({
     }),
   },
   sendButton: {
-    position: 'absolute',
-    right: 7,
-    bottom: 7,
     width: 40,
     height: 40,
-    borderRadius: 19,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },

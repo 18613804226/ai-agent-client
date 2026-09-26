@@ -11,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "package": "com.yourname.toto",
       "adaptiveIcon": {
