@@ -56,4 +56,10 @@ export const api = {
   sendMessage: async (sessionId: string, content: string) => {
     return httpClient.post(`/chat/${sessionId}/message`, { content });
   },
+  // ✅ 新增：通义 TTS
+  textToSpeech: async (text: string, voice = 'longanyang') => {
+    return httpClient.post('/chat/tts', { text, voice }) as Promise<{
+      url: string;
+    }>;
+  },
 };

@@ -25,9 +25,9 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { MyToast } from './GlobalToast';
-import * as Speech from 'expo-speech';
 import { useChat } from '../../app/_layout';
-
+import { Audio } from 'expo-av';
+import { api } from '../services/api';
 // ===================== 类型定义 =====================
 interface Message {
   id: string;
@@ -260,27 +260,114 @@ const SpeakButton = memo(
     setPlayingMsgId,
   }: SpeakButtonProps) {
     const isPlaying = playingMsgId === messageId;
+    const soundRef = useRef<any>(null);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+      return () => {
+        // 卸载时停止
+        if (soundRef.current) {
+          try {
+            if (Platform.OS === 'web') {
+              soundRef.current.pause?.();
+              soundRef.current.src = '';
+            } else {
+              soundRef.current.unloadAsync?.().catch(() => {});
+            }
+          } catch {}
+          soundRef.current = null;
+        }
+      };
+    }, []);
+
+    const stopCurrent = async () => {
+      if (soundRef.current) {
+        try {
+          if (Platform.OS === 'web') {
+            soundRef.current.pause?.();
+            soundRef.current.currentTime = 0;
+            soundRef.current.src = '';
+          } else {
+            await soundRef.current.stopAsync?.();
+            await soundRef.current.unloadAsync?.();
+          }
+        } catch {}
+        soundRef.current = null;
+      }
+      setPlayingMsgId(null);
+    };
+
+    const playOnWeb = (uri: string) => {
+      const audio = new window.Audio(uri);
+      audio.onended = () => {
+        setPlayingMsgId(null);
+        soundRef.current = null;
+      };
+      audio.onerror = (e) => {
+        setPlayingMsgId(null);
+        soundRef.current = null;
+        MyToast.show('播放失败');
+        console.error('Audio error:', e, 'readyState:', audio.readyState);
+      };
+      soundRef.current = audio;
+      return audio.play();
+    };
+
+    const playOnNative = async (uri: string) => {
+      // 运行时再加载，避免 Web 打包时报错
+      const { Audio } = require('expo-av');
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: true },
+        (status: any) => {
+          if (!status.isLoaded) return;
+          if (status.didJustFinish) {
+            setPlayingMsgId(null);
+            sound.unloadAsync().catch(() => {});
+            soundRef.current = null;
+          }
+        },
+      );
+      soundRef.current = sound;
+    };
 
     const handleToggleSpeech = async () => {
       if (isPlaying) {
-        await Speech.stop();
-        setPlayingMsgId(null);
-      } else {
-        await Speech.stop();
+        await stopCurrent();
+        return;
+      }
+
+      await stopCurrent();
+
+      try {
+        setLoading(true);
         setPlayingMsgId(messageId);
-        Speech.speak(content, {
-          language: 'zh-CN',
-          pitch: 1.0,
-          rate: 1.0,
-          onDone: () => setPlayingMsgId(null),
-          onError: () => setPlayingMsgId(null),
-        });
+
+        const data = await api.textToSpeech(content, 'longanyang');
+        const audioUri = data.url;
+
+        if (Platform.OS === 'web') {
+          await playOnWeb(audioUri);
+        } else {
+          await playOnNative(audioUri);
+        }
+      } catch (err) {
+        console.error('通义 TTS 播放失败:', err);
+        MyToast.show('语音合成失败，请稍后重试');
+        setPlayingMsgId(null);
+      } finally {
+        setLoading(false);
       }
     };
 
-    const iconColor = isPlaying ? theme.historyActiveText : theme.textMuted;
-    const textColor = isPlaying ? theme.historyActiveText : theme.textMuted;
-    const bgColor = isPlaying ? 'rgba(29, 161, 242, 0.1)' : 'transparent';
+    const iconColor =
+      isPlaying || loading ? theme.historyActiveText : theme.textMuted;
+    const bgColor =
+      isPlaying || loading ? 'rgba(29, 161, 242, 0.1)' : 'transparent';
 
     return (
       <TouchableOpacity
@@ -297,21 +384,16 @@ const SpeakButton = memo(
           { backgroundColor: bgColor },
         ]}
         onPress={handleToggleSpeech}
+        disabled={loading}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
-        {isPlaying ? (
+        {loading ? (
+          <ActivityIndicator size="small" color={iconColor} />
+        ) : isPlaying ? (
           <IconPlaying color={iconColor} />
         ) : (
           <IconMuteSpeaker color={iconColor} />
         )}
-        <Text
-          style={{
-            fontSize: 12,
-            color: textColor,
-            marginLeft: 6,
-            fontWeight: isPlaying ? '600' : '400',
-          }}
-        />
       </TouchableOpacity>
     );
   },
