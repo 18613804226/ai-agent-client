@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   StyleSheet,
   View,
@@ -8,24 +8,23 @@ import {
   Animated,
   useWindowDimensions,
   Dimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RootSiblingParent } from 'react-native-root-siblings';
-import { DrawerActions } from 'expo-router/react-navigation';
-import { useNavigation } from 'expo-router';
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { RootSiblingParent } from "react-native-root-siblings";
+import { DrawerActions } from "expo-router/react-navigation";
+import { useNavigation } from "expo-router";
 
-import Sidebar from '../src/components/Sidebar';
-import ChatArea from '../src/components/ChatArea';
-import ChatInputBar from '../src/components/ChatInputBar';
-import { MobileHeader } from '../src/components/MobileHeader';
+import Sidebar from "../src/components/Sidebar";
+import ChatArea from "../src/components/ChatArea";
+import ChatInputBar from "../src/components/ChatInputBar";
+import { MobileHeader } from "../src/components/MobileHeader";
 
-import { useKeyboardAnimation } from '../src/hooks/useKeyboardAnimation';
-import GlobalToastContainer from '../src/components/GlobalToast';
-import { useKnowledgeFiles } from '../src/hooks/useKnowledgeFiles';
-import { useImagePicker } from '../src/hooks/useImagePicker';
-import { useTheme, useChat } from './_layout'; // 💡 1. 引入根布局的 useTheme 和全局 useChat
-import { speakMessage, stopSpeech } from '../src/utils/speech';
-import CustomActionSheet from '../src/components/CustomActionSheet';
+import { useKeyboardAnimation } from "../src/hooks/useKeyboardAnimation";
+import GlobalToastContainer from "../src/components/GlobalToast";
+import { useKnowledgeFiles } from "../src/hooks/useKnowledgeFiles";
+import { useImagePicker } from "../src/hooks/useImagePicker";
+import { useTheme, useChat } from "./_layout"; // 💡 1. 引入根布局的 useTheme 和全局 useChat
+import CustomActionSheet from "../src/components/CustomActionSheet";
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -68,26 +67,26 @@ export default function ChatScreen() {
   } = useImagePicker();
   // 定义你的菜单列表（和截图里的风格一致）
   const menuItems = [
-    ...(Platform.OS !== 'web'
+    ...(Platform.OS !== "web"
       ? [
           {
-            id: 'camera',
-            icon: '📸',
-            label: '拍照',
+            id: "camera",
+            icon: "📸",
+            label: "拍照",
             onPress: openCamera,
           },
         ]
       : []),
     {
-      id: 'library',
-      icon: '🖼️',
-      label: '从相册选择',
+      id: "library",
+      icon: "🖼️",
+      label: "从相册选择",
       onPress: openImageLibrary, // 👈 均打开图片库
     },
     {
-      id: 'file',
-      icon: '📎',
-      label: '上传文件',
+      id: "file",
+      icon: "📎",
+      label: "上传文件",
       onPress: handlePickDocument,
     },
     // { id: 'canvas', icon: '🎨', label: 'Canvas', onPress: () => {} }
@@ -98,8 +97,8 @@ export default function ChatScreen() {
 
   const handleSendWithImages = () => {
     // 这里你可以把 selectedImages 传给后端或你的全局状态
-    console.log('准备发送文字:', inputText);
-    console.log('准备发送图片:', selectedImages);
+    console.log("准备发送文字:", inputText);
+    console.log("准备发送图片:", selectedImages);
 
     handleSend(); // 调用原发送
     clearImages(); // 发送完毕后清空图片
@@ -124,13 +123,13 @@ export default function ChatScreen() {
   }, [currentChat?.messages, streamingRenderMsg]);
 
   // 💡 三端精准判断
-  const screenWidth = Dimensions.get('window').width;
-  const isPCWeb = Platform.OS === 'web' && screenWidth > 768; // 电脑端网页
-  const isMobileWeb = Platform.OS === 'web' && screenWidth <= 768; // 手机 H5 网页
+  const screenWidth = Dimensions.get("window").width;
+  const isPCWeb = Platform.OS === "web" && screenWidth > 768; // 电脑端网页
+  const isMobileWeb = Platform.OS === "web" && screenWidth <= 768; // 手机 H5 网页
 
   // 💡 针对三端各自配置不同的悬浮菜单坐标样式
   const sheetPositionStyle = isPCWeb
-    ? { bottom: 94, left: 'calc(50% - 270px)' } // 🖥️ PC 网页端：依据居中输入框进行精确定位
+    ? { bottom: 94, left: "calc(50% - 270px)" } // 🖥️ PC 网页端：依据居中输入框进行精确定位
     : isMobileWeb
       ? { bottom: 94, left: 16 } // 📱 手机 H5 端：依据移动网页的 + 号定位
       : { bottom: 94, left: 20 };
@@ -159,40 +158,6 @@ export default function ChatScreen() {
       },
     }),
   ).current;
-
-  // 💡 用一个状态锁记录当前消息是否已经朗读过，防止重复触发
-  const hasSpokenMessageIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // 如果总开关没开，或者当前 AI 还在生成中（正在吐字），就直接返回，不触发朗读
-    if (!autoRead || isGenerating) {
-      return;
-    }
-
-    const messages = currentChat?.messages || [];
-    const lastMsg = messages[messages.length - 1];
-
-    // 条件：
-    // 1. 最后一条消息必须是 AI 回复的
-    // 2. 这条消息必须有实质内容
-    // 3. 这条消息还没被朗读过
-    if (
-      lastMsg &&
-      lastMsg.role === 'assistant' &&
-      lastMsg.content &&
-      hasSpokenMessageIdRef.current !== lastMsg.id
-    ) {
-      // 锁定当前消息 ID，确保整段回复只朗读一次
-      hasSpokenMessageIdRef.current = lastMsg.id;
-
-      // 延迟一小会儿等 UI 完全渲染稳定，然后朗读整段完整的内容
-      const timer = setTimeout(() => {
-        speakMessage(lastMsg.content);
-      }, 300);
-
-      return () => clearTimeout(timer);
-    }
-  }, [currentChat?.messages, isGenerating, autoRead]);
 
   return (
     <RootSiblingParent>
@@ -247,7 +212,7 @@ export default function ChatScreen() {
                 transform: [
                   {
                     translateY:
-                      Platform.OS === 'android'
+                      Platform.OS === "android"
                         ? Animated.multiply(keyboardHeightAnim, -1)
                         : 0,
                   },
@@ -264,6 +229,7 @@ export default function ChatScreen() {
                 isMobile={!isPCWeb}
                 isKeyboardUp={isKeyboardUp}
                 activeId={activeId}
+                autoRead={autoRead}
               />
               <ChatInputBar
                 inputText={inputText}
@@ -298,36 +264,36 @@ const styles = StyleSheet.create({
   // 💡 修改 container：在 Web 端开启 fixed 布局，锁死整个视口，禁止外部滚动
   container: {
     flex: 1,
-    ...(Platform.OS === 'web'
+    ...(Platform.OS === "web"
       ? {
-          position: 'fixed' as any,
+          position: "fixed" as any,
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          width: '100%',
-          height: '100%',
-          overflow: 'hidden',
-          overscrollBehavior: 'none' as any, // 禁止 iOS 浏览器回弹露白
+          width: "100%",
+          height: "100%",
+          overflow: "hidden",
+          overscrollBehavior: "none" as any, // 禁止 iOS 浏览器回弹露白
         }
       : {}),
   },
-  mainLayout: { flex: 1, flexDirection: 'row' },
+  mainLayout: { flex: 1, flexDirection: "row" },
   sidebarDesktop: {
     width: 280,
-    height: '100%',
+    height: "100%",
     borderRightWidth: 0,
   },
   chatMainWrapper: {
     flex: 1,
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
+    backgroundColor: "transparent",
+    overflow: "hidden",
   },
   chatCenterContainer: {
     flex: 1,
     maxWidth: 850,
-    width: '100%',
-    alignSelf: 'center',
-    flexDirection: 'column',
+    width: "100%",
+    alignSelf: "center",
+    flexDirection: "column",
   },
 });

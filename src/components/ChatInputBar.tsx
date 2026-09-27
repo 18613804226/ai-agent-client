@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,12 +10,12 @@ import {
   Image,
   ScrollView,
   useWindowDimensions,
-} from 'react-native';
-
-if (Platform.OS === 'web') {
-  const styleId = 'web-modern-scrollbar';
+} from "react-native";
+import VoiceInputButton from "./VoiceInputButton";
+if (Platform.OS === "web") {
+  const styleId = "web-modern-scrollbar";
   if (!document.getElementById(styleId)) {
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.id = styleId;
     style.innerHTML = `
       textarea::-webkit-scrollbar {
@@ -64,7 +64,7 @@ export default function ChatInputBar({
   const [isHovered, setIsHovered] = useState(false);
 
   const { width } = useWindowDimensions();
-  const isWeb = Platform.OS === 'web';
+  const isWeb = Platform.OS === "web";
   const isDesktopWeb = isWeb && width >= 768;
 
   const hasText = Boolean(inputText.trim());
@@ -73,7 +73,7 @@ export default function ChatInputBar({
   const canSubmit = (hasText || hasImages) && !isGenerating;
 
   const buttonBg = isGenerating
-    ? '#ef4444'
+    ? "#ef4444"
     : !canSubmit
       ? theme.sendBtnDisabled
       : isHovered
@@ -95,7 +95,7 @@ export default function ChatInputBar({
         if (!items) return;
 
         for (let i = 0; i < items.length; i++) {
-          if (items[i].type.indexOf('image') !== -1) {
+          if (items[i].type.indexOf("image") !== -1) {
             const blob = items[i].getAsFile();
             if (blob) {
               e.preventDefault();
@@ -112,10 +112,10 @@ export default function ChatInputBar({
         }
       };
 
-      nativeElement.addEventListener('paste', handleDOMPaste as EventListener);
+      nativeElement.addEventListener("paste", handleDOMPaste as EventListener);
       return () => {
         nativeElement.removeEventListener(
-          'paste',
+          "paste",
           handleDOMPaste as EventListener,
         );
       };
@@ -163,7 +163,12 @@ export default function ChatInputBar({
             </Text>
           </TouchableOpacity>
         )}
-
+        {/* 💡 语音输入：插在 TextInput 前面 */}
+        <VoiceInputButton
+          theme={theme}
+          disabled={isGenerating}
+          onResult={(text) => setInputText(inputText ? inputText + text : text)}
+        />
         <TextInput
           ref={inputRef}
           style={[
@@ -173,10 +178,10 @@ export default function ChatInputBar({
           ]}
           placeholder={
             isGenerating
-              ? 'AI 正在思考中...'
+              ? "AI 正在思考中..."
               : isDesktopWeb
-                ? '问问 AI 智能体或直接粘贴图片...'
-                : '问问 AI 智能体...'
+                ? "问问 AI 智能体或直接粘贴图片..."
+                : "问问 AI 智能体..."
           }
           placeholderTextColor={theme.textMuted}
           value={inputText}
@@ -186,7 +191,7 @@ export default function ChatInputBar({
           textAlignVertical="center"
           // @ts-ignore
           onKeyPress={(e: any) => {
-            if (isWeb && e.key === 'Enter' && !e.shiftKey) {
+            if (isWeb && e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               if (canSubmit) {
                 onSend();
@@ -202,10 +207,10 @@ export default function ChatInputBar({
             ...Platform.select({
               web: [
                 {
-                  transitionProperty: 'background-color, transform',
-                  transitionDuration: '0.2s',
-                  transitionTimingFunction: 'ease',
-                  cursor: isGenerating || canSubmit ? 'pointer' : 'default',
+                  transitionProperty: "background-color, transform",
+                  transitionDuration: "0.2s",
+                  transitionTimingFunction: "ease",
+                  cursor: isGenerating || canSubmit ? "pointer" : "default",
                 },
                 isHovered && (canSubmit || isGenerating)
                   ? { transform: [{ scale: 1.05 }] }
@@ -228,15 +233,15 @@ export default function ChatInputBar({
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
-          <Text style={styles.sendButtonText}>{isGenerating ? '■' : '↑'}</Text>
+          <Text style={styles.sendButtonText}>{isGenerating ? "■" : "↑"}</Text>
         </TouchableOpacity>
       </View>
 
       {!isKeyboardUp ? (
         <Text style={[styles.footerTip, { color: theme.textMuted }]}>
           {isDesktopWeb
-            ? 'AI 智能体可能会产生错误信息。支持直接粘贴截图。'
-            : 'AI 智能体可能会产生错误信息。'}
+            ? "AI 智能体可能会产生错误信息。支持直接粘贴截图。"
+            : "AI 智能体可能会产生错误信息。"}
         </Text>
       ) : null}
     </View>
@@ -254,50 +259,50 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   previewContentContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     gap: 8,
   },
   previewItem: {
-    position: 'relative',
+    position: "relative",
     width: 60,
     height: 60,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: '#f3f4f6',
-    overflow: 'hidden',
+    borderColor: "#e5e7eb",
+    backgroundColor: "#f3f4f6",
+    overflow: "hidden",
   },
   previewImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
   },
   deleteBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 2,
     right: 2,
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   deleteBadgeText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   inputBar: {
     minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+    flexDirection: "row",
+    alignItems: "flex-end",
     borderWidth: 1,
     borderRadius: 24,
     paddingVertical: 8,
     paddingLeft: 8, // 左侧贴边
     paddingRight: 8, // 右侧贴边
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
@@ -307,31 +312,31 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(150, 150, 150, 0.1)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(150, 150, 150, 0.1)",
   },
   attachButtonText: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: -3,
   },
   input: {
     flex: 1,
     maxHeight: 280,
     fontSize: 15,
-    paddingTop: Platform.OS === 'ios' ? 10 : 9,
-    paddingBottom: Platform.OS === 'ios' ? 10 : 9,
-    textAlignVertical: 'center',
+    paddingTop: Platform.OS === "ios" ? 10 : 9,
+    paddingBottom: Platform.OS === "ios" ? 10 : 9,
+    textAlignVertical: "center",
     borderWidth: 0,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     ...Platform.select({
       web: {
-        outlineStyle: 'none',
-        resize: 'none',
-        overflowY: 'auto',
-        height: 'auto',
-        fieldSizing: 'content',
+        outlineStyle: "none",
+        resize: "none",
+        overflowY: "auto",
+        height: "auto",
+        fieldSizing: "content",
       } as any,
     }),
   },
@@ -339,17 +344,17 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   sendButtonText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
+    color: "#FFFFFF",
+    fontWeight: "bold",
     fontSize: 15,
   },
   footerTip: {
     fontSize: 11,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 8,
     opacity: 0.6,
   },
