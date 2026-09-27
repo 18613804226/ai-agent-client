@@ -566,9 +566,9 @@ export default function ChatArea({
     });
   }, [messages, streamingRenderMsg]);
 
-  const safeScrollBottom = useCallback(() => {
+  const safeScrollBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
+      scrollViewRef.current?.scrollToEnd({ animated });
     });
   }, []);
 
@@ -591,9 +591,17 @@ export default function ChatArea({
     },
     [originalHandleScroll],
   );
-
+  // ✅ 用户手指一碰上去：立即取消自动跟随 + 打断正在进行的自动滚动动画
+  const handleScrollBeginDrag = useCallback((event: any) => {
+    autoFollowRef.current = false;
+    scrollViewRef.current?.scrollTo({
+      y: event.nativeEvent.contentOffset.y,
+      animated: false, // 关键：用无动画 scrollTo 顶掉正在跑的 scrollToEnd
+    });
+  }, []);
   useEffect(() => {
     if (!streamingRenderMsg?.msgId) return;
+    if (!autoFollowRef.current) return;
     const timer = setTimeout(() => {
       safeScrollBottom();
     }, 120);
@@ -663,7 +671,7 @@ export default function ChatArea({
   const handleScrollToBottom = () => {
     autoFollowRef.current = true;
     setShowScrollToBottom(false);
-    safeScrollBottom();
+    safeScrollBottom(true);
   };
 
   return (
@@ -671,10 +679,11 @@ export default function ChatArea({
       <ScrollView
         ref={scrollViewRef}
         onScroll={handleScroll}
+        onScrollBeginDrag={handleScrollBeginDrag}
         scrollEventThrottle={16}
         onContentSizeChange={() => {
           if (autoFollowRef.current) {
-            safeScrollBottom();
+            safeScrollBottom(false);
           }
         }}
         contentContainerStyle={styles.scrollContent}
