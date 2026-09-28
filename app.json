@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "ai-agent-client",
+    "newArchEnabled": true,
     "slug": "ai-agent-client",
     "scheme": "ai-agent-client-toto",
     "version": "1.0.0",

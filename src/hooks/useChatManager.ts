@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Platform, Vibration } from "react-native";
-import { api } from "../services/api";
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Platform, Vibration } from 'react-native';
+import { api } from '../services/api';
 
 export interface Message {
   id: string;
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   content: string;
   time?: string;
   thought?: string;
@@ -16,14 +16,14 @@ export interface Conversation {
   messages?: Message[];
 }
 
-const baseURL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
-type StreamChunk = { type: "thought" | "content"; text: string };
+type StreamChunk = { type: 'thought' | 'content'; text: string };
 
 export function useChatManager() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeId, setActiveId] = useState<string>("");
-  const [inputText, setInputText] = useState("");
+  const [activeId, setActiveId] = useState<string>('');
+  const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -38,14 +38,14 @@ export function useChatManager() {
   } | null>(null);
 
   const queueRef = useRef<StreamChunk[]>([]);
-  const currentThoughtRef = useRef("");
-  const currentContentRef = useRef("");
-  const streamingRenderedTextRef = useRef("");
+  const currentThoughtRef = useRef('');
+  const currentContentRef = useRef('');
+  const streamingRenderedTextRef = useRef('');
   const lastMarkdownUpdateRef = useRef(0);
   const timerRef = useRef<number | null>(null);
   const isConsumingRef = useRef(false);
   const streamFinishedRef = useRef(false);
-  const currentStreamingMsgIdRef = useRef<string>("");
+  const currentStreamingMsgIdRef = useRef<string>('');
 
   const autoFollowRef = useRef(true);
   const isAtBottomRef = useRef(true);
@@ -75,9 +75,9 @@ export function useChatManager() {
           return;
         }
         setConversations([]);
-        setActiveId("");
+        setActiveId('');
       } catch (error) {
-        console.error("初始化后端会话失败:", error);
+        console.error('初始化后端会话失败:', error);
       }
     };
     initChatData();
@@ -88,8 +88,8 @@ export function useChatManager() {
 
   // 2. 创建新会话
   const handleNewChat = async () => {
-    const tempId = "temp_" + Date.now();
-    const newConv = { id: tempId, title: "新对话" };
+    const tempId = 'temp_' + Date.now();
+    const newConv = { id: tempId, title: '新对话' };
 
     setConversations((prev) => [newConv, ...prev].slice(0, 20));
     setActiveId(tempId);
@@ -101,14 +101,14 @@ export function useChatManager() {
       setConversations((prev) =>
         prev.map((c) =>
           c.id === tempId
-            ? { ...c, id: realId, title: sessionData.title || "新对话" }
+            ? { ...c, id: realId, title: sessionData.title || '新对话' }
             : c,
         ),
       );
       setActiveId(realId);
       return realId;
     } catch (error) {
-      console.error("创建会话失败", error);
+      console.error('创建会话失败', error);
       setConversations((prev) => prev.filter((c) => c.id !== tempId));
     }
   };
@@ -118,8 +118,8 @@ export function useChatManager() {
     // 切换时清理流式状态，防止串文字
     setStreamingRenderMsg(null);
     queueRef.current = [];
-    currentThoughtRef.current = "";
-    currentContentRef.current = "";
+    currentThoughtRef.current = '';
+    currentContentRef.current = '';
     streamFinishedRef.current = true;
     isConsumingRef.current = false;
     if (timerRef.current) {
@@ -136,19 +136,19 @@ export function useChatManager() {
         prev.map((c) => (c.id === id ? { ...c, messages } : c)),
       );
     } catch (error) {
-      console.error("获取会话详情失败:", error);
+      console.error('获取会话详情失败:', error);
     }
   };
 
   // 4. 删除会话
   const handleDeleteChat = async (e: any, id: string) => {
-    if (e && typeof e.stopPropagation === "function") {
+    if (e && typeof e.stopPropagation === 'function') {
       e.stopPropagation();
     }
     try {
       await api.deleteSession(id);
     } catch (error) {
-      console.error("删除会话失败:", error);
+      console.error('删除会话失败:', error);
       return;
     }
 
@@ -160,7 +160,7 @@ export function useChatManager() {
         setActiveId(nextConversations[0].id);
         handleSelectChat(nextConversations[0].id);
       } else {
-        setActiveId("");
+        setActiveId('');
       }
     }
   };
@@ -219,7 +219,7 @@ export function useChatManager() {
           const chunk = queue[0];
           const take = Math.min(remain, chunk.text.length);
 
-          if (chunk.type === "thought") {
+          if (chunk.type === 'thought') {
             currentThoughtRef.current += chunk.text.slice(0, take);
           } else {
             currentContentRef.current += chunk.text.slice(0, take);
@@ -251,14 +251,9 @@ export function useChatManager() {
         }
 
         // 滚动节流
-        if (
-          autoFollowRef.current &&
-          scrollViewRef.current &&
-          now - lastScroll > SCROLL_THROTTLE_MS
-        ) {
-          scrollViewRef.current.scrollToEnd({ animated: false });
-          lastScroll = now;
-        }
+        // if (autoFollowRef.current && scrollViewRef.current) {
+        //   scrollViewRef.current.scrollToEnd({ animated: false });
+        // }
 
         // ===== 关键：有数据继续，没数据就停（彻底去掉空转）=====
         if (queue.length > 0) {
@@ -281,13 +276,13 @@ export function useChatManager() {
 
           setStreamingRenderMsg(null);
 
-          if (autoFollowRef.current && scrollViewRef.current) {
-            setTimeout(() => {
-              scrollViewRef.current?.scrollToEnd({ animated: true });
-            }, 60);
-          }
+          // if (autoFollowRef.current && scrollViewRef.current) {
+          //   setTimeout(() => {
+          //     scrollViewRef.current?.scrollToEnd({ animated: false });
+          //   }, 60);
+          // }
 
-          if (Platform.OS !== "web") {
+          if (Platform.OS !== 'web') {
             Vibration.vibrate(100);
           }
         } else {
@@ -304,7 +299,7 @@ export function useChatManager() {
 
   // 推送并自动唤醒
   const enqueue = useCallback(
-    (type: "thought" | "content", text: string) => {
+    (type: 'thought' | 'content', text: string) => {
       if (!text) return;
       queueRef.current.push({ type, text });
 
@@ -319,30 +314,30 @@ export function useChatManager() {
   // ==================== SSE 解析公共逻辑 ====================
   const processSSELine = (line: string) => {
     const trimmedLine = line.trim();
-    if (!trimmedLine.startsWith("data:")) return;
+    if (!trimmedLine.startsWith('data:')) return;
 
-    const jsonText = trimmedLine.replace("data:", "").trim();
-    if (jsonText === "[DONE]") return;
+    const jsonText = trimmedLine.replace('data:', '').trim();
+    if (jsonText === '[DONE]') return;
 
     try {
       const parsed = JSON.parse(jsonText);
       const delta = parsed.choices?.[0]?.delta || {};
 
-      let chunkThought = "";
-      let chunkContent = "";
+      let chunkThought = '';
+      let chunkContent = '';
 
-      if (parsed.type === "thought") {
-        chunkThought = parsed.thought || parsed.content || "";
-      } else if (parsed.type === "content") {
-        chunkContent = parsed.content || "";
+      if (parsed.type === 'thought') {
+        chunkThought = parsed.thought || parsed.content || '';
+      } else if (parsed.type === 'content') {
+        chunkContent = parsed.content || '';
       } else {
         chunkThought =
-          delta.reasoning_content || parsed.reasoning_content || "";
-        chunkContent = delta.content || parsed.content || "";
+          delta.reasoning_content || parsed.reasoning_content || '';
+        chunkContent = delta.content || parsed.content || '';
       }
 
-      if (chunkThought) enqueue("thought", chunkThought);
-      if (chunkContent) enqueue("content", chunkContent);
+      if (chunkThought) enqueue('thought', chunkThought);
+      if (chunkContent) enqueue('content', chunkContent);
     } catch {
       // 解析失败忽略
     }
@@ -358,9 +353,9 @@ export function useChatManager() {
     streamFinishedRef.current = false;
     isConsumingRef.current = false;
     queueRef.current = [];
-    currentThoughtRef.current = "";
-    currentContentRef.current = "";
-    streamingRenderedTextRef.current = "";
+    currentThoughtRef.current = '';
+    currentContentRef.current = '';
+    streamingRenderedTextRef.current = '';
     lastMarkdownUpdateRef.current = 0;
     currentStreamingMsgIdRef.current = thinkingMsgId;
     setStreamingRenderMsg(null);
@@ -375,22 +370,22 @@ export function useChatManager() {
     const url = `${baseURL}/chat/${sessionId}/stream`;
 
     // ========== WEB：fetch + ReadableStream ==========
-    if (Platform.OS === "web") {
+    if (Platform.OS === 'web') {
       try {
         const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: queryText }),
           signal: abortControllerRef.current!.signal,
         });
 
         if (!response.body) {
-          throw new Error("ReadableStream not supported");
+          throw new Error('ReadableStream not supported');
         }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let buffer = "";
+        let buffer = '';
 
         while (true) {
           const { done, value } = await reader.read();
@@ -404,18 +399,18 @@ export function useChatManager() {
           }
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             processSSELine(line);
           }
         }
       } catch (err: any) {
-        if (err.name !== "AbortError") {
-          console.error("web stream error", err);
+        if (err.name !== 'AbortError') {
+          console.error('web stream error', err);
           updateAiMessageFields(thinkingMsgId, {
-            content: "服务器开小差了，请检查网络或后端连接。",
+            content: '服务器开小差了，请检查网络或后端连接。',
           });
           setStreamingRenderMsg(null);
         }
@@ -425,14 +420,14 @@ export function useChatManager() {
     // ========== 移动端：XHR onprogress ==========
     else {
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", url);
-      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.open('POST', url);
+      xhr.setRequestHeader('Content-Type', 'application/json');
       let lastReadPos = 0;
 
       xhr.onprogress = () => {
         const chunkRaw = xhr.responseText.substring(lastReadPos);
         lastReadPos = xhr.responseText.length;
-        const lines = chunkRaw.split("\n");
+        const lines = chunkRaw.split('\n');
 
         for (const line of lines) {
           processSSELine(line);
@@ -448,14 +443,14 @@ export function useChatManager() {
 
       xhr.onerror = () => {
         updateAiMessageFields(thinkingMsgId, {
-          content: "服务器开小差了，请检查网络或后端连接。",
+          content: '服务器开小差了，请检查网络或后端连接。',
         });
         setIsGenerating(false);
         setStreamingRenderMsg(null);
         streamFinishedRef.current = true;
       };
 
-      abortControllerRef.current!.signal.addEventListener("abort", () => {
+      abortControllerRef.current!.signal.addEventListener('abort', () => {
         xhr.abort();
       });
 
@@ -492,25 +487,25 @@ export function useChatManager() {
         setActiveId(currentActiveId);
         isBrandNewSession = true;
       } catch (error) {
-        console.error("自动创建会话失败:", error);
+        console.error('自动创建会话失败:', error);
         return;
       }
     }
 
     const currentInput = inputText;
-    setInputText("");
+    setInputText('');
 
     const userMsg: Message = {
       id: Date.now().toString(),
-      role: "user",
+      role: 'user',
       content: currentInput,
     };
 
     const thinkingMsgId = (Date.now() + 1).toString();
     const thinkingMsg: Message = {
       id: thinkingMsgId,
-      role: "assistant",
-      content: "...",
+      role: 'assistant',
+      content: '...',
     };
 
     const currentConv = conversations.find(
@@ -520,7 +515,7 @@ export function useChatManager() {
 
     const updatedTitle =
       isFirst || !currentConv?.title
-        ? currentInput.slice(0, 14) + "..."
+        ? currentInput.slice(0, 14) + '...'
         : currentConv.title;
 
     setConversations((prev: any) => {
@@ -550,7 +545,7 @@ export function useChatManager() {
 
     if (isBrandNewSession || updatedTitle) {
       api.updateSessionTitle(currentActiveId, updatedTitle).catch((err) => {
-        console.error("更新会话标题失败:", err);
+        console.error('更新会话标题失败:', err);
       });
     }
 
@@ -560,15 +555,16 @@ export function useChatManager() {
     try {
       await runTypewriterEffect(thinkingMsgId, currentActiveId, currentInput);
     } catch (error: any) {
-      if (error.name !== "AbortError") {
-        console.error("发送消息失败:", error);
+      if (error.name !== 'AbortError') {
+        console.error('发送消息失败:', error);
         updateAiMessageFields(thinkingMsgId, {
-          content: "抱歉，服务器开小差了，请检查网络或后端连接。",
+          content: '抱歉，服务器开小差了，请检查网络或后端连接。',
         });
       }
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
+      Vibration.vibrate(100);
     }
   };
 
@@ -594,7 +590,7 @@ export function useChatManager() {
     if (msgId && (currentContentRef.current || currentThoughtRef.current)) {
       updateAiMessageFields(msgId, {
         thought: currentThoughtRef.current || undefined,
-        content: currentContentRef.current || "...",
+        content: currentContentRef.current || '...',
       });
     }
 
