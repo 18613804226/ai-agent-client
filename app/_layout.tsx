@@ -4,7 +4,13 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { MobileDrawer } from '../src/components/MobileDrawer';
 import { darkTheme, lightTheme } from '../src/constants/theme';
-import React, { useState, createContext, useContext } from 'react';
+import React, {
+  useState,
+  createContext,
+  useContext,
+  useMemo,
+  useCallback,
+} from 'react';
 import { useChatManager } from '../src/hooks/useChatManager';
 import { useKnowledgeFiles } from '../src/hooks/useKnowledgeFiles';
 
@@ -32,14 +38,25 @@ export default function RootLayout() {
     useKnowledgeFiles();
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  const theme = isDarkMode
-    ? { ...darkTheme, isDark: true }
-    : { ...lightTheme, isDark: false };
+  // ✅ useMemo：避免每次渲染都新建 theme 对象 -> 稳定 Context 值，让下游 memo 生效
+  const theme = useMemo(
+    () =>
+      isDarkMode
+        ? { ...darkTheme, isDark: true }
+        : { ...lightTheme, isDark: false },
+    [isDarkMode],
+  );
 
-  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const toggleTheme = useCallback(() => setIsDarkMode((prev) => !prev), []);
+
+  // ✅ 稳定的 Context 值（theme / toggleTheme 均已 memo 化）
+  const themeContextValue = useMemo(
+    () => ({ isDarkMode, toggleTheme, theme }),
+    [isDarkMode, toggleTheme, theme],
+  );
 
   return (
-    <ThemeContext.Provider value={{ isDarkMode, toggleTheme, theme }}>
+    <ThemeContext.Provider value={themeContextValue}>
       {/* 💡 2. 用 ChatContext.Provider 包裹全局 */}
       <ChatContext.Provider value={chatManager}>
         <GestureHandlerRootView style={{ flex: 1 }}>
@@ -51,6 +68,7 @@ export default function RootLayout() {
                 theme={theme}
                 conversations={chatManager.conversations}
                 activeId={chatManager.activeId}
+                onClose={() => props.navigation.closeDrawer()}
                 onNewChat={chatManager.handleNewChat}
                 onSelectChat={chatManager.handleSelectChat}
                 onDeleteChat={chatManager.handleDeleteChat}

@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   memo,
   useEffect,
   useRef,
@@ -15,8 +15,7 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import Markdown from 'react-native-markdown-display';
 import Animated, {
   useSharedValue,
@@ -24,7 +23,7 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import { MyToast } from './GlobalToast';
+import MessageActions from './MessageActions';
 import { useChat } from '../../app/_layout';
 import { playText, stopSpeech } from '../services/speechPlayer';
 import { api } from '../services/api';
@@ -36,6 +35,8 @@ interface Message {
   content: string;
   thought?: string;
   isStreaming?: boolean;
+  /** 系统类标记行（如「用户中止对话」），渲染为居中哥倩文本，不走气泡 */
+  systemNote?: boolean;
 }
 
 interface ThemeType {
@@ -151,186 +152,8 @@ const ThoughtCollapsible = memo(
   (prev, next) => prev.thought === next.thought && prev.theme === next.theme,
 );
 
-// ===================== CopyButton =====================
-interface CopyButtonProps {
-  content: string;
-  theme: ThemeType;
-}
-const CopyButton = memo(
-  function CopyButton({ content, theme }: CopyButtonProps) {
-    const [isHovered, setIsHovered] = useState(false);
-
-    const handleCopy = async () => {
-      await Clipboard.setStringAsync(content);
-      MyToast.show('已复制到剪贴板');
-    };
-
-    return (
-      <View
-        style={styles.copyBtnWrapper}
-        {...({
-          onMouseEnter: () => setIsHovered(true),
-          onMouseLeave: () => setIsHovered(false),
-        } as any)}
-      >
-        <TouchableOpacity
-          style={[
-            styles.copyIconBtn,
-            isHovered && {
-              backgroundColor: theme.isDark
-                ? 'rgba(255, 255, 255, 0.15)'
-                : 'rgba(0, 0, 0, 0.1)',
-            },
-          ]}
-          onPress={handleCopy}
-          accessibilityLabel="复制内容"
-        >
-          <Svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-            <Rect
-              x="9"
-              y="9"
-              width="13"
-              height="13"
-              rx="2"
-              stroke={theme.textMuted}
-              strokeWidth="2"
-            />
-            <Rect
-              x="2"
-              y="2"
-              width="13"
-              height="13"
-              rx="2"
-              stroke={theme.textMuted}
-              strokeWidth="2"
-              fill={theme.bubbleAiBg}
-            />
-          </Svg>
-        </TouchableOpacity>
-      </View>
-    );
-  },
-  (prev, next) => prev.content === next.content && prev.theme === next.theme,
-);
-
-// ===================== Speaker Icons =====================
-const IconMuteSpeaker = ({ color }: { color: string }) => (
-  <Svg
-    width={16}
-    height={16}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <Path d="M11 5L6 9H2v6h4l5 4V5z" />
-    <Path d="M23 9l-6 6M17 9l6 6" />
-  </Svg>
-);
-
-const IconPlaying = ({ color }: { color: string }) => (
-  <Svg
-    width={16}
-    height={16}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <Path d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14M17.32 6.68a7.5 7.5 0 0 1 0 10.6" />
-  </Svg>
-);
-
-// ===================== SpeakButton =====================
-interface SpeakButtonProps {
-  content: string;
-  theme: ThemeType;
-  messageId: string;
-  playingMsgId: string | null;
-  setPlayingMsgId: (id: string | null) => void;
-}
-const SpeakButton = memo(
-  function SpeakButton({
-    content,
-    theme,
-    messageId,
-    playingMsgId,
-    setPlayingMsgId,
-  }: SpeakButtonProps) {
-    const isPlaying = playingMsgId === messageId;
-    const [loading, setLoading] = useState(false);
-
-    const handleToggleSpeech = async () => {
-      // 正在播这条 → 停止
-      if (isPlaying) {
-        stopSpeech();
-        setPlayingMsgId(null);
-        return;
-      }
-      // 先停掉其他播放（包括自动朗读正在播的内容）
-      stopSpeech();
-      try {
-        setLoading(true);
-        setPlayingMsgId(messageId);
-        await playText(content, {
-          fetchUrl: async (sentence) => {
-            const data = await api.textToSpeech(sentence, 'longwanjun_v3');
-            return data.url;
-          },
-          onEnd: () => setPlayingMsgId(null),
-        });
-      } catch (err) {
-        console.error('通义 TTS 播放失败:', err);
-        MyToast.show('语音合成失败，请稍后重试');
-        setPlayingMsgId(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const iconColor =
-      isPlaying || loading ? theme.historyActiveText : theme.textMuted;
-    const bgColor =
-      isPlaying || loading ? 'rgba(29, 161, 242, 0.1)' : 'transparent';
-
-    return (
-      <TouchableOpacity
-        style={[
-          {
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingVertical: 4,
-            paddingHorizontal: 6,
-            marginLeft: 8,
-            borderRadius: 12,
-          },
-          Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : undefined,
-          { backgroundColor: bgColor },
-        ]}
-        onPress={handleToggleSpeech}
-        disabled={loading}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color={iconColor} />
-        ) : isPlaying ? (
-          <IconPlaying color={iconColor} />
-        ) : (
-          <IconMuteSpeaker color={iconColor} />
-        )}
-      </TouchableOpacity>
-    );
-  },
-  (prev, next) =>
-    prev.content === next.content &&
-    prev.theme === next.theme &&
-    prev.messageId === next.messageId &&
-    prev.playingMsgId === next.playingMsgId,
-);
+// ===================== MessageActions（复制 + 喇叭） =====================
+// 见 ./MessageActions.tsx：抽成独立组件，行高固定，吐字完成前后布局不变
 
 // ===================== ChatMessageItem =====================
 const ChatMessageItem = memo(
@@ -450,6 +273,17 @@ const ChatMessageItem = memo(
       [theme],
     );
 
+    // 系统标记行（如「用户中止对话」）：居中、哥倩、不走气泡，跟正常气泡错开
+    if (item.systemNote) {
+      return (
+        <View style={styles.systemNoteRow}>
+          <Text style={[styles.systemNoteText, { color: theme.textMuted }]}>
+            {item.content}
+          </Text>
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.messageRow, isUser ? styles.rowUser : styles.rowAi]}>
         <View style={bubbleStyle}>
@@ -479,7 +313,8 @@ const ChatMessageItem = memo(
                 <ThoughtCollapsible thought={item.thought!} theme={theme} />
               ) : null}
 
-              {/* 核心优化：流式中用纯 Text，结束后再用 Markdown */}
+              {/* 核心优化：流式中用纯 Text（渲染成本低、行高与 Markdown 对齐，
+                  结束后切 Markdown 时气泡高度不跳变） */}
               {isStreaming ? (
                 <Text
                   style={{
@@ -498,18 +333,16 @@ const ChatMessageItem = memo(
             </View>
           )}
 
-          {/* 有内容就显示操作按钮 */}
+          {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动 */}
           {!isUser && hasContent && (
-            <View style={styles.footerRow}>
-              <CopyButton content={item.content} theme={theme} />
-              <SpeakButton
-                content={item.content}
-                theme={theme}
-                messageId={item.id}
-                playingMsgId={playingMsgId}
-                setPlayingMsgId={setPlayingMsgId}
-              />
-            </View>
+            <MessageActions
+              content={item.content}
+              messageId={item.id}
+              theme={theme}
+              playingMsgId={playingMsgId}
+              onPlayingChange={setPlayingMsgId}
+              ready={!isStreaming}
+            />
           )}
         </View>
       </View>
@@ -521,6 +354,7 @@ const ChatMessageItem = memo(
     prev.item.thought === next.item.thought &&
     prev.theme === next.theme &&
     prev.isStreaming === next.isStreaming &&
+    prev.item.systemNote === next.item.systemNote &&
     prev.playingMsgId === next.playingMsgId,
 );
 
@@ -540,7 +374,6 @@ export default function ChatArea({
     autoFollowRef,
   } = useChat();
   const [playingMsgId, setPlayingMsgId] = useState<string | null>(null);
-  const scrollLockRef = useRef(false);
 
   // ✅ 用 state 控制「回到底部」按钮显示
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -566,11 +399,52 @@ export default function ChatArea({
     });
   }, [messages, streamingRenderMsg]);
 
-  const safeScrollBottom = useCallback((animated = true) => {
-    requestAnimationFrame(() => {
-      scrollViewRef.current?.scrollToEnd({ animated });
-    });
+  // ==================== 贴底引擎 ====================
+  const lastMsgCountRef = useRef(displayMessages.length);
+  const lastMsgArrayRef = useRef(displayMessages);
+
+  /**
+   * 贴底（消费级 App 的做法）：同步定位，不走动画、不排队。
+   * - web：直接写 scrollTop。读 scrollHeight 会强制浏览器完成布局，
+   *        所以「量」和「定」发生在同一帧的同一个任务里，paint 之前完成 → 不会看到先长后跳。
+   * - native：scrollToEnd(animated)，在同一帧的布局阶段处理。
+   */
+  const pinToBottom = useCallback((animated = false) => {
+    const ref: any = scrollViewRef.current;
+    if (!ref) return;
+
+    if (Platform.OS === 'web') {
+      const node =
+        (typeof ref.getScrollableNode === 'function' &&
+          ref.getScrollableNode()) ||
+        (typeof ref.getInnerViewNode === 'function' &&
+          ref.getInnerViewNode()) ||
+        null;
+      if (node) {
+        if (animated) {
+          // 进入页面 / 切会话 —— 顺滑滚动到底部
+          node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+        } else {
+          // 吐字过程中 —— 同步定位，零动画、零滞迟
+          node.scrollTop = node.scrollHeight;
+        }
+        return;
+      }
+    }
+
+    ref.scrollToEnd?.({ animated });
   }, []);
+
+  /**
+   * 贴底 —— 靠 ScrollView 的 onContentSizeChange（react-native-web 用
+   * ResizeObserver 驱动）负责：它在浏览器完成本次布局之后、paint 之前触发，
+   * 所以 scrollTop 写在那一刻已是布局缓存命中（免一次强制 reflow），
+   * 既保证同帧不抖动、又不用每帧强刷一次布局（那会卡住主线程）。
+   *
+   * 留在这里的 useLayoutEffect 早已删除——它每 render 都读 scrollHeight，
+   * 而此时浏览器尚未布局，于是强制一次同步 reflow → 60 次/秒主线程堵塞，
+   * 正是「吐字偶尔卡住」的根因。
+   */
 
   // 滚动处理：计算是否离开底部一定距离
   const handleScroll = useCallback(
@@ -583,30 +457,23 @@ export default function ChatArea({
         contentSize.height - layoutMeasurement.height - contentOffset.y;
 
       // 上滑超过 120px 才显示按钮
-      const shouldShow = distanceFromBottom > 120;
-      setShowScrollToBottom(shouldShow);
+      setShowScrollToBottom(distanceFromBottom > 120);
 
-      // 同步 autoFollow
-      autoFollowRef.current = distanceFromBottom < 50;
+      // 迟滞区间 [40, 120]：远离底部才脱钩，滑回底部附近才重新跟随。
+      // 这样吐字时那几十毫秒的高度误差不会误判成「用户上滑了」而突然停住。
+      if (autoFollowRef.current) {
+        if (distanceFromBottom > 120) autoFollowRef.current = false;
+      } else if (distanceFromBottom < 40) {
+        autoFollowRef.current = true;
+      }
     },
     [originalHandleScroll],
   );
-  // ✅ 用户手指一碰上去：立即取消自动跟随 + 打断正在进行的自动滚动动画
-  const handleScrollBeginDrag = useCallback((event: any) => {
+
+  // ✅ 用户手指一碰上去：立即取消自动跟随
+  const handleScrollBeginDrag = useCallback(() => {
     autoFollowRef.current = false;
-    scrollViewRef.current?.scrollTo({
-      y: event.nativeEvent.contentOffset.y,
-      animated: false, // 关键：用无动画 scrollTo 顶掉正在跑的 scrollToEnd
-    });
   }, []);
-  useEffect(() => {
-    if (!streamingRenderMsg?.msgId) return;
-    if (!autoFollowRef.current) return;
-    const timer = setTimeout(() => {
-      safeScrollBottom();
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [streamingRenderMsg?.msgId, safeScrollBottom]);
 
   // 💡 自动朗读：最新一条 AI 回复流式结束后播放
   useEffect(() => {
@@ -624,7 +491,7 @@ export default function ChatArea({
         setPlayingMsgId(last.id);
         await playText(last.content, {
           fetchUrl: async (sentence) => {
-            const data = await api.textToSpeech(sentence, 'longwanjun_v3');
+            const data = await api.textToSpeech(sentence, 'Nini');
             return data.url;
           },
           onEnd: () => {
@@ -652,26 +519,50 @@ export default function ChatArea({
   // 💡 离开聊天页时停止播放
   useEffect(() => () => stopSpeech(), []);
 
+  /**
+   * 贴底：
+   * 1) 初次挂载 / 切会话（key=activeId 变化 → 全量重新挂载）后，
+   *    顺滑滚动到底部 —— 这就是「进入/切会话贴到底」。
+   *    刚进页面用户没滚动过，故不用 autoFollowRef 守卫。
+   *    吐字/收到实时消息的贴底靠下面的 useLayoutEffect + 数组-effect
+   *    （那些是无动画的，因为要跟每一帧吐字同步）。
+   */
+  useEffect(() => {
+    lastMsgCountRef.current = displayMessages.length;
+    lastMsgArrayRef.current = displayMessages;
+    autoFollowRef.current = true;
+
+    // 初次挂载时 ScrollView 的内容可能尚未布局完成，延迟 2 帧确保滚动生效
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        pinToBottom(true);
+      });
+    });
+  }, [activeId, pinToBottom]);
+
+  /**
+   * 2) 后续异步消息落盘 / 用户撤回 —— 守卫 autoFollow（用户曾经上滑就不推）。
+   *    吐字期间条数不变（消息体已在 `messages` 里），所以这里不会误触发。
+   */
+  useEffect(() => {
+    if (displayMessages === lastMsgArrayRef.current) return;
+    lastMsgArrayRef.current = displayMessages;
+    if (displayMessages.length !== lastMsgCountRef.current) {
+      lastMsgCountRef.current = displayMessages.length;
+    }
+    if (autoFollowRef.current) {
+      pinToBottom();
+    }
+  }, [displayMessages, pinToBottom]);
+
   const showWelcome =
     (!displayMessages || displayMessages.length === 0) && !isKeyboardUp;
-
-  // const handleAnchorLayout = useCallback((event: any) => {
-  //   if (scrollLockRef.current) return;
-  //   if (autoFollowRef.current && scrollViewRef.current) {
-  //     scrollLockRef.current = true;
-  //     const y = event.nativeEvent.layout.y;
-  //     scrollViewRef.current.scrollTo({ y, animated: false });
-  //     setTimeout(() => {
-  //       scrollLockRef.current = false;
-  //     }, 80);
-  //   }
-  // }, []);
 
   // 点击回到底部
   const handleScrollToBottom = () => {
     autoFollowRef.current = true;
     setShowScrollToBottom(false);
-    safeScrollBottom(true);
+    pinToBottom(true);
   };
 
   return (
@@ -682,9 +573,10 @@ export default function ChatArea({
         onScrollBeginDrag={handleScrollBeginDrag}
         scrollEventThrottle={32}
         onContentSizeChange={() => {
-          if (autoFollowRef.current) {
-            safeScrollBottom(true);
-          }
+          if (!autoFollowRef.current) return;
+          // 幂等：已经在底部时 scrollTop 不变，不会和 useLayoutEffect 打架；
+          // native 布局是异步的，这一层用来兜住 useLayoutEffect 之后的那次布局提交
+          pinToBottom();
         }}
         contentContainerStyle={styles.scrollContent}
         alwaysBounceVertical={false}
@@ -802,21 +694,16 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   messageText: { fontSize: 15, lineHeight: 22 },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+  systemNoteRow: {
+    width: '100%',
     alignItems: 'center',
-    marginTop: 6,
+    marginVertical: 6,
   },
-  copyBtnWrapper: {
-    position: 'relative',
-    alignItems: 'center',
-    marginLeft: 6,
-  },
-  copyIconBtn: {
-    padding: 4,
-    borderRadius: 4,
-    backgroundColor: 'rgba(128,128,128,0.1)',
+  systemNoteText: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontStyle: 'italic',
+    opacity: 0.6,
   },
   thoughtBox: {
     borderLeftWidth: 0,

@@ -39,7 +39,7 @@ export function MobileDrawer({
     <View
       style={[
         styles.container,
-        { borderColor: theme.border, backgroundColor: theme.background },
+        { borderColor: theme.border, backgroundColor: theme.bgApp },
       ]}
     >
       <Sidebar

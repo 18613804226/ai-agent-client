@@ -8,6 +8,7 @@ export interface Message {
   content: string;
   time?: string;
   thought?: string;
+  systemNote?: boolean;
 }
 
 export interface Conversation {
@@ -47,14 +48,52 @@ export function useChatManager() {
   const streamFinishedRef = useRef(false);
   const currentStreamingMsgIdRef = useRef<string>('');
 
+  // ==================== 吐字引擎状态 ====================
+  /** 队列里还没吐出来的字数 */
+  const queueCharsRef = useRef(0);
+  /** 小数余额：不足 1 字的吐字量留到下一帧，避免高频帧率下丢字 */
+  const charCarryRef = useRef(0);
+  const lastFrameTimeRef = useRef(0);
+  const lastPushTimeRef = useRef(0);
+
   const autoFollowRef = useRef(true);
   const isAtBottomRef = useRef(true);
   const scrollViewRef = useRef<any>(null);
 
-  const BUFFER_CHAR_THRESHOLD = 8;
-  const BUFFER_TIME_THRESHOLD = 50;
-  const SCROLL_THROTTLE_MS = 50;
-  const MAX_PER_FRAME = 60;
+  // ==================== 吐字参数 ====================
+  /** 匀速吐字速度（字/秒）：与网络包大小无关，视觉上始终平滑 */
+  const CHARS_PER_SEC = 66;
+  /** 队列积压超过该值时提速，保证不会落后于流速 */
+  const CATCH_UP_CHARS = 120;
+  const MAX_CATCH_UP_SPEED = 900;
+  /** 流已结束时的收尾速度：吐完字立刻落盘，不让用户干等 */
+  const FINISH_SPEED = 420;
+  /** 单帧吐字上限：主线程被卡住时也不会一帧吐一大坨造成跳动 */
+  const MAX_PER_FRAME = 120;
+  /** 每帧推一次 React 状态（≈60fps）：每帧都多吐至少一个字，肉眼看不出台阶 */
+  const FRAME_PUSH_INTERVAL = 16;
+  /** 单帧时间上限，防止切后台回来一帧吐几百字 */
+  const MAX_FRAME_GAP = 100;
+  const FIRST_FRAME_GAP = 16;
+
+  /** 清空吐字状态机（切换会话 / 新一轮流式开始时调用） */
+  const resetTypewriter = useCallback(() => {
+    streamFinishedRef.current = false;
+    isConsumingRef.current = false;
+    queueRef.current = [];
+    queueCharsRef.current = 0;
+    charCarryRef.current = 0;
+    lastFrameTimeRef.current = 0;
+    lastPushTimeRef.current = 0;
+    currentThoughtRef.current = '';
+    currentContentRef.current = '';
+    streamingRenderedTextRef.current = '';
+    lastMarkdownUpdateRef.current = 0;
+    if (timerRef.current) {
+      cancelAnimationFrame(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
 
   // 1. 初始化
   useEffect(() => {
@@ -117,15 +156,8 @@ export function useChatManager() {
   const handleSelectChat = async (id: string) => {
     // 切换时清理流式状态，防止串文字
     setStreamingRenderMsg(null);
-    queueRef.current = [];
-    currentThoughtRef.current = '';
-    currentContentRef.current = '';
+    resetTypewriter();
     streamFinishedRef.current = true;
-    isConsumingRef.current = false;
-    if (timerRef.current) {
-      cancelAnimationFrame(timerRef.current);
-      timerRef.current = null;
-    }
     autoFollowRef.current = true;
     setActiveId(id);
 
@@ -185,6 +217,25 @@ export function useChatManager() {
     [],
   );
 
+  /** 追加一条消息到当前会话（用于「用户中止对话」提示等） */
+  const appendMessage = useCallback(
+    (msg: Partial<Message>) => {
+      const id = msg.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === activeId
+            ? {
+                ...conv,
+                messages: [...(conv.messages || []), { ...msg, id } as Message],
+              }
+            : conv,
+        ),
+      );
+      return id;
+    },
+    [activeId],
+  );
+
   const updateStreamingMarkdownState = useCallback(
     (content: string, thought: string, msgId: string) => {
       if (streamFinishedRef.current && queueRef.current.length === 0) {
@@ -202,19 +253,76 @@ export function useChatManager() {
     [],
   );
 
-  // ==================== 核心：无空转 + 合并队列的消费者 ====================
+  // ==================== 核心：匀速吐字 + 无空转的队列消费者 ====================
   const startSmoothConsumer = useCallback(
     (targetMsgId: string) => {
       if (isConsumingRef.current) return;
       isConsumingRef.current = true;
 
-      let lastScroll = 0;
+      /** 吐字收尾：队列排空 + 流已结束 → 落盘，UI 一次性切到最终态 */
+      const finish = () => {
+        isConsumingRef.current = false;
+        timerRef.current = null;
 
-      const consumeFrame = () => {
+        updateAiMessageFields(targetMsgId, {
+          thought: currentThoughtRef.current || undefined,
+          content: currentContentRef.current,
+        });
+
+        setStreamingRenderMsg(null);
+      };
+
+      const consumeFrame = (frameTime?: number) => {
         const queue = queueRef.current;
-        let remain = MAX_PER_FRAME;
 
-        // 消费队列
+        // ===== 关键：没数据就停，彻底去掉空转 =====
+        if (queue.length === 0) {
+          if (streamFinishedRef.current) {
+            finish();
+          } else {
+            // 队列空但流还没结束 → 停掉 RAF，等新数据再唤醒
+            isConsumingRef.current = false;
+            timerRef.current = null;
+          }
+          return;
+        }
+
+        // ===== 按时间算本帧该吐多少字 =====
+        const now =
+          typeof frameTime === 'number' && frameTime > 0
+            ? frameTime
+            : Date.now();
+        const gap =
+          lastFrameTimeRef.current === 0
+            ? FIRST_FRAME_GAP
+            : Math.min(now - lastFrameTimeRef.current, MAX_FRAME_GAP);
+        lastFrameTimeRef.current = now;
+
+        const backlog = queueCharsRef.current;
+        let speed = CHARS_PER_SEC;
+        if (streamFinishedRef.current) {
+          // 流已结束：全速收尾，避免长回答在结尾干等
+          speed = FINISH_SPEED;
+        } else if (backlog > CATCH_UP_CHARS) {
+          // 积压：按积压量提速，保证消费速度始终 ≥ 到达速度
+          speed = Math.min(
+            Math.max(backlog * 2, CHARS_PER_SEC),
+            MAX_CATCH_UP_SPEED,
+          );
+        }
+
+        charCarryRef.current += (gap / 1000) * speed;
+        let budget = Math.floor(charCarryRef.current);
+        charCarryRef.current -= budget;
+        if (budget <= 0) {
+          // 还没到吐字时间，等下一帧
+          timerRef.current = requestAnimationFrame(consumeFrame);
+          return;
+        }
+        budget = Math.min(budget, MAX_PER_FRAME);
+
+        // ===== 从队列头按帧消费 =====
+        let remain = budget;
         while (remain > 0 && queue.length > 0) {
           const chunk = queue[0];
           const take = Math.min(remain, chunk.text.length);
@@ -224,6 +332,7 @@ export function useChatManager() {
           } else {
             currentContentRef.current += chunk.text.slice(0, take);
           }
+          queueCharsRef.current -= take;
 
           if (take >= chunk.text.length) {
             queue.shift();
@@ -233,16 +342,9 @@ export function useChatManager() {
           remain -= take;
         }
 
-        // 缓冲更新 Markdown
-        const now = Date.now();
-        const deltaChars =
-          currentContentRef.current.length -
-          streamingRenderedTextRef.current.length;
-
-        if (
-          deltaChars >= BUFFER_CHAR_THRESHOLD ||
-          now - lastMarkdownUpdateRef.current > BUFFER_TIME_THRESHOLD
-        ) {
+        // ===== 每帧推一次 React 状态（约 60fps），每帧只追加、不重排 =====
+        if (now - lastPushTimeRef.current >= FRAME_PUSH_INTERVAL) {
+          lastPushTimeRef.current = now;
           updateStreamingMarkdownState(
             currentContentRef.current,
             currentThoughtRef.current,
@@ -250,46 +352,11 @@ export function useChatManager() {
           );
         }
 
-        // 滚动节流
-        // if (autoFollowRef.current && scrollViewRef.current) {
-        //   scrollViewRef.current.scrollToEnd({ animated: false });
-        // }
-
-        // ===== 关键：有数据继续，没数据就停（彻底去掉空转）=====
-        if (queue.length > 0) {
-          timerRef.current = requestAnimationFrame(consumeFrame);
-        } else if (streamFinishedRef.current) {
-          // 流结束 + 队列空 → 最终落盘
-          isConsumingRef.current = false;
-          timerRef.current = null;
-
-          updateStreamingMarkdownState(
-            currentContentRef.current,
-            currentThoughtRef.current,
-            targetMsgId,
-          );
-
-          updateAiMessageFields(targetMsgId, {
-            thought: currentThoughtRef.current || undefined,
-            content: currentContentRef.current,
-          });
-
-          setStreamingRenderMsg(null);
-
-          // if (autoFollowRef.current && scrollViewRef.current) {
-          //   setTimeout(() => {
-          //     scrollViewRef.current?.scrollToEnd({ animated: false });
-          //   }, 60);
-          // }
-
-          if (Platform.OS !== 'web') {
-            Vibration.vibrate(100);
-          }
-        } else {
-          // 队列空但流还没结束 → 停止 RAF，等待新数据唤醒
-          isConsumingRef.current = false;
-          timerRef.current = null;
+        if (queue.length === 0 && streamFinishedRef.current) {
+          finish();
+          return;
         }
+        timerRef.current = requestAnimationFrame(consumeFrame);
       };
 
       timerRef.current = requestAnimationFrame(consumeFrame);
@@ -302,6 +369,7 @@ export function useChatManager() {
     (type: 'thought' | 'content', text: string) => {
       if (!text) return;
       queueRef.current.push({ type, text });
+      queueCharsRef.current += text.length;
 
       // 唤醒消费者
       if (!isConsumingRef.current) {
@@ -348,26 +416,26 @@ export function useChatManager() {
     thinkingMsgId: string,
     sessionId: string,
     queryText: string,
+    images: string[] = [],
   ) => {
     // 重置状态
-    streamFinishedRef.current = false;
-    isConsumingRef.current = false;
-    queueRef.current = [];
-    currentThoughtRef.current = '';
-    currentContentRef.current = '';
-    streamingRenderedTextRef.current = '';
-    lastMarkdownUpdateRef.current = 0;
+    resetTypewriter();
     currentStreamingMsgIdRef.current = thinkingMsgId;
     setStreamingRenderMsg(null);
-
-    if (timerRef.current) {
-      cancelAnimationFrame(timerRef.current);
-      timerRef.current = null;
-    }
 
     startSmoothConsumer(thinkingMsgId);
 
     const url = `${baseURL}/chat/${sessionId}/stream`;
+
+    // 上传图片到后端，获取 URL 数组
+    let imageUrls: string[] = [];
+    if (images.length > 0) {
+      try {
+        imageUrls = await api.uploadImages(images);
+      } catch (err) {
+        console.error('上传图片失败:', err);
+      }
+    }
 
     // ========== WEB：fetch + ReadableStream ==========
     if (Platform.OS === 'web') {
@@ -375,7 +443,7 @@ export function useChatManager() {
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: queryText }),
+          body: JSON.stringify({ query: queryText, images: imageUrls }),
           signal: abortControllerRef.current!.signal,
         });
 
@@ -419,42 +487,56 @@ export function useChatManager() {
     }
     // ========== 移动端：XHR onprogress ==========
     else {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', url);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      let lastReadPos = 0;
+      // 让 runTypewriterEffect「真正」等到 XHR 结束再返回。
+      // 之前分支里 xhr.send() 之后 async 函数就结束了 → handleSend 的
+      // finally 立刻执行 setIsGenerating(false) → 停止按钮在流式期间
+      // 就切回「发送」状态、点击无效。
+      await new Promise<void>((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        let lastReadPos = 0;
 
-      xhr.onprogress = () => {
-        const chunkRaw = xhr.responseText.substring(lastReadPos);
-        lastReadPos = xhr.responseText.length;
-        const lines = chunkRaw.split('\n');
+        const settle = () => resolve();
 
-        for (const line of lines) {
-          processSSELine(line);
-        }
-      };
+        xhr.onprogress = () => {
+          const chunkRaw = xhr.responseText.substring(lastReadPos);
+          lastReadPos = xhr.responseText.length;
+          const lines = chunkRaw.split('\n');
 
-      xhr.onload = () => {
-        streamFinishedRef.current = true;
-        if (!isConsumingRef.current) {
-          startSmoothConsumer(thinkingMsgId);
-        }
-      };
+          for (const line of lines) {
+            processSSELine(line);
+          }
+        };
 
-      xhr.onerror = () => {
-        updateAiMessageFields(thinkingMsgId, {
-          content: '服务器开小差了，请检查网络或后端连接。',
+        xhr.onload = () => {
+          streamFinishedRef.current = true;
+          if (!isConsumingRef.current) {
+            startSmoothConsumer(thinkingMsgId);
+          }
+          settle();
+        };
+
+        xhr.onerror = () => {
+          updateAiMessageFields(thinkingMsgId, {
+            content: '服务器开小差了，请检查网络或后端连接。',
+          });
+          setStreamingRenderMsg(null);
+          streamFinishedRef.current = true;
+          settle();
+        };
+
+        abortControllerRef.current!.signal.addEventListener('abort', () => {
+          xhr.abort();
+          // XMLHttpRequest 的 abort 事件不会触发 onload/onerror，
+          // 所以要在这里 settle，让 runTypewriterEffect 的 await 回来，
+          // 确保 handleSend 的 finally 也能完整执行收尾。
+          streamFinishedRef.current = true;
+          settle();
         });
-        setIsGenerating(false);
-        setStreamingRenderMsg(null);
-        streamFinishedRef.current = true;
-      };
 
-      abortControllerRef.current!.signal.addEventListener('abort', () => {
-        xhr.abort();
+        xhr.send(JSON.stringify({ query: queryText, images: imageUrls }));
       });
-
-      xhr.send(JSON.stringify({ query: queryText }));
     }
   };
 
@@ -466,13 +548,22 @@ export function useChatManager() {
     const contentH = contentSize.height;
     const isCloseToBottom = offsetY + viewH >= contentH - 50;
 
-    autoFollowRef.current = isCloseToBottom;
+    // autoFollowRef 归 ChatArea 独占写入（它要和「回到底部」按钮用同一个阈值），
+    // 这里别再抢着写，否则两个阈值打架会让自动跟随在吐字时来回抖。
     isAtBottomRef.current = isCloseToBottom;
   };
 
   // ==================== 发送消息 ====================
-  const handleSend = async () => {
-    if (!inputText.trim()) return;
+  /**
+   * @param overrideText 可选。传入时优先发送该文本（用于语音识别等「即时发送」场景），
+   *                     否则发送输入框当前内容。
+   * @param images 可选。选中的图片 base64/URL 数组，发送前会上传到后端。
+   */
+  const handleSend = async (overrideText?: string, images: string[] = []) => {
+    const textToSend = overrideText ?? inputText;
+
+    // 如果没有文字内容但有图片，仍然可以发送
+    if (!textToSend.trim() && images.length === 0) return;
 
     let currentActiveId = activeId;
     let isBrandNewSession = false;
@@ -492,8 +583,11 @@ export function useChatManager() {
       }
     }
 
-    const currentInput = inputText;
+    const currentInput = textToSend;
     setInputText('');
+
+    // 保存选中的图片到本地 state，以便清除
+    const pendingImages = images;
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -553,7 +647,7 @@ export function useChatManager() {
     setIsGenerating(true);
 
     try {
-      await runTypewriterEffect(thinkingMsgId, currentActiveId, currentInput);
+      await runTypewriterEffect(thinkingMsgId, currentActiveId, currentInput, pendingImages);
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         console.error('发送消息失败:', error);
@@ -585,7 +679,7 @@ export function useChatManager() {
     }
     isConsumingRef.current = false;
 
-    // 3. 保存当前已输出内容
+    // 4. 保存当前已输出内容
     const msgId = currentStreamingMsgIdRef.current;
     if (msgId && (currentContentRef.current || currentThoughtRef.current)) {
       updateAiMessageFields(msgId, {
@@ -594,10 +688,21 @@ export function useChatManager() {
       });
     }
 
-    // 4. 清空队列和临时状态
+    // 5. 清空队列和临时状态
     queueRef.current = [];
+    queueCharsRef.current = 0;
+    charCarryRef.current = 0;
+    lastFrameTimeRef.current = 0;
+    lastPushTimeRef.current = 0;
     setStreamingRenderMsg(null);
     setIsGenerating(false);
+
+    // 6. 追加一条「用户中止对话」标记到聊天框
+    appendMessage({
+      role: 'assistant',
+      content: '-------- 用户中止对话 --------',
+      systemNote: true,
+    });
   };
 
   return {

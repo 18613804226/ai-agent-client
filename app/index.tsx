@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -95,32 +95,13 @@ export default function ChatScreen() {
     useKnowledgeFiles();
   const { keyboardHeightAnim, isKeyboardUp } = useKeyboardAnimation();
 
-  const handleSendWithImages = () => {
-    // 这里你可以把 selectedImages 传给后端或你的全局状态
-    console.log("准备发送文字:", inputText);
+  const handleSendWithImages = (overrideText?: string) => {
+    console.log("准备发送文字:", overrideText ?? inputText);
     console.log("准备发送图片:", selectedImages);
 
-    handleSend(); // 调用原发送
+    handleSend(overrideText, selectedImages); // 传入选中图片
     clearImages(); // 发送完毕后清空图片
   };
-
-  // 组装消息，流式消息临时替换
-  const allMessages = useMemo(() => {
-    const msgList = currentChat?.messages ?? [];
-    if (!streamingRenderMsg) return msgList;
-
-    return msgList.map((msg) => {
-      if (msg.id === streamingRenderMsg.msgId) {
-        return {
-          ...msg,
-          content: streamingRenderMsg.content,
-          thought: streamingRenderMsg.thought,
-          isStreaming: true,
-        };
-      }
-      return msg;
-    });
-  }, [currentChat?.messages, streamingRenderMsg]);
 
   // 💡 三端精准判断
   const screenWidth = Dimensions.get("window").width;
@@ -223,7 +204,7 @@ export default function ChatScreen() {
             <View style={styles.chatCenterContainer}>
               <ChatArea
                 key={activeId}
-                messages={allMessages}
+                messages={currentChat?.messages ?? []}
                 streamingRenderMsg={streamingRenderMsg}
                 theme={theme}
                 isMobile={!isPCWeb}
