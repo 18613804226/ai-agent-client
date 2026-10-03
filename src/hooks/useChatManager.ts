@@ -9,6 +9,7 @@ export interface Message {
   time?: string;
   thought?: string;
   systemNote?: boolean;
+  images?: string[];
 }
 
 export interface Conversation {
@@ -425,17 +426,10 @@ export function useChatManager() {
 
     startSmoothConsumer(thinkingMsgId);
 
-    const url = `${baseURL}/chat/${sessionId}/stream`;
+     const url = `${baseURL}/chat/${sessionId}/stream`;
 
-    // 上传图片到后端，获取 URL 数组
-    let imageUrls: string[] = [];
-    if (images.length > 0) {
-      try {
-        imageUrls = await api.uploadImages(images);
-      } catch (err) {
-        console.error('上传图片失败:', err);
-      }
-    }
+    // images 已经在 handleSend 中上传，返回的是后端 URL 列表，直接使用
+    const imageUrls = images;
 
     // ========== WEB：fetch + ReadableStream ==========
     if (Platform.OS === 'web') {
@@ -586,13 +580,17 @@ export function useChatManager() {
     const currentInput = textToSend;
     setInputText('');
 
-    // 保存选中的图片到本地 state，以便清除
-    const pendingImages = images;
+    // 上传图片到后端，获取 URL 用于聊天气泡回显
+    let uploadedImageUrls: string[] = [];
+    if (images.length > 0) {
+      uploadedImageUrls = await api.uploadImages(images);
+    }
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: currentInput,
+      images: uploadedImageUrls.length > 0 ? uploadedImageUrls : undefined,
     };
 
     const thinkingMsgId = (Date.now() + 1).toString();
@@ -647,7 +645,7 @@ export function useChatManager() {
     setIsGenerating(true);
 
     try {
-      await runTypewriterEffect(thinkingMsgId, currentActiveId, currentInput, pendingImages);
+       await runTypewriterEffect(thinkingMsgId, currentActiveId, currentInput, uploadedImageUrls);
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         console.error('发送消息失败:', error);

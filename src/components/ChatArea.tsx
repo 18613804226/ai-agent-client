@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Platform,
+  Image,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import Markdown from 'react-native-markdown-display';
@@ -37,6 +38,7 @@ interface Message {
   isStreaming?: boolean;
   /** 系统类标记行（如「用户中止对话」），渲染为居中哥倩文本，不走气泡 */
   systemNote?: boolean;
+  images?: string[];
 }
 
 interface ThemeType {
@@ -284,67 +286,99 @@ const ChatMessageItem = memo(
       );
     }
 
-    return (
+     return (
       <View style={[styles.messageRow, isUser ? styles.rowUser : styles.rowAi]}>
-        <View style={bubbleStyle}>
-          {isThinking ? (
-            <View style={styles.thinkingContainer}>
-              <ActivityIndicator
-                size="small"
-                color={theme.textMuted}
-                style={{ marginRight: 8 }}
-              />
-              <Text
-                style={[
-                  styles.messageText,
-                  { color: theme.textMuted, fontStyle: 'italic' },
-                ]}
-              >
-                思考中...
-              </Text>
+        {isUser && item.images && item.images.length > 0 ? (
+          <View style={styles.userImagesColumn}>
+            {/* 图片气泡（独占一行，位于文本上方） */}
+            <View style={[bubbleStyle, styles.imageBubble]}>
+              <View style={styles.userImagesContainer}>
+                {item.images.map((imgUri, idx) => (
+                  <Image
+                    key={idx}
+                    source={{ uri: imgUri }}
+                    style={styles.userImageThumb}
+                  />
+                ))}
+              </View>
             </View>
-          ) : isUser ? (
-            <Text style={[styles.messageText, { color: theme.bubbleUserText }]}>
-              {item.content}
-            </Text>
-          ) : (
-            <View>
-              {hasThought ? (
-                <ThoughtCollapsible thought={item.thought!} theme={theme} />
+            {/* 文本气泡 */}
+            <View style={[bubbleStyle, styles.textBubbleBelowImages]}>
+              {item.content ? (
+                <Text style={[styles.messageText, { color: theme.bubbleUserText }]}>
+                  {item.content}
+                </Text>
               ) : null}
-
-              {/* 核心优化：流式中用纯 Text（渲染成本低、行高与 Markdown 对齐，
-                  结束后切 Markdown 时气泡高度不跳变） */}
-              {isStreaming ? (
+            </View>
+          </View>
+        ) : (
+          <View style={bubbleStyle}>
+            {isThinking ? (
+              <View style={styles.thinkingContainer}>
+                <ActivityIndicator
+                  size="small"
+                  color={theme.textMuted}
+                  style={{ marginRight: 8 }}
+                />
                 <Text
-                  style={{
-                    fontSize: 15,
-                    lineHeight: 22,
-                    color: theme.textMain,
-                  }}
+                  style={[
+                    styles.messageText,
+                    { color: theme.textMuted, fontStyle: 'italic' },
+                  ]}
+                >
+                  思考中...
+                </Text>
+              </View>
+            ) : isUser ? (
+              item.content ? (
+                <Text
+                  style={[
+                    styles.messageText,
+                    { color: theme.bubbleUserText },
+                  ]}
                 >
                   {item.content}
                 </Text>
-              ) : (
-                <Markdown style={dynamicMarkdownStyles}>
-                  {item.content || ''}
-                </Markdown>
-              )}
-            </View>
-          )}
+              ) : null
+            ) : (
+              <View>
+                {hasThought ? (
+                  <ThoughtCollapsible thought={item.thought!} theme={theme} />
+                ) : null}
 
-          {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动 */}
-          {!isUser && hasContent && (
-            <MessageActions
-              content={item.content}
-              messageId={item.id}
-              theme={theme}
-              playingMsgId={playingMsgId}
-              onPlayingChange={setPlayingMsgId}
-              ready={!isStreaming}
-            />
-          )}
-        </View>
+                {/* 核心优化：流式中用纯 Text（渲染成本低、行高与 Markdown 对齐，
+                    结束后切 Markdown 时气泡高度不跳变） */}
+                {isStreaming ? (
+                  <Text
+                    style={{
+                      fontSize: 15,
+                      lineHeight: 22,
+                      color: theme.textMain,
+                    }}
+                  >
+                    {item.content}
+                  </Text>
+                ) : (
+                  <Markdown style={dynamicMarkdownStyles}>
+                    {item.content || ''}
+                  </Markdown>
+                )}
+              </View>
+            )}
+
+            {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动 */}
+            {!isUser && hasContent && (
+              <MessageActions
+                content={item.content}
+                messageId={item.id}
+                theme={theme}
+                playingMsgId={playingMsgId}
+                onPlayingChange={setPlayingMsgId}
+                ready={!isStreaming}
+              />
+            )}
+          </View>
+        )}
       </View>
     );
   },
@@ -355,7 +389,8 @@ const ChatMessageItem = memo(
     prev.theme === next.theme &&
     prev.isStreaming === next.isStreaming &&
     prev.item.systemNote === next.item.systemNote &&
-    prev.playingMsgId === next.playingMsgId,
+    prev.playingMsgId === next.playingMsgId &&
+    JSON.stringify(prev.item.images) === JSON.stringify(next.item.images),
 );
 
 // ===================== ChatArea 根组件 =====================
@@ -693,7 +728,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 2,
   },
-  messageText: { fontSize: 15, lineHeight: 22 },
+   messageText: { fontSize: 15, lineHeight: 22 },
+  userImagesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+  },
+  userImageThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    resizeMode: 'cover',
+  },
+  imageBubble: {
+    marginBottom: 4,
+    alignSelf: 'flex-end',
+  },
+  userImagesColumn: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+  },
+  textBubbleBelowImages: {
+    marginTop: 4,
+  },
   systemNoteRow: {
     width: '100%',
     alignItems: 'center',
