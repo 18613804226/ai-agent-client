@@ -42,12 +42,19 @@ export function useChatManager() {
   const queueRef = useRef<StreamChunk[]>([]);
   const currentThoughtRef = useRef('');
   const currentContentRef = useRef('');
-  const streamingRenderedTextRef = useRef('');
-  const lastMarkdownUpdateRef = useRef(0);
   const timerRef = useRef<number | null>(null);
   const isConsumingRef = useRef(false);
   const streamFinishedRef = useRef(false);
   const currentStreamingMsgIdRef = useRef<string>('');
+  /**
+   * 流世代号：每开始/中止一轮流式 +1。
+   * cancelAnimationFrame 存在极小概率漏掉「已入队待执行」的那一帧，
+   * 旧帧若复活会把新流的队列用旧 msgId 吐掉（isConsumingRef 为 true 时
+   * enqueue 也不会再唤醒），表现就是新消息一直「思考中...」。
+   */
+  const streamEpochRef = useRef(0);
+  /** handleSend 轮次令牌：旧轮的 finally 不允许覆盖新一轮的状态 */
+  const sendRunRef = useRef(0);
 
   // ==================== 吐字引擎状态 ====================
   /** 队列里还没吐出来的字数 */
@@ -79,6 +86,7 @@ export function useChatManager() {
 
   /** 清空吐字状态机（切换会话 / 新一轮流式开始时调用） */
   const resetTypewriter = useCallback(() => {
+    streamEpochRef.current += 1;
     streamFinishedRef.current = false;
     isConsumingRef.current = false;
     queueRef.current = [];
@@ -88,12 +96,39 @@ export function useChatManager() {
     lastPushTimeRef.current = 0;
     currentThoughtRef.current = '';
     currentContentRef.current = '';
-    streamingRenderedTextRef.current = '';
-    lastMarkdownUpdateRef.current = 0;
     if (timerRef.current) {
       cancelAnimationFrame(timerRef.current);
       timerRef.current = null;
     }
+  }, []);
+
+  /**
+   * 中止在途的一轮流式（切会话 / 新建会话 / 重复发送时调用）。
+   * 不弹「用户中止对话」标记 —— 那是 handleStopGeneration 专属的语义。
+   * 关键点：必须 abort 网络请求。只 resetTypewriter 是不够的，
+   * 旧流的 onprogress 会继续 enqueue，在 isConsumingRef=false 时用旧 msgId
+   * 复活吐字链，落盘时那条消息已被 getSessionDetail 覆盖 → 永久「思考中...」。
+   */
+  const abortActiveStream = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    streamFinishedRef.current = true;
+    streamEpochRef.current += 1;
+    if (timerRef.current) {
+      cancelAnimationFrame(timerRef.current);
+      timerRef.current = null;
+    }
+    isConsumingRef.current = false;
+    queueRef.current = [];
+    queueCharsRef.current = 0;
+    charCarryRef.current = 0;
+    lastFrameTimeRef.current = 0;
+    lastPushTimeRef.current = 0;
+    currentStreamingMsgIdRef.current = '';
+    setStreamingRenderMsg(null);
+    setIsGenerating(false);
   }, []);
 
   // 1. 初始化
@@ -128,6 +163,9 @@ export function useChatManager() {
 
   // 2. 创建新会话
   const handleNewChat = async () => {
+    // 新会话不继承旧会话在途的流（abortActiveStream 内含 setIsGenerating(false)）
+    abortActiveStream();
+
     const tempId = 'temp_' + Date.now();
     const newConv = { id: tempId, title: '新对话' };
 
@@ -155,10 +193,9 @@ export function useChatManager() {
 
   // 3. 切换会话
   const handleSelectChat = async (id: string) => {
-    // 切换时清理流式状态，防止串文字
-    setStreamingRenderMsg(null);
+    // 切换时中止在途流式并清理流式状态，防止串文字 / 旧消息卡在「思考中...」
+    abortActiveStream();
     resetTypewriter();
-    streamFinishedRef.current = true;
     autoFollowRef.current = true;
     setActiveId(id);
 
@@ -199,7 +236,7 @@ export function useChatManager() {
   };
 
   const updateAiMessageFields = useCallback(
-    (msgId: string, fields: { content?: string; thought?: string }) => {
+    (msgId: string, fields: { content?: string; thought?: string; systemNote?: boolean }) => {
       setConversations((prev) =>
         prev.map((conv) => {
           const hasMessage =
@@ -248,8 +285,6 @@ export function useChatManager() {
         thought,
         content,
       });
-      streamingRenderedTextRef.current = content;
-      lastMarkdownUpdateRef.current = Date.now();
     },
     [],
   );
@@ -260,20 +295,56 @@ export function useChatManager() {
       if (isConsumingRef.current) return;
       isConsumingRef.current = true;
 
+      /** 本条吐字链所属的流世代号：与 streamEpochRef 不符即说明这轮流已被放弃 */
+      const myEpoch = streamEpochRef.current;
+
       /** 吐字收尾：队列排空 + 流已结束 → 落盘，UI 一次性切到最终态 */
       const finish = () => {
         isConsumingRef.current = false;
         timerRef.current = null;
 
-        updateAiMessageFields(targetMsgId, {
-          thought: currentThoughtRef.current || undefined,
-          content: currentContentRef.current,
-        });
+        const thought = currentThoughtRef.current;
+        const content = currentContentRef.current;
+
+        if (thought || content) {
+          updateAiMessageFields(targetMsgId, {
+            thought: thought || undefined,
+            content,
+          });
+        } else {
+          // 空回复必须写成一条系统标记行，不能留空 content：
+          // ChatArea 判定 hasContent=false && hasThought=false → isThinking=true，
+          // 那颗气泡会永远转「思考中...」（服务端 finalCleanReply 被清洗成空、
+          // 只回 thought、subject$.error 等情况都会走到这里）。
+          updateAiMessageFields(targetMsgId, {
+            content: '（模型未返回内容）',
+            systemNote: true,
+          });
+        }
 
         setStreamingRenderMsg(null);
       };
 
       const consumeFrame = (frameTime?: number) => {
+        // 已被新一轮流式接管 → 旧链直接退出。
+        // 注意别在这里改 isConsumingRef / timerRef：它们现在属于新链。
+        if (streamEpochRef.current !== myEpoch) return;
+
+        try {
+          stepFrame(frameTime);
+        } catch (err) {
+          // 绝不能让 RAF 链带着 isConsumingRef=true 断掉：
+          // 之后所有 enqueue 都会因为「已在消费」而不再唤醒 → 永久卡住
+          console.error('吐字引擎异常，强制收尾:', err);
+          queueRef.current = [];
+          queueCharsRef.current = 0;
+          streamFinishedRef.current = true;
+          finish();
+        }
+      };
+
+      /** 单帧消费：按时间算预算 → 从队列头取字 → 每帧推一次 React 状态 */
+      const stepFrame = (frameTime?: number) => {
         const queue = queueRef.current;
 
         // ===== 关键：没数据就停，彻底去掉空转 =====
@@ -369,6 +440,8 @@ export function useChatManager() {
   const enqueue = useCallback(
     (type: 'thought' | 'content', text: string) => {
       if (!text) return;
+      // 没有活跃 msgId = 当前没有在跑的流（旧流 abort 后可能还来最后几片）
+      if (!currentStreamingMsgIdRef.current) return;
       queueRef.current.push({ type, text });
       queueCharsRef.current += text.length;
 
@@ -424,6 +497,14 @@ export function useChatManager() {
     currentStreamingMsgIdRef.current = thinkingMsgId;
     setStreamingRenderMsg(null);
 
+    // 本轮流的世代号：中途被中止/被新一轮顶替后，旧流残片一律丢弃，
+    // 否则两条流共用同一个队列会互相串字
+    const myEpoch = streamEpochRef.current;
+    const handleLine = (line: string) => {
+      if (streamEpochRef.current !== myEpoch) return;
+      processSSELine(line);
+    };
+
     startSmoothConsumer(thinkingMsgId);
 
      const url = `${baseURL}/chat/${sessionId}/stream`;
@@ -465,7 +546,7 @@ export function useChatManager() {
           buffer = lines.pop() || '';
 
           for (const line of lines) {
-            processSSELine(line);
+            handleLine(line);
           }
         }
       } catch (err: any) {
@@ -490,20 +571,33 @@ export function useChatManager() {
         xhr.open('POST', url);
         xhr.setRequestHeader('Content-Type', 'application/json');
         let lastReadPos = 0;
+        /**
+         * SSE 半行缓冲：XHR 的 progress 按网络包切分，不会对齐 \n。
+         * 之前是直接 split 后把最后一段（半行）一起丢掉、lastReadPos 又已前移，
+         * 那条 data: 事件就整条没了（下一片以半行开头，JSON.parse 再次失败）
+         * → 真机丢字/丢段，极端情况下丢光 → 气泡卡在「思考中...」。
+         */
+        let buffer = '';
 
         const settle = () => resolve();
 
-        xhr.onprogress = () => {
-          const chunkRaw = xhr.responseText.substring(lastReadPos);
-          lastReadPos = xhr.responseText.length;
-          const lines = chunkRaw.split('\n');
-
+        /** flush=true 时把残留的最后一段也按整行处理（收尾用） */
+        const drainSSE = (flush = false) => {
+          const lines = buffer.split('\n');
+          buffer = flush ? '' : lines.pop() || '';
           for (const line of lines) {
-            processSSELine(line);
+            handleLine(line);
           }
         };
 
+        xhr.onprogress = () => {
+          buffer += xhr.responseText.substring(lastReadPos);
+          lastReadPos = xhr.responseText.length;
+          drainSSE();
+        };
+
         xhr.onload = () => {
+          drainSSE(true);
           streamFinishedRef.current = true;
           if (!isConsumingRef.current) {
             startSmoothConsumer(thinkingMsgId);
@@ -558,6 +652,11 @@ export function useChatManager() {
 
     // 如果没有文字内容但有图片，仍然可以发送
     if (!textToSend.trim() && images.length === 0) return;
+
+    // 同一时刻只允许一轮流式：先把上一轮彻底中止（语音连发 / 快速连点），
+    // 否则两条流共用一个队列会互相串字，旧流的 onload 还会提前结束新一轮
+    abortActiveStream();
+    const myRun = ++sendRunRef.current;
 
     let currentActiveId = activeId;
     let isBrandNewSession = false;
@@ -641,7 +740,8 @@ export function useChatManager() {
       });
     }
 
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setIsGenerating(true);
 
     try {
@@ -654,53 +754,50 @@ export function useChatManager() {
         });
       }
     } finally {
-      setIsGenerating(false);
-      abortControllerRef.current = null;
-      Vibration.vibrate(100);
+      // 已被新一轮 send / 停止按钮接管时，这一轮不许再改共享状态，
+      // 否则会把新流的 controller 置空（停止按钮失效）或提前切回「发送」
+      if (sendRunRef.current === myRun) {
+        setIsGenerating(false);
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+        Vibration.vibrate(100);
+      }
     }
   };
 
   // ==================== 停止生成 ====================
   const handleStopGeneration = () => {
-    streamFinishedRef.current = true;
+    // 让本轮 send 的 finally 失效：状态由下面统一收尾
+    sendRunRef.current += 1;
 
-    // 1. 终止网络请求
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    // 2. 取消 RAF
-    if (timerRef.current) {
-      cancelAnimationFrame(timerRef.current);
-      timerRef.current = null;
-    }
-    isConsumingRef.current = false;
-
-    // 4. 保存当前已输出内容
+    // 1. 先把已经吐出来的内容落盘（abortActiveStream 会清空这些 ref）
     const msgId = currentStreamingMsgIdRef.current;
-    if (msgId && (currentContentRef.current || currentThoughtRef.current)) {
+    const hasOutput = !!(currentContentRef.current || currentThoughtRef.current);
+    if (msgId && hasOutput) {
       updateAiMessageFields(msgId, {
         thought: currentThoughtRef.current || undefined,
         content: currentContentRef.current || '...',
       });
     }
 
-    // 5. 清空队列和临时状态
-    queueRef.current = [];
-    queueCharsRef.current = 0;
-    charCarryRef.current = 0;
-    lastFrameTimeRef.current = 0;
-    lastPushTimeRef.current = 0;
-    setStreamingRenderMsg(null);
-    setIsGenerating(false);
+    // 2. 终止网络请求 + 杀吐字链 + 清队列
+    abortActiveStream();
 
-    // 6. 追加一条「用户中止对话」标记到聊天框
-    appendMessage({
-      role: 'assistant',
-      content: '-------- 用户中止对话 --------',
-      systemNote: true,
-    });
+    // 3. 标记「用户中止对话」。一个字都没吐出来时直接把那条占位消息改成标记行，
+    //    否则它带着 content:'...' 会被 ChatArea 判成 isThinking → 永久「思考中...」
+    if (msgId && !hasOutput) {
+      updateAiMessageFields(msgId, {
+        content: '-------- 用户中止对话 --------',
+        systemNote: true,
+      });
+    } else {
+      appendMessage({
+        role: 'assistant',
+        content: '-------- 用户中止对话 --------',
+        systemNote: true,
+      });
+    }
   };
 
   return {
