@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import ImageViewer from './ImageViewer';
 
 if (Platform.OS === 'web') {
   const styleId = 'web-modern-scrollbar';
@@ -69,6 +70,8 @@ export default function ChatInputBar({
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音/键盘模式
+  /** 非 null = 当前正在预览第几张已选图片 */
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
@@ -248,7 +251,16 @@ export default function ChatInputBar({
         >
           {selectedImages.map((imgUri, index) => (
             <View key={index} style={styles.previewItem}>
-              <Image source={{ uri: imgUri }} style={styles.previewImage} />
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setPreviewIndex(index)}
+                style={[
+                  styles.previewImageTap,
+                  isWeb ? ({ cursor: 'pointer' } as any) : null,
+                ]}
+              >
+                <Image source={{ uri: imgUri }} style={styles.previewImage} />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.deleteBadge}
                 onPress={() => handleRemoveImage(index)}
@@ -260,6 +272,15 @@ export default function ChatInputBar({
           ))}
         </ScrollView>
       )}
+
+      {/* 点选中的缩略图 → 全屏预览大图 */}
+      <ImageViewer
+        visible={previewIndex !== null}
+        images={selectedImages}
+        index={previewIndex ?? 0}
+        onClose={() => setPreviewIndex(null)}
+        onIndexChange={setPreviewIndex}
+      />
 
       <View
         style={[
@@ -440,6 +461,10 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     backgroundColor: '#f3f4f6',
     overflow: 'hidden',
+  },
+  previewImageTap: {
+    width: '100%',
+    height: '100%',
   },
   previewImage: {
     width: '100%',

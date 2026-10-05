@@ -5,7 +5,7 @@
   useState,
   useCallback,
   useMemo,
-} from 'react';
+} from "react";
 import {
   StyleSheet,
   Text,
@@ -15,24 +15,25 @@ import {
   TouchableOpacity,
   Platform,
   Image,
-} from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import Markdown from 'react-native-markdown-display';
+} from "react-native";
+import Svg, { Path } from "react-native-svg";
+import Markdown from "react-native-markdown-display";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   Easing,
-} from 'react-native-reanimated';
-import MessageActions from './MessageActions';
-import { useChat } from '../../app/_layout';
-import { playText, stopSpeech } from '../services/speechPlayer';
-import { api } from '../services/api';
+} from "react-native-reanimated";
+import MessageActions from "./MessageActions";
+import ImageViewer from "./ImageViewer";
+import { useChat } from "../../app/_layout";
+import { playText, stopSpeech } from "../services/speechPlayer";
+import { api } from "../services/api";
 
 // ===================== 类型定义 =====================
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   thought?: string;
   isStreaming?: boolean;
@@ -92,7 +93,7 @@ const ThoughtCollapsible = memo(
       opacity: progress.value,
       transform: [{ translateY: (1 - progress.value) * -8 }],
       maxHeight: progress.value * 600,
-      overflow: 'hidden' as const,
+      overflow: "hidden" as const,
     }));
 
     const arrowAnimatedStyle = useAnimatedStyle(() => ({
@@ -106,8 +107,8 @@ const ThoughtCollapsible = memo(
           {
             borderColor: theme.border,
             backgroundColor: theme.isDark
-              ? 'rgba(255,255,255,0.03)'
-              : 'rgba(0,0,0,0.03)',
+              ? "rgba(255,255,255,0.03)"
+              : "rgba(0,0,0,0.03)",
           },
         ]}
       >
@@ -123,7 +124,7 @@ const ThoughtCollapsible = memo(
             <Text
               style={{ color: theme.textMuted, fontSize: 12, marginRight: 4 }}
             >
-              {isOpen ? '收起' : '展开'}
+              {isOpen ? "收起" : "展开"}
             </Text>
             <Animated.View style={arrowAnimatedStyle}>
               <Svg width="12" height="12" viewBox="0 0 24 24" fill="none">
@@ -166,6 +167,7 @@ const ChatMessageItem = memo(
     isStreaming,
     playingMsgId,
     setPlayingMsgId,
+    onPreviewImage,
   }: {
     item: Message;
     theme: ThemeType;
@@ -173,16 +175,17 @@ const ChatMessageItem = memo(
     isStreaming?: boolean;
     playingMsgId: string | null;
     setPlayingMsgId: (id: string | null) => void;
+    onPreviewImage?: (images: string[], index: number) => void;
   }) => {
-    const isUser = item.role === 'user';
-    const hasContent = !!(item.content && item.content !== '...');
+    const isUser = item.role === "user";
+    const hasContent = !!(item.content && item.content !== "...");
     const hasThought = !!item.thought;
     const isThinking = !isUser && !hasContent && !hasThought;
 
     const bubbleStyle = useMemo(
       () => [
         styles.bubble,
-        { maxWidth: '100%' as const },
+        { maxWidth: "100%" as const },
         isUser
           ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
           : [
@@ -199,11 +202,11 @@ const ChatMessageItem = memo(
     const dynamicMarkdownStyles = useMemo(
       () => ({
         body: { fontSize: 15, lineHeight: 22, color: theme.textMain },
-        strong: { fontWeight: 'bold' as const, color: theme.textMain },
+        strong: { fontWeight: "bold" as const, color: theme.textMain },
         paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
         heading1: {
           fontSize: 20,
-          fontWeight: 'bold' as const,
+          fontWeight: "bold" as const,
           color: theme.textMain,
           marginTop: 14,
           marginBottom: 6,
@@ -211,7 +214,7 @@ const ChatMessageItem = memo(
         },
         heading2: {
           fontSize: 18,
-          fontWeight: 'bold' as const,
+          fontWeight: "bold" as const,
           color: theme.textMain,
           marginTop: 12,
           marginBottom: 6,
@@ -219,7 +222,7 @@ const ChatMessageItem = memo(
         },
         heading3: {
           fontSize: 16,
-          fontWeight: 'bold' as const,
+          fontWeight: "bold" as const,
           color: theme.textMain,
           marginTop: 10,
           marginBottom: 4,
@@ -227,8 +230,8 @@ const ChatMessageItem = memo(
         },
         code_inline: {
           backgroundColor: theme.isDark
-            ? 'rgba(255,255,255,0.1)'
-            : 'rgba(0,0,0,0.06)',
+            ? "rgba(255,255,255,0.1)"
+            : "rgba(0,0,0,0.06)",
           color: theme.textMain,
           borderRadius: 4,
           paddingHorizontal: 4,
@@ -236,27 +239,27 @@ const ChatMessageItem = memo(
           fontSize: 14,
         },
         fence: {
-          backgroundColor: theme.isDark ? '#000' : '#eee',
-          color: theme.isDark ? '#d4d4d4' : '#333333',
+          backgroundColor: theme.isDark ? "#000" : "#eee",
+          color: theme.isDark ? "#d4d4d4" : "#333333",
           borderRadius: 8,
           padding: 12,
           marginVertical: 6,
           borderWidth: 1,
           borderColor: theme.border,
-          fontFamily: 'JetBrains Mono',
+          fontFamily: "JetBrains Mono",
         },
         code_block: {
-          backgroundColor: theme.isDark ? '#1e1e1e' : '#f5f5f5',
-          color: theme.isDark ? '#d4d4d4' : '#333333',
+          backgroundColor: theme.isDark ? "#1e1e1e" : "#f5f5f5",
+          color: theme.isDark ? "#d4d4d4" : "#333333",
           borderRadius: 8,
           padding: 12,
           marginVertical: 6,
         },
         blockquote: {
           backgroundColor: theme.isDark
-            ? 'rgba(255, 255, 255, 0.05)'
-            : 'rgba(0, 0, 0, 0.04)',
-          borderLeftColor: theme.isDark ? '#3b82f6' : '#2563eb',
+            ? "rgba(255, 255, 255, 0.05)"
+            : "rgba(0, 0, 0, 0.04)",
+          borderLeftColor: theme.isDark ? "#3b82f6" : "#2563eb",
           borderLeftWidth: 1,
           paddingHorizontal: 12,
           paddingVertical: 8,
@@ -286,7 +289,7 @@ const ChatMessageItem = memo(
       );
     }
 
-     return (
+    return (
       <View style={[styles.messageRow, isUser ? styles.rowUser : styles.rowAi]}>
         {isUser && item.images && item.images.length > 0 ? (
           <View style={styles.userImagesColumn}>
@@ -294,18 +297,30 @@ const ChatMessageItem = memo(
             <View style={[bubbleStyle, styles.imageBubble]}>
               <View style={styles.userImagesContainer}>
                 {item.images.map((imgUri, idx) => (
-                  <Image
-                    key={idx}
-                    source={{ uri: imgUri }}
-                    style={styles.userImageThumb}
-                  />
+                  <TouchableOpacity
+                    key={`${imgUri.slice(0, 32)}-${idx}`}
+                    activeOpacity={0.85}
+                    onPress={() => onPreviewImage?.(item.images || [], idx)}
+                    style={
+                      Platform.OS === "web"
+                        ? ({ cursor: "pointer" } as any)
+                        : undefined
+                    }
+                  >
+                    <Image
+                      source={{ uri: imgUri }}
+                      style={styles.userImageThumb}
+                    />
+                  </TouchableOpacity>
                 ))}
               </View>
             </View>
             {/* 文本气泡 */}
             <View style={[bubbleStyle, styles.textBubbleBelowImages]}>
               {item.content ? (
-                <Text style={[styles.messageText, { color: theme.bubbleUserText }]}>
+                <Text
+                  style={[styles.messageText, { color: theme.bubbleUserText }]}
+                >
                   {item.content}
                 </Text>
               ) : null}
@@ -323,7 +338,7 @@ const ChatMessageItem = memo(
                 <Text
                   style={[
                     styles.messageText,
-                    { color: theme.textMuted, fontStyle: 'italic' },
+                    { color: theme.textMuted, fontStyle: "italic" },
                   ]}
                 >
                   思考中...
@@ -332,10 +347,7 @@ const ChatMessageItem = memo(
             ) : isUser ? (
               item.content ? (
                 <Text
-                  style={[
-                    styles.messageText,
-                    { color: theme.bubbleUserText },
-                  ]}
+                  style={[styles.messageText, { color: theme.bubbleUserText }]}
                 >
                   {item.content}
                 </Text>
@@ -360,7 +372,7 @@ const ChatMessageItem = memo(
                   </Text>
                 ) : (
                   <Markdown style={dynamicMarkdownStyles}>
-                    {item.content || ''}
+                    {item.content || ""}
                   </Markdown>
                 )}
               </View>
@@ -390,6 +402,7 @@ const ChatMessageItem = memo(
     prev.isStreaming === next.isStreaming &&
     prev.item.systemNote === next.item.systemNote &&
     prev.playingMsgId === next.playingMsgId &&
+    prev.onPreviewImage === next.onPreviewImage &&
     JSON.stringify(prev.item.images) === JSON.stringify(next.item.images),
 );
 
@@ -412,6 +425,21 @@ export default function ChatArea({
 
   // ✅ 用 state 控制「回到底部」按钮显示
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  // ==================== 图片全屏预览 ====================
+  const [preview, setPreview] = useState<{
+    images: string[];
+    index: number;
+  } | null>(null);
+  const openPreview = useCallback(
+    (images: string[], index: number) => setPreview({ images, index }),
+    [],
+  );
+  const closePreview = useCallback(() => setPreview(null), []);
+  const changePreviewIndex = useCallback(
+    (index: number) => setPreview((prev) => (prev ? { ...prev, index } : prev)),
+    [],
+  );
 
   // 💡 自动朗读相关引用
   const lastAutoReadKeyRef = useRef<string | null>(null);
@@ -436,7 +464,6 @@ export default function ChatArea({
 
   // ==================== 贴底引擎 ====================
   const lastMsgCountRef = useRef(displayMessages.length);
-  const lastMsgArrayRef = useRef(displayMessages);
 
   /**
    * 贴底（消费级 App 的做法）：同步定位，不走动画、不排队。
@@ -448,17 +475,22 @@ export default function ChatArea({
     const ref: any = scrollViewRef.current;
     if (!ref) return;
 
-    if (Platform.OS === 'web') {
+    if (Platform.OS === "web") {
       const node =
-        (typeof ref.getScrollableNode === 'function' &&
+        (typeof ref.getScrollableNode === "function" &&
           ref.getScrollableNode()) ||
-        (typeof ref.getInnerViewNode === 'function' &&
+        (typeof ref.getInnerViewNode === "function" &&
           ref.getInnerViewNode()) ||
         null;
       if (node) {
         if (animated) {
-          // 进入页面 / 切会话 —— 顺滑滚动到底部
-          node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+          // ⚠️ 不能用 node.scrollTo({ top, behavior })：
+          // react-native-web 把 node.scrollTo 覆盖成了自己的 (y, x, animated) 签名
+          // （ScrollView/index.js 里 `node.scrollTo = this.scrollTo`，
+          //   而 getScrollableNode() 返回的就是这个节点本身），
+          // 传 { top, behavior } 会被解析成 x/y 全 undefined → 一路兜底成 { x:0, y:0 }
+          // → 平滑滚到顶部。必须用它自己挂上来的 scrollToEnd（内部读 scrollHeight）。
+          ref.scrollToEnd?.({ animated: true });
         } else {
           // 吐字过程中 —— 同步定位，零动画、零滞迟
           node.scrollTop = node.scrollHeight;
@@ -478,7 +510,8 @@ export default function ChatArea({
    *
    * 留在这里的 useLayoutEffect 早已删除——它每 render 都读 scrollHeight，
    * 而此时浏览器尚未布局，于是强制一次同步 reflow → 60 次/秒主线程堵塞，
-   * 正是「吐字偶尔卡住」的根因。
+   * 正是「吐字偶尔卡住」的根因。同理，下面「条数 effect」也不能按数组 identity
+   * 触发（吐字时 displayMessages 每帧换新数组），否则等于把同一个 reflow 加回来。
    */
 
   // 滚动处理：计算是否离开底部一定距离
@@ -514,8 +547,8 @@ export default function ChatArea({
   useEffect(() => {
     if (!autoRead) return;
     const last = displayMessages[displayMessages.length - 1];
-    if (!last || last.role !== 'assistant') return;
-    if (last.isStreaming || !last.content || last.content === '...') return;
+    if (!last || last.role !== "assistant") return;
+    if (last.isStreaming || !last.content || last.content === "...") return;
 
     const key = `${activeId}:${last.id}`; // 带会话 ID，切会话不会误触发
     if (lastAutoReadKeyRef.current === key) return;
@@ -526,7 +559,7 @@ export default function ChatArea({
         setPlayingMsgId(last.id);
         await playText(last.content, {
           fetchUrl: async (sentence) => {
-            const data = await api.textToSpeech(sentence, 'Nini');
+            const data = await api.textToSpeech(sentence, "Nini");
             return data.url;
           },
           onEnd: () => {
@@ -535,7 +568,7 @@ export default function ChatArea({
           },
         });
       } catch (e) {
-        console.error('自动朗读失败:', e);
+        console.error("自动朗读失败:", e);
         autoPlayingRef.current = false;
         setPlayingMsgId(null);
       }
@@ -559,12 +592,10 @@ export default function ChatArea({
    * 1) 初次挂载 / 切会话（key=activeId 变化 → 全量重新挂载）后，
    *    顺滑滚动到底部 —— 这就是「进入/切会话贴到底」。
    *    刚进页面用户没滚动过，故不用 autoFollowRef 守卫。
-   *    吐字/收到实时消息的贴底靠下面的 useLayoutEffect + 数组-effect
-   *    （那些是无动画的，因为要跟每一帧吐字同步）。
+   *    吐字/收到实时消息的贴底靠下面的「条数 effect」+ onContentSizeChange。
    */
   useEffect(() => {
     lastMsgCountRef.current = displayMessages.length;
-    lastMsgArrayRef.current = displayMessages;
     autoFollowRef.current = true;
 
     // 初次挂载时 ScrollView 的内容可能尚未布局完成，延迟 2 帧确保滚动生效
@@ -576,15 +607,18 @@ export default function ChatArea({
   }, [activeId, pinToBottom]);
 
   /**
-   * 2) 后续异步消息落盘 / 用户撤回 —— 守卫 autoFollow（用户曾经上滑就不推）。
-   *    吐字期间条数不变（消息体已在 `messages` 里），所以这里不会误触发。
+   * 2) 新消息落盘 / 用户撤回 —— 守卫 autoFollow（用户曾经上滑就不推）。
+   *
+   * 判据是「条数」而不是数组 identity：吐字期间 displayMessages 每帧都是新数组
+   * （见上面的 useMemo），按 identity 触发会在 60fps 下每帧执行一次
+   * `scrollTop = scrollHeight` —— 读 scrollHeight 会强制同步布局，
+   * 长会话下这就是「吐字偶发卡住」。吐字期的逐帧贴底交给 onContentSizeChange，
+   * 它在布局之后触发，读到的 scrollHeight 是布局缓存命中，不触发 reflow。
    */
   useEffect(() => {
-    if (displayMessages === lastMsgArrayRef.current) return;
-    lastMsgArrayRef.current = displayMessages;
-    if (displayMessages.length !== lastMsgCountRef.current) {
-      lastMsgCountRef.current = displayMessages.length;
-    }
+    const count = displayMessages.length;
+    if (count === lastMsgCountRef.current) return;
+    lastMsgCountRef.current = count;
     if (autoFollowRef.current) {
       pinToBottom();
     }
@@ -617,10 +651,10 @@ export default function ChatArea({
         alwaysBounceVertical={false}
         nativeID="chat-scroll"
         style={
-          Platform.OS === 'web'
+          Platform.OS === "web"
             ? ({
-                scrollbarWidth: 'thin',
-                scrollbarColor: 'rgba(255,255,255,0.3) transparent',
+                scrollbarWidth: "thin",
+                scrollbarColor: "rgba(255,255,255,0.3) transparent",
               } as any)
             : undefined
         }
@@ -645,6 +679,7 @@ export default function ChatArea({
               isStreaming={!!msg.isStreaming}
               playingMsgId={playingMsgId}
               setPlayingMsgId={setPlayingMsgId}
+              onPreviewImage={openPreview}
             />
           ))
         )}
@@ -663,10 +698,10 @@ export default function ChatArea({
               styles.scrollToBottomBtn,
               {
                 backgroundColor: theme.isDark
-                  ? 'rgba(40,40,40,0.92)'
-                  : 'rgba(255,255,255,0.95)',
+                  ? "rgba(40,40,40,0.92)"
+                  : "rgba(255,255,255,0.95)",
                 borderColor: theme.border,
-                shadowColor: '#000',
+                shadowColor: "#000",
               },
             ]}
           >
@@ -682,6 +717,15 @@ export default function ChatArea({
           </TouchableOpacity>
         </View>
       )}
+
+      {/* 点气泡里的图片 → 全屏预览 */}
+      <ImageViewer
+        visible={preview !== null}
+        images={preview?.images ?? []}
+        index={preview?.index ?? 0}
+        onClose={closePreview}
+        onIndexChange={changePreviewIndex}
+      />
     </View>
   );
 }
@@ -693,8 +737,8 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 24,
     paddingTop: 240,
   },
@@ -704,34 +748,34 @@ const styles = StyleSheet.create({
   },
   welcomeTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: "center",
   },
   welcomeSubtitle: {
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 20,
   },
   messageRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 20,
-    alignItems: 'flex-start',
+    alignItems: "flex-start",
   },
-  rowUser: { justifyContent: 'flex-end' },
-  rowAi: { justifyContent: 'flex-start' },
+  rowUser: { justifyContent: "flex-end" },
+  rowAi: { justifyContent: "flex-start" },
   bubble: { padding: 14, borderRadius: 16 },
   bubbleUser: { borderTopRightRadius: 4 },
   bubbleAi: { borderTopLeftRadius: 4, borderWidth: 1 },
   thinkingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 2,
   },
-   messageText: { fontSize: 15, lineHeight: 22 },
+  messageText: { fontSize: 15, lineHeight: 22 },
   userImagesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 6,
     marginTop: 6,
   },
@@ -739,64 +783,64 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 8,
-    resizeMode: 'cover',
+    resizeMode: "cover",
   },
   imageBubble: {
     marginBottom: 4,
-    alignSelf: 'flex-end',
+    alignSelf: "flex-end",
   },
   userImagesColumn: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
+    flexDirection: "column",
+    alignItems: "flex-end",
   },
   textBubbleBelowImages: {
     marginTop: 4,
   },
   systemNoteRow: {
-    width: '100%',
-    alignItems: 'center',
+    width: "100%",
+    alignItems: "center",
     marginVertical: 6,
   },
   systemNoteText: {
     fontSize: 12,
     lineHeight: 18,
-    fontStyle: 'italic',
+    fontStyle: "italic",
     opacity: 0.6,
   },
   thoughtBox: {
     borderLeftWidth: 0,
-    borderLeftColor: '#4b92ee',
+    borderLeftColor: "#4b92ee",
     paddingVertical: 6,
     paddingHorizontal: 8,
     marginBottom: 10,
     borderRadius: 4,
   },
   thoughtRightAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   thoughtHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 4,
   },
   thoughtTitle: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     paddingRight: 2,
   },
   thoughtContent: {
     fontSize: 13,
-    fontStyle: 'italic',
+    fontStyle: "italic",
     lineHeight: 18,
   },
   scrollToBottomWrapper: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     bottom: 16,
-    alignItems: 'center',
+    alignItems: "center",
     zIndex: 10,
   },
   scrollToBottomBtn: {
@@ -804,8 +848,8 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
