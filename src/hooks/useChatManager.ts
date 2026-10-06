@@ -236,7 +236,10 @@ export function useChatManager() {
   };
 
   const updateAiMessageFields = useCallback(
-    (msgId: string, fields: { content?: string; thought?: string; systemNote?: boolean }) => {
+    (
+      msgId: string,
+      fields: { content?: string; thought?: string; systemNote?: boolean },
+    ) => {
       setConversations((prev) =>
         prev.map((conv) => {
           const hasMessage =
@@ -258,7 +261,8 @@ export function useChatManager() {
   /** 追加一条消息到当前会话（用于「用户中止对话」提示等） */
   const appendMessage = useCallback(
     (msg: Partial<Message>) => {
-      const id = msg.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const id =
+        msg.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       setConversations((prev) =>
         prev.map((conv) =>
           conv.id === activeId
@@ -491,6 +495,7 @@ export function useChatManager() {
     sessionId: string,
     queryText: string,
     images: string[] = [],
+    knowledgeFileIds: string[] = [],
   ) => {
     // 重置状态
     resetTypewriter();
@@ -507,7 +512,7 @@ export function useChatManager() {
 
     startSmoothConsumer(thinkingMsgId);
 
-     const url = `${baseURL}/chat/${sessionId}/stream`;
+    const url = `${baseURL}/chat/${sessionId}/stream`;
 
     // images 已经在 handleSend 中上传，返回的是后端 URL 列表，直接使用
     const imageUrls = images;
@@ -518,7 +523,11 @@ export function useChatManager() {
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: queryText, images: imageUrls }),
+          body: JSON.stringify({
+            query: queryText,
+            images: imageUrls,
+            fileIds: knowledgeFileIds,
+          }),
           signal: abortControllerRef.current!.signal,
         });
 
@@ -623,7 +632,13 @@ export function useChatManager() {
           settle();
         });
 
-        xhr.send(JSON.stringify({ query: queryText, images: imageUrls }));
+        xhr.send(
+          JSON.stringify({
+            query: queryText,
+            images: imageUrls,
+            fileIds: knowledgeFileIds,
+          }),
+        );
       });
     }
   };
@@ -646,8 +661,13 @@ export function useChatManager() {
    * @param overrideText 可选。传入时优先发送该文本（用于语音识别等「即时发送」场景），
    *                     否则发送输入框当前内容。
    * @param images 可选。选中的图片 base64/URL 数组，发送前会上传到后端。
+   * @param knowledgeFileIds 可选。选中的知识库文件 ID 数组，告知后端用于 RAG 上下文。
    */
-  const handleSend = async (overrideText?: string, images: string[] = []) => {
+  const handleSend = async (
+    overrideText?: string,
+    images: string[] = [],
+    knowledgeFileIds: string[] = [],
+  ) => {
     const textToSend = overrideText ?? inputText;
 
     // 如果没有文字内容但有图片，仍然可以发送
@@ -696,7 +716,7 @@ export function useChatManager() {
     const thinkingMsg: Message = {
       id: thinkingMsgId,
       role: 'assistant',
-      content: '...',
+      content: '',
     };
 
     const currentConv = conversations.find(
@@ -745,7 +765,13 @@ export function useChatManager() {
     setIsGenerating(true);
 
     try {
-       await runTypewriterEffect(thinkingMsgId, currentActiveId, currentInput, uploadedImageUrls);
+      await runTypewriterEffect(
+        thinkingMsgId,
+        currentActiveId,
+        currentInput,
+        uploadedImageUrls,
+        knowledgeFileIds,
+      );
     } catch (error: any) {
       if (error.name !== 'AbortError') {
         console.error('发送消息失败:', error);
@@ -773,7 +799,9 @@ export function useChatManager() {
 
     // 1. 先把已经吐出来的内容落盘（abortActiveStream 会清空这些 ref）
     const msgId = currentStreamingMsgIdRef.current;
-    const hasOutput = !!(currentContentRef.current || currentThoughtRef.current);
+    const hasOutput = !!(
+      currentContentRef.current || currentThoughtRef.current
+    );
     if (msgId && hasOutput) {
       updateAiMessageFields(msgId, {
         thought: currentThoughtRef.current || undefined,

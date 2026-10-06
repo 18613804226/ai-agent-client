@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import Sidebar from './Sidebar';
-import { useKnowledgeFiles } from '../hooks/useKnowledgeFiles';
+import { useKnowledge } from '../context/appContexts';
 
 interface MobileDrawerProps {
   theme: any;
@@ -9,13 +9,11 @@ interface MobileDrawerProps {
   activeId: string;
   isDarkMode: boolean;
   onClose?: () => void;
+  onOpen?: () => void;
   onNewChat: () => void;
   onSelectChat: (id: string) => void;
   onDeleteChat: (e: any, id: string) => void;
   onToggleTheme: () => void;
-  uploadedFiles: any[];
-  onUploadFile: () => void;
-  onDeleteFile: (fileId: string) => void;
   [key: string]: any;
 }
 
@@ -27,13 +25,13 @@ export function MobileDrawer({
   activeId,
   isDarkMode,
   onClose,
+  onOpen,
   onNewChat,
   onSelectChat,
   onDeleteChat,
   onToggleTheme,
 }: MobileDrawerProps) {
-  const { uploadedFiles, handleUploadFile, handleDeleteFile } =
-    useKnowledgeFiles();
+  const { uploadedFiles, handleUploadFile, handleDeleteFile } = useKnowledge();
 
   return (
     <View
@@ -58,7 +56,16 @@ export function MobileDrawer({
         onToggleTheme={onToggleTheme}
         theme={theme}
         uploadedFiles={uploadedFiles}
-        onUploadFile={handleUploadFile}
+        onUploadFile={() => {
+          // 关键：先让抽屉「正常」关闭，等关闭动画结束后再拉起系统文件选择器。
+          // 如果选择器在抽屉打开（手势进行中）时打开，会打断抽屉的手势，
+          // 导致抽屉被顶掉且之后无法再划开。
+          // 选择器返回后，再用 onOpen 把抽屉恢复到打开状态。
+          onClose?.();
+          setTimeout(() => {
+            handleUploadFile(() => onOpen?.());
+          }, 320);
+        }}
         onDeleteFile={handleDeleteFile}
       />
     </View>

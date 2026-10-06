@@ -9,11 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-interface UploadedFile {
-  id: string;
-  name: string;
-  size?: string;
-}
+import type { UploadedFile } from '../hooks/useKnowledgeFiles';
 
 interface SidebarProps {
   conversations: any[];
@@ -145,33 +141,92 @@ export default function Sidebar({
                 hoverBg="rgba(150, 150, 150, 0.15)"
                 activeOpacity={1}
               >
-                <Text
-                  style={[styles.fileText, { color: theme.textMain }]}
-                  numberOfLines={1}
-                >
-                  📄 {file.name}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => onDeleteFile(file.id)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
+                <View style={styles.fileInfo}>
                   <Text
-                    style={[styles.deleteBtnText, { color: theme.textMuted }]}
+                    style={[styles.fileText, { color: theme.textMain }]}
+                    numberOfLines={1}
                   >
-                    <Svg
-                      width={14}
-                      height={14}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke={theme.textMuted} // 直接用你的主题色
-                      strokeWidth={2.5}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <Path d="M18 6L6 18M6 6l12 12" />
-                    </Svg>
+                    📄 {file.name}
                   </Text>
-                </TouchableOpacity>
+
+                  {/* 处理进度条 / 结果图标 */}
+                  {file.status === 'processing' || file.uploading ? (
+                    <View style={styles.progressRow}>
+                      <View style={styles.progressTrack}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            {
+                              width: `${Math.max(0, Math.min(100, file.progress ?? 0))}%`,
+                              backgroundColor: theme.sendBtnActive || '#3b82f6',
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text
+                        style={[styles.progressPct, { color: theme.textMuted }]}
+                      >
+                        {Math.round(file.progress ?? 0)}%
+                      </Text>
+                    </View>
+                  ) : file.showResult ? (
+                    // 完成后短暂显示：进度条 + 成功图标（1.5s 后一起隐藏）
+                    <View style={styles.progressRow}>
+                      <View style={styles.progressTrack}>
+                        <View
+                          style={[
+                            styles.progressFill,
+                            { width: '100%', backgroundColor: '#22c55e' },
+                          ]}
+                        />
+                      </View>
+                      <Svg
+                        width={14}
+                        height={14}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#22c55e"
+                        strokeWidth={3}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={styles.resultIcon}
+                      >
+                        <Path d="M20 6L9 17l-5-5" />
+                      </Svg>
+                    </View>
+                  ) : file.status === 'failed' || file.error ? (
+                    <Text style={styles.fileErrorText}>处理失败</Text>
+                  ) : null}
+                </View>
+
+                {/* 处理中/结果展示时隐藏删除按钮 */}
+                {!(
+                  file.status === 'processing' ||
+                  file.uploading ||
+                  file.showResult
+                ) && (
+                  <TouchableOpacity
+                    onPress={() => onDeleteFile(file.id)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Text
+                      style={[styles.deleteBtnText, { color: theme.textMuted }]}
+                    >
+                      <Svg
+                        width={14}
+                        height={14}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke={theme.textMuted}
+                        strokeWidth={2.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <Path d="M18 6L6 18M6 6l12 12" />
+                      </Svg>
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </HoverTouchable>
             ))}
           </ScrollView>
@@ -340,9 +395,42 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 4,
   },
+  fileInfo: {
+    flex: 1,
+    marginRight: 6,
+  },
   fileText: {
     fontSize: 13,
+  },
+  progressTrack: {
     flex: 1,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: 'rgba(150, 150, 150, 0.25)',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  progressPct: {
+    fontSize: 10,
+    marginLeft: 6,
+    minWidth: 30,
+    textAlign: 'right',
+  },
+  resultIcon: {
+    marginLeft: 6,
+  },
+  fileErrorText: {
+    fontSize: 11,
+    marginTop: 3,
+    color: '#ef4444',
   },
   historyContainer: {
     flex: 1,

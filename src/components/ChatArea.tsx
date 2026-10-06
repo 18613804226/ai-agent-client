@@ -5,7 +5,7 @@
   useState,
   useCallback,
   useMemo,
-} from "react";
+} from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,25 +15,26 @@ import {
   TouchableOpacity,
   Platform,
   Image,
-} from "react-native";
-import Svg, { Path } from "react-native-svg";
-import Markdown from "react-native-markdown-display";
+} from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import Markdown from 'react-native-markdown-display';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withRepeat,
   Easing,
-} from "react-native-reanimated";
-import MessageActions from "./MessageActions";
-import ImageViewer from "./ImageViewer";
-import { useChat } from "../../app/_layout";
-import { playText, stopSpeech } from "../services/speechPlayer";
-import { api } from "../services/api";
+} from 'react-native-reanimated';
+import MessageActions from './MessageActions';
+import ImageViewer from './ImageViewer';
+import { useChat } from '../context/appContexts';
+import { playText, stopSpeech } from '../services/speechPlayer';
+import { api } from '../services/api';
 
 // ===================== 类型定义 =====================
 interface Message {
   id: string;
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   content: string;
   thought?: string;
   isStreaming?: boolean;
@@ -80,6 +81,10 @@ const ThoughtCollapsible = memo(
     const [isOpen, setIsOpen] = useState(true);
     const progress = useSharedValue(1);
 
+    const scrollRef = useRef<any>(null);
+    const didMountRef = useRef(false);
+    const scrollRafRef = useRef<number | null>(null);
+
     const toggleOpen = () => {
       const nextState = !isOpen;
       setIsOpen(nextState);
@@ -89,11 +94,50 @@ const ThoughtCollapsible = memo(
       });
     };
 
+    // 思考内容流式增长时，自动把框内滚动条贴到底部。
+    // 跳过首次挂载：历史消息展开时应停在顶部，让用户从头看。
+    // 合并到每帧最多一次 rAF：thought 每帧都变，避免重复排队与多次强制回流。
+    useEffect(() => {
+      if (!didMountRef.current) {
+        didMountRef.current = true;
+        return;
+      }
+      if (scrollRafRef.current != null) return;
+
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        const node = scrollRef.current;
+        if (!node) return;
+        if (typeof node.scrollToEnd === 'function') {
+          node.scrollToEnd({ animated: false });
+          return;
+        }
+        const el =
+          typeof node.getScrollableNode === 'function'
+            ? node.getScrollableNode()
+            : node;
+        if (el && typeof el.scrollTop === 'number') {
+          el.scrollTop = el.scrollHeight;
+        }
+      });
+    }, [thought]);
+
+    // 卸载时取消在途 rAF
+    useEffect(
+      () => () => {
+        if (scrollRafRef.current != null) {
+          cancelAnimationFrame(scrollRafRef.current);
+          scrollRafRef.current = null;
+        }
+      },
+      [],
+    );
+
     const bodyAnimatedStyle = useAnimatedStyle(() => ({
       opacity: progress.value,
       transform: [{ translateY: (1 - progress.value) * -8 }],
-      maxHeight: progress.value * 600,
-      overflow: "hidden" as const,
+      maxHeight: progress.value * 300,
+      overflow: 'hidden' as const,
     }));
 
     const arrowAnimatedStyle = useAnimatedStyle(() => ({
@@ -107,8 +151,8 @@ const ThoughtCollapsible = memo(
           {
             borderColor: theme.border,
             backgroundColor: theme.isDark
-              ? "rgba(255,255,255,0.03)"
-              : "rgba(0,0,0,0.03)",
+              ? 'rgba(255,255,255,0.03)'
+              : 'rgba(0,0,0,0.03)',
           },
         ]}
       >
@@ -124,7 +168,7 @@ const ThoughtCollapsible = memo(
             <Text
               style={{ color: theme.textMuted, fontSize: 12, marginRight: 4 }}
             >
-              {isOpen ? "收起" : "展开"}
+              {isOpen ? '收起' : '展开'}
             </Text>
             <Animated.View style={arrowAnimatedStyle}>
               <Svg width="12" height="12" viewBox="0 0 24 24" fill="none">
@@ -140,20 +184,64 @@ const ThoughtCollapsible = memo(
           </View>
         </TouchableOpacity>
         <Animated.View style={bodyAnimatedStyle}>
-          <Text
-            style={[
-              styles.thoughtContent,
-              { color: theme.textMuted, marginTop: 4 },
-            ]}
-          >
-            {thought}
-          </Text>
+          {Platform.OS === 'web' ? (
+            <View ref={scrollRef} style={[styles.thoughtScroll, { maxHeight: 300 }]}>
+              <Text
+                style={[
+                  styles.thoughtContent,
+                  { color: theme.textMuted, marginTop: 4 },
+                ]}
+              >
+                {thought}
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              ref={scrollRef}
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 300 }}
+              nestedScrollEnabled
+            >
+              <Text
+                style={[
+                  styles.thoughtContent,
+                  { color: theme.textMuted, marginTop: 4 },
+                ]}
+              >
+                {thought}
+              </Text>
+            </ScrollView>
+          )}
         </Animated.View>
       </View>
     );
   },
   (prev, next) => prev.thought === next.thought && prev.theme === next.theme,
 );
+
+// ===================== BouncingDot =====================
+const BouncingDot = memo(function BouncingDot({ color }: { color: string }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withRepeat(
+      withTiming(1, { duration: 600 }),
+      -1,
+      true,
+    );
+  }, []);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - progress.value) * -4 }],
+    opacity: 0.4 + progress.value * 0.6,
+  }));
+
+  return (
+    <Animated.View style={[styles.bouncingDot, dotStyle]}>
+      <View style={[styles.dot, { backgroundColor: color }]} />
+    </Animated.View>
+  );
+});
 
 // ===================== MessageActions（复制 + 喇叭） =====================
 // 见 ./MessageActions.tsx：抽成独立组件，行高固定，吐字完成前后布局不变
@@ -177,15 +265,15 @@ const ChatMessageItem = memo(
     setPlayingMsgId: (id: string | null) => void;
     onPreviewImage?: (images: string[], index: number) => void;
   }) => {
-    const isUser = item.role === "user";
-    const hasContent = !!(item.content && item.content !== "...");
+    const isUser = item.role === 'user';
+    const hasContent = !!(item.content && item.content !== '...');
     const hasThought = !!item.thought;
     const isThinking = !isUser && !hasContent && !hasThought;
 
     const bubbleStyle = useMemo(
       () => [
         styles.bubble,
-        { maxWidth: "100%" as const },
+        { maxWidth: '100%' as const },
         isUser
           ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
           : [
@@ -202,11 +290,11 @@ const ChatMessageItem = memo(
     const dynamicMarkdownStyles = useMemo(
       () => ({
         body: { fontSize: 15, lineHeight: 22, color: theme.textMain },
-        strong: { fontWeight: "bold" as const, color: theme.textMain },
+        strong: { fontWeight: 'bold' as const, color: theme.textMain },
         paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
         heading1: {
           fontSize: 20,
-          fontWeight: "bold" as const,
+          fontWeight: 'bold' as const,
           color: theme.textMain,
           marginTop: 14,
           marginBottom: 6,
@@ -214,7 +302,7 @@ const ChatMessageItem = memo(
         },
         heading2: {
           fontSize: 18,
-          fontWeight: "bold" as const,
+          fontWeight: 'bold' as const,
           color: theme.textMain,
           marginTop: 12,
           marginBottom: 6,
@@ -222,7 +310,7 @@ const ChatMessageItem = memo(
         },
         heading3: {
           fontSize: 16,
-          fontWeight: "bold" as const,
+          fontWeight: 'bold' as const,
           color: theme.textMain,
           marginTop: 10,
           marginBottom: 4,
@@ -230,8 +318,8 @@ const ChatMessageItem = memo(
         },
         code_inline: {
           backgroundColor: theme.isDark
-            ? "rgba(255,255,255,0.1)"
-            : "rgba(0,0,0,0.06)",
+            ? 'rgba(255,255,255,0.1)'
+            : 'rgba(0,0,0,0.06)',
           color: theme.textMain,
           borderRadius: 4,
           paddingHorizontal: 4,
@@ -239,27 +327,27 @@ const ChatMessageItem = memo(
           fontSize: 14,
         },
         fence: {
-          backgroundColor: theme.isDark ? "#000" : "#eee",
-          color: theme.isDark ? "#d4d4d4" : "#333333",
+          backgroundColor: theme.isDark ? '#000' : '#eee',
+          color: theme.isDark ? '#d4d4d4' : '#333333',
           borderRadius: 8,
           padding: 12,
           marginVertical: 6,
           borderWidth: 1,
           borderColor: theme.border,
-          fontFamily: "JetBrains Mono",
+          fontFamily: 'JetBrains Mono',
         },
         code_block: {
-          backgroundColor: theme.isDark ? "#1e1e1e" : "#f5f5f5",
-          color: theme.isDark ? "#d4d4d4" : "#333333",
+          backgroundColor: theme.isDark ? '#1e1e1e' : '#f5f5f5',
+          color: theme.isDark ? '#d4d4d4' : '#333333',
           borderRadius: 8,
           padding: 12,
           marginVertical: 6,
         },
         blockquote: {
           backgroundColor: theme.isDark
-            ? "rgba(255, 255, 255, 0.05)"
-            : "rgba(0, 0, 0, 0.04)",
-          borderLeftColor: theme.isDark ? "#3b82f6" : "#2563eb",
+            ? 'rgba(255, 255, 255, 0.05)'
+            : 'rgba(0, 0, 0, 0.04)',
+          borderLeftColor: theme.isDark ? '#3b82f6' : '#2563eb',
           borderLeftWidth: 1,
           paddingHorizontal: 12,
           paddingVertical: 8,
@@ -302,8 +390,8 @@ const ChatMessageItem = memo(
                     activeOpacity={0.85}
                     onPress={() => onPreviewImage?.(item.images || [], idx)}
                     style={
-                      Platform.OS === "web"
-                        ? ({ cursor: "pointer" } as any)
+                      Platform.OS === 'web'
+                        ? ({ cursor: 'pointer' } as any)
                         : undefined
                     }
                   >
@@ -338,7 +426,7 @@ const ChatMessageItem = memo(
                 <Text
                   style={[
                     styles.messageText,
-                    { color: theme.textMuted, fontStyle: "italic" },
+                    { color: theme.textMuted, fontStyle: 'italic' },
                   ]}
                 >
                   思考中...
@@ -361,18 +449,21 @@ const ChatMessageItem = memo(
                 {/* 核心优化：流式中用纯 Text（渲染成本低、行高与 Markdown 对齐，
                     结束后切 Markdown 时气泡高度不跳变） */}
                 {isStreaming ? (
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      lineHeight: 22,
-                      color: theme.textMain,
-                    }}
-                  >
-                    {item.content}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        lineHeight: 22,
+                        color: theme.textMain,
+                      }}
+                    >
+                      {item.content}
+                    </Text>
+                    <BouncingDot color={theme.textMain} />
+                  </View>
                 ) : (
                   <Markdown style={dynamicMarkdownStyles}>
-                    {item.content || ""}
+                    {item.content || ''}
                   </Markdown>
                 )}
               </View>
@@ -475,11 +566,11 @@ export default function ChatArea({
     const ref: any = scrollViewRef.current;
     if (!ref) return;
 
-    if (Platform.OS === "web") {
+    if (Platform.OS === 'web') {
       const node =
-        (typeof ref.getScrollableNode === "function" &&
+        (typeof ref.getScrollableNode === 'function' &&
           ref.getScrollableNode()) ||
-        (typeof ref.getInnerViewNode === "function" &&
+        (typeof ref.getInnerViewNode === 'function' &&
           ref.getInnerViewNode()) ||
         null;
       if (node) {
@@ -547,8 +638,8 @@ export default function ChatArea({
   useEffect(() => {
     if (!autoRead) return;
     const last = displayMessages[displayMessages.length - 1];
-    if (!last || last.role !== "assistant") return;
-    if (last.isStreaming || !last.content || last.content === "...") return;
+    if (!last || last.role !== 'assistant') return;
+    if (last.isStreaming || !last.content || last.content === '...') return;
 
     const key = `${activeId}:${last.id}`; // 带会话 ID，切会话不会误触发
     if (lastAutoReadKeyRef.current === key) return;
@@ -559,7 +650,7 @@ export default function ChatArea({
         setPlayingMsgId(last.id);
         await playText(last.content, {
           fetchUrl: async (sentence) => {
-            const data = await api.textToSpeech(sentence, "Nini");
+            const data = await api.textToSpeech(sentence, 'Nini');
             return data.url;
           },
           onEnd: () => {
@@ -568,7 +659,7 @@ export default function ChatArea({
           },
         });
       } catch (e) {
-        console.error("自动朗读失败:", e);
+        console.error('自动朗读失败:', e);
         autoPlayingRef.current = false;
         setPlayingMsgId(null);
       }
@@ -651,10 +742,10 @@ export default function ChatArea({
         alwaysBounceVertical={false}
         nativeID="chat-scroll"
         style={
-          Platform.OS === "web"
+          Platform.OS === 'web'
             ? ({
-                scrollbarWidth: "thin",
-                scrollbarColor: "rgba(255,255,255,0.3) transparent",
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'rgba(255,255,255,0.3) transparent',
               } as any)
             : undefined
         }
@@ -698,10 +789,10 @@ export default function ChatArea({
               styles.scrollToBottomBtn,
               {
                 backgroundColor: theme.isDark
-                  ? "rgba(40,40,40,0.92)"
-                  : "rgba(255,255,255,0.95)",
+                  ? 'rgba(40,40,40,0.92)'
+                  : 'rgba(255,255,255,0.95)',
                 borderColor: theme.border,
-                shadowColor: "#000",
+                shadowColor: '#000',
               },
             ]}
           >
@@ -737,8 +828,8 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 24,
     paddingTop: 240,
   },
@@ -748,34 +839,34 @@ const styles = StyleSheet.create({
   },
   welcomeTitle: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: 'bold',
     marginBottom: 8,
-    textAlign: "center",
+    textAlign: 'center',
   },
   welcomeSubtitle: {
     fontSize: 14,
-    textAlign: "center",
+    textAlign: 'center',
     lineHeight: 20,
   },
   messageRow: {
-    flexDirection: "row",
+    flexDirection: 'row',
     marginBottom: 20,
-    alignItems: "flex-start",
+    alignItems: 'flex-start',
   },
-  rowUser: { justifyContent: "flex-end" },
-  rowAi: { justifyContent: "flex-start" },
+  rowUser: { justifyContent: 'flex-end' },
+  rowAi: { justifyContent: 'flex-start' },
   bubble: { padding: 14, borderRadius: 16 },
   bubbleUser: { borderTopRightRadius: 4 },
   bubbleAi: { borderTopLeftRadius: 4, borderWidth: 1 },
   thinkingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 2,
   },
   messageText: { fontSize: 15, lineHeight: 22 },
   userImagesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
     marginTop: 6,
   },
@@ -783,64 +874,67 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 8,
-    resizeMode: "cover",
+    resizeMode: 'cover',
   },
   imageBubble: {
     marginBottom: 4,
-    alignSelf: "flex-end",
+    alignSelf: 'flex-end',
   },
   userImagesColumn: {
-    flexDirection: "column",
-    alignItems: "flex-end",
+    flexDirection: 'column',
+    alignItems: 'flex-end',
   },
   textBubbleBelowImages: {
     marginTop: 4,
   },
   systemNoteRow: {
-    width: "100%",
-    alignItems: "center",
+    width: '100%',
+    alignItems: 'center',
     marginVertical: 6,
   },
   systemNoteText: {
     fontSize: 12,
     lineHeight: 18,
-    fontStyle: "italic",
+    fontStyle: 'italic',
     opacity: 0.6,
   },
   thoughtBox: {
     borderLeftWidth: 0,
-    borderLeftColor: "#4b92ee",
+    borderLeftColor: '#4b92ee',
     paddingVertical: 6,
     paddingHorizontal: 8,
     marginBottom: 10,
     borderRadius: 4,
   },
   thoughtRightAction: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   thoughtHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 4,
   },
   thoughtTitle: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: '600',
     paddingRight: 2,
   },
   thoughtContent: {
     fontSize: 13,
-    fontStyle: "italic",
+    fontStyle: 'italic',
     lineHeight: 18,
   },
+  thoughtScroll: {
+    overflow: 'scroll' as const,
+  },
   scrollToBottomWrapper: {
-    position: "absolute",
+    position: 'absolute',
     left: 0,
     right: 0,
     bottom: 16,
-    alignItems: "center",
+    alignItems: 'center',
     zIndex: 10,
   },
   scrollToBottomBtn: {
@@ -848,11 +942,23 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 4,
+  },
+  bouncingDot: {
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
 });

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Platform } from 'react-native';
 
 // 从环境变量读取后端地址，若未配置则使用默认值
 const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
@@ -31,6 +32,22 @@ httpClient.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+// 知识库文件状态：uploaded(仅存档) | processing(向量化中) | indexed(已入库) | failed(失败)
+export type KnowledgeStatus = 'uploaded' | 'processing' | 'indexed' | 'failed';
+
+export interface KnowledgeFileResult {
+  id: string;
+  fileName?: string;
+  name?: string;
+  status?: KnowledgeStatus;
+  totalChunks?: number;
+  processedChunks?: number;
+  progress?: number;
+  url?: string;
+  fileUrl?: string;
+  path?: string;
+}
 
 // 定义具体的 API 调用方法
 export const api = {
@@ -72,26 +89,139 @@ export const api = {
     return data.text;
   },
 
-  /**
-   * 上传图片到后端，返回图片 URL 数组。
-   * 支持 base64 data URL 或 File/Blob。
-   */
-  uploadImages: async (images: string[]): Promise<string[]> => {
-    const urls: string[] = [];
-    for (const img of images) {
-      try {
-        if (img.startsWith('data:')) {
-          const data: any = await httpClient.post('/chat/upload-image', {
-            image: img,
-          });
-          if (data?.url) urls.push(data.url);
-        } else {
-          urls.push(img);
-        }
-      } catch (err) {
-        console.error('上传图片失败:', err);
-      }
-    }
-    return urls;
-  },
+   /**
+    * 上传图片到后端，返回图片 URL 数组。
+    * 支持 base64 data URL 或 File/Blob。
+    */
+   uploadImages: async (images: string[]): Promise<string[]> => {
+     const urls: string[] = [];
+     for (const img of images) {
+       try {
+         if (img.startsWith('data:')) {
+           const data: any = await httpClient.post('/chat/upload-image', {
+             image: img,
+           });
+           if (data?.url) urls.push(data.url);
+         } else {
+           urls.push(img);
+         }
+       } catch (err) {
+         console.error('上传图片失败:', err);
+       }
+     }
+     return urls;
+   },
+
+   /**
+    * 上传知识库文件（异步、不阻塞）。
+    * 后端落盘建记录后立即返回 { id, fileName, status, totalChunks, processedChunks: 0 }，
+    * 向量化在后台跑，进度用 getKnowledgeFileProgress 轮询。
+    *
+    * - Web：浏览器原生 Blob + fetch。
+    * - Native：用 RN 自带的 XMLHttpRequest + FormData 的 `{ uri, name, type }`
+    *   文件对象。关键点：
+    *   1) Expo 不会替换全局 XMLHttpRequest，所以它读文件走 RN 原生网络层，
+    *      绕开 expo-file-system 的 FilePermissionService（在 Expo Go 里它会以
+    *      “isn't readable / Missing 'READ' permission” 拒绝 DocumentPicker 的缓存文件）。
+    *   2) 不能设置 Content-Type（RN 会自动带 multipart boundary）。
+    *   3) 不做上传字节进度（进度由后端轮询给出），避免个别机型 upload progress 的坑。
+    *   Expo 的全局 fetch 不支持 `{uri,...}`（会抛 Unsupported FormDataPart），故不用 fetch。
+    */
+   uploadKnowledgeFile: (
+     file: {
+       name: string;
+       uri: string;
+       size?: number;
+       mimeType?: string;
+     },
+   ): Promise<KnowledgeFileResult | null> => {
+     const url = `${baseURL}/chat/knowledge/upload`;
+
+     // ================= Web =================
+     if (Platform.OS === 'web') {
+       return (async () => {
+         try {
+           const blob = await (await fetch(file.uri)).blob();
+           const formData = new FormData();
+           formData.append('file', blob, file.name);
+           const resp = await fetch(url, { method: 'POST', body: formData });
+           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+           return await resp.json();
+         } catch (err) {
+           console.error('上传知识库文件失败:', err);
+           return null;
+         }
+       })();
+     }
+
+     // ================= Native：RN XHR =================
+     return new Promise((resolve) => {
+       const xhr = new XMLHttpRequest();
+       xhr.open('POST', url);
+       xhr.timeout = 60000;
+
+       xhr.onload = () => {
+         if (xhr.status >= 200 && xhr.status < 300) {
+           try {
+             resolve(JSON.parse(xhr.responseText) as KnowledgeFileResult);
+           } catch {
+             console.error('上传知识库文件失败: 响应不是合法 JSON');
+             resolve(null);
+           }
+         } else {
+           console.error(`上传知识库文件失败: HTTP ${xhr.status}`);
+           resolve(null);
+         }
+       };
+       xhr.onerror = () => {
+         console.error('上传知识库文件失败: Network Error');
+         resolve(null);
+       };
+       xhr.ontimeout = () => {
+         console.error('上传知识库文件失败: Timeout');
+         resolve(null);
+       };
+       xhr.onabort = () => resolve(null);
+
+       const formData = new FormData();
+       formData.append('file', {
+         uri: file.uri,
+         name: file.name,
+         type: file.mimeType || 'application/octet-stream',
+       } as any);
+       xhr.send(formData);
+     });
+   },
+
+   /**
+    * 查询知识库文件处理进度（轮询）。
+    * 返回 { id, fileName, status, totalChunks, processedChunks, progress }
+    */
+   getKnowledgeFileProgress: async (
+     id: string,
+   ): Promise<KnowledgeFileResult | null> => {
+     try {
+       const data: any = await httpClient.get(
+         `/chat/knowledge/files/${id}/progress`,
+       );
+       return data;
+     } catch (err) {
+       console.error('获取知识库进度失败:', err);
+       return null;
+     }
+   },
+
+    /**
+     * 删除知识库文件
+     */
+    deleteKnowledgeFile: async (fileId: string): Promise<void> => {
+      await httpClient.delete(`/chat/knowledge/files/${fileId}`);
+    },
+
+    /**
+     * 获取知识库文件列表
+     */
+    getKnowledgeFiles: async (): Promise<any[]> => {
+      return httpClient.get('/chat/knowledge/files');
+   },
 };
