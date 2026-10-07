@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Platform, Vibration } from 'react-native';
 import { api } from '../services/api';
+import {
+  chatDistanceFromBottom,
+  scrollChatToBottom,
+} from '../utils/chatScroll';
 
 export interface Message {
   id: string;
@@ -69,15 +73,44 @@ export function useChatManager() {
   const scrollViewRef = useRef<any>(null);
 
   // ==================== 吐字参数 ====================
-  /** 匀速吐字速度（字/秒）：与网络包大小无关，视觉上始终平滑 */
-  const CHARS_PER_SEC = 66;
-  /** 队列积压超过该值时提速，保证不会落后于流速 */
-  const CATCH_UP_CHARS = 120;
-  const MAX_CATCH_UP_SPEED = 900;
-  /** 流已结束时的收尾速度：吐完字立刻落盘，不让用户干等 */
+  /**
+   * 空闲吐字速度（字/秒）：只在「模型本身比这慢」或「队列快吐完」时生效，
+   * 负责给出匀速打字的手感。
+   */
+  const CHARS_PER_SEC = 99;
+  /**
+   * 积压超过该值就进入追赶。
+   * 原来是 120：等于自己先攒 120 字的缓冲 ≈ 0.3~1.2s 的延迟，白等；
+   * 20 字 ≈ 0.1s，肉眼分辨不出。
+   */
+  const CATCH_UP_CHARS = 20;
+  /**
+   * 追赶倍率（单位：字/秒 每 1 字积压）。
+   * 稳定态：吐字速度 = 倍率 × 积压 = 到达速度，于是
+   * **平均延迟 ≈ 1 / 倍率 秒**：×2 → 0.5s（原来的观感就是「慢半拍」），
+   * ×7 → ≈0.14s（等同于不延迟）。
+   * 想更不延迟就调大（10 → ≈0.1s），代价是单帧增量变大、台阶更容易看见。
+   */
+  const CATCH_UP_RAMP = 7;
+  /** 追赶速度上限（字/秒）：防止高速流下越追越猛。 */
+  const MAX_CATCH_UP_SPEED = 1600;
+  /**
+   * 流式中单帧吐字上限：16 字 ≈ 0.8 行。
+   * 它同时是「主线程卡顿时的保险丝」和「流式期的视觉上限」：
+   * 16 字 × 60fps ≈ 960 字/秒，已经比绝大多数模型的输出速度还快。
+   */
+  const MAX_PER_FRAME = 16;
+  /** 流已结束时的收尾基准速度（字/秒）：队列快空时用它，最后几个字仍是「打字」出来的。 */
   const FINISH_SPEED = 420;
-  /** 单帧吐字上限：主线程被卡住时也不会一帧吐一大坨造成跳动 */
-  const MAX_PER_FRAME = 120;
+  /** 收尾追赶倍率：流都结束了就没必要再慢慢吐，积压越多收得越快。 */
+  const FINISH_RAMP = 14;
+  /** 收尾速度上限（字/秒）。 */
+  const MAX_FINISH_SPEED = 1920;
+  /**
+   * 收尾时单帧上限：32 字 ≈ 1.5 行。
+   * 流已结束、用户在等落盘，这时候「快」比「稳」重要。
+   */
+  const FINISH_MAX_PER_FRAME = 32;
   /** 每帧推一次 React 状态（≈60fps）：每帧都多吐至少一个字，肉眼看不出台阶 */
   const FRAME_PUSH_INTERVAL = 16;
   /** 单帧时间上限，防止切后台回来一帧吐几百字 */
@@ -376,13 +409,19 @@ export function useChatManager() {
 
         const backlog = queueCharsRef.current;
         let speed = CHARS_PER_SEC;
+        /** 本帧吐字上限：收尾期放宽（流已结束，用户已在等落盘） */
+        let perFrameLimit = MAX_PER_FRAME;
         if (streamFinishedRef.current) {
-          // 流已结束：全速收尾，避免长回答在结尾干等
-          speed = FINISH_SPEED;
+          // 流已结束：按积压提速收尾，避免长回答在结尾干等
+          speed = Math.min(
+            FINISH_SPEED + backlog * FINISH_RAMP,
+            MAX_FINISH_SPEED,
+          );
+          perFrameLimit = FINISH_MAX_PER_FRAME;
         } else if (backlog > CATCH_UP_CHARS) {
           // 积压：按积压量提速，保证消费速度始终 ≥ 到达速度
           speed = Math.min(
-            Math.max(backlog * 2, CHARS_PER_SEC),
+            Math.max(backlog * CATCH_UP_RAMP, CHARS_PER_SEC),
             MAX_CATCH_UP_SPEED,
           );
         }
@@ -395,7 +434,7 @@ export function useChatManager() {
           timerRef.current = requestAnimationFrame(consumeFrame);
           return;
         }
-        budget = Math.min(budget, MAX_PER_FRAME);
+        budget = Math.min(budget, perFrameLimit);
 
         // ===== 从队列头按帧消费 =====
         let remain = budget;
@@ -645,11 +684,9 @@ export function useChatManager() {
 
   // ==================== 滚动处理 ====================
   const handleScroll = (event: any) => {
-    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-    const offsetY = contentOffset.y;
-    const viewH = layoutMeasurement.height;
-    const contentH = contentSize.height;
-    const isCloseToBottom = offsetY + viewH >= contentH - 50;
+    // 原生端是 inverted 列表（offset 0 就是视觉底部），离底距离的算法两端不同，
+    // 统一走 utils/chatScroll 里的 chatDistanceFromBottom。
+    const isCloseToBottom = chatDistanceFromBottom(event?.nativeEvent) <= 50;
 
     // autoFollowRef 归 ChatArea 独占写入（它要和「回到底部」按钮用同一个阈值），
     // 这里别再抢着写，否则两个阈值打架会让自动跟随在吐字时来回抖。
@@ -682,7 +719,8 @@ export function useChatManager() {
     let isBrandNewSession = false;
 
     isAtBottomRef.current = true;
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    // 原生 inverted：offset 0 = 底部；Web：scrollToEnd
+    scrollChatToBottom(scrollViewRef.current, true);
 
     if (!currentActiveId) {
       try {
