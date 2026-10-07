@@ -1,3 +1,12 @@
+/** 🖥️ PC 网页端宽度断点（app/index.tsx 与 Sidebar 共用，避免两处漂移） */
+export const PC_WEB_BREAKPOINT = 768;
+
+/** 是否为 PC 网页端宽度（> 断点） */
+export const isPCWebWidth = (width: number) => width > PC_WEB_BREAKPOINT;
+
+/** 是否为手机 H5 网页端宽度（<= 断点） */
+export const isMobileWebWidth = (width: number) => width <= PC_WEB_BREAKPOINT;
+
 export const darkTheme = {
   bgApp: '#000',
   bgSidebar: '#1E1F20',

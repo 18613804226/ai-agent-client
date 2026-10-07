@@ -53,7 +53,7 @@ export const IconSpeakerOff = ({
   size = 20,
   color = 'white',
   strokeWidth = 2,
-}: any) => (
+}: IconProps) => (
   <Svg
     width={size}
     height={size}
@@ -66,5 +66,26 @@ export const IconSpeakerOff = ({
   >
     <Path d="M11 5L6 9H2v6h4l5 4V5z" />
     <Path d="M23 9l-6 6M17 9l6 6" />
+  </Svg>
+);
+
+// 📋 复制图标
+export const IconCopy = ({
+  size = 16,
+  color = 'currentColor',
+  strokeWidth = 2,
+}: IconProps) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={strokeWidth}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <Path d="M9 14H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2" />
   </Svg>
 );

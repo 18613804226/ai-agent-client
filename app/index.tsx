@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootSiblingParent } from 'react-native-root-siblings';
 import { DrawerActions } from 'expo-router/react-navigation';
 import { useNavigation } from 'expo-router';
+import { useDrawerStatus } from 'expo-router/drawer';
 
 import Sidebar from '../src/components/Sidebar';
 import ChatArea from '../src/components/ChatArea';
@@ -24,6 +25,7 @@ import { useKeyboardAnimation } from '../src/hooks/useKeyboardAnimation';
 import GlobalToastContainer from '../src/components/GlobalToast';
 import { useImagePicker } from '../src/hooks/useImagePicker';
 import { useTheme, useChat, useKnowledge } from '../src/context/appContexts'; // 💡 全局 Context（与 app/_layout 共用）
+import { isPCWebWidth, isMobileWebWidth } from '../src/constants/theme';
 import CustomActionSheet from '../src/components/CustomActionSheet';
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
@@ -104,6 +106,8 @@ export default function ChatScreen() {
     : 0;
 
   const { keyboardHeightAnim, isKeyboardUp } = useKeyboardAnimation();
+  const drawerStatus = useDrawerStatus();
+  const isDrawerOpen = drawerStatus === 'open';
 
   const handleSendWithImages = (overrideText?: string) => {
     // 只发送后端真实存在、已完成索引的文件 ID：
@@ -125,8 +129,8 @@ export default function ChatScreen() {
 
   // 💡 三端精准判断
   const screenWidth = Dimensions.get('window').width;
-  const isPCWeb = Platform.OS === 'web' && screenWidth > 768; // 电脑端网页
-  const isMobileWeb = Platform.OS === 'web' && screenWidth <= 768; // 手机 H5 网页
+  const isPCWeb = Platform.OS === 'web' && isPCWebWidth(screenWidth); // 电脑端网页
+  const isMobileWeb = Platform.OS === 'web' && isMobileWebWidth(screenWidth); // 手机 H5 网页
 
   // 💡 针对三端各自配置不同的悬浮菜单坐标样式
   const sheetPositionStyle = isPCWeb
@@ -148,12 +152,12 @@ export default function ChatScreen() {
       onMoveShouldSetPanResponder: (_, gestureState) => {
         if (isPCWeb) return false;
         return (
-          gestureState.dx > 5 &&
-          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 0.5
+          gestureState.dx > 3 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 0.6
         );
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (!isPCWeb && gestureState.dx > 20) {
+        if (!isPCWeb && gestureState.dx > 14) {
           openDrawer();
         }
       },
@@ -263,6 +267,7 @@ export default function ChatScreen() {
                 isKeyboardUp={isKeyboardUp}
                 activeId={activeId}
                 autoRead={autoRead}
+                isDrawerOpen={isDrawerOpen}
               />
               <ChatInputBar
                 inputText={inputText}

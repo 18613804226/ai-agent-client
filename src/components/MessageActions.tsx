@@ -149,7 +149,9 @@ const MessageActions = memo(
             style={[
               styles.btn,
               active ? { backgroundColor: activeBg } : null,
-              isHovered && ready && !active ? { backgroundColor: hoverBg } : null,
+              isHovered && ready && !active
+                ? { backgroundColor: hoverBg }
+                : null,
             ]}
             onPress={handleToggleSpeech}
             disabled={!ready || loading}
@@ -185,7 +187,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     height: ACTION_ROW_HEIGHT,
-    marginTop: 4,
+    marginTop: 1,
   },
   hidden: { opacity: 0 },
   item: { marginLeft: 4 },

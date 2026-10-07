@@ -66,9 +66,7 @@ const WEB_ROW_CONTAINMENT =
  * 原生端聊天列表的贴底策略（2026-01 定稿）：**inverted 布局**。
  *
  * ⚠️ 之前试过「普通列表 + 底部锚点 onLayout worklet，在 UI 线程贴底」
- * （曾建 src/hooks/useUiThreadBottomPin.ts，因下面四条已**删除**；
- *   原文件里挂的 `nativeID="chat-scroll"` 标记也已一并移除，无人读取）。
- * 真机日志显示锚点 worklet
+ * （src/hooks/useUiThreadBottomPin.ts，已废弃）。真机日志显示锚点 worklet
  * **一次都没触发过**，根因在框架侧，不是我们的写法问题：
  *   1. Fabric 只在节点带「JS 函数的 onLayout prop」时才发射布局事件
  *      （react-native/ReactCommon/react/renderer/mounting/ShadowTree.cpp:574），
@@ -1543,9 +1541,15 @@ export default function ChatArea({
           INVERTED_CHAT_LIST ? CHAT_INVERSION_STYLE : null,
         ]}
         alwaysBounceVertical={false}
+        nativeID="chat-scroll"
       >
         {showWelcome ? (
-          <View style={[styles.emptyContainer, { flexGrow: 1 }]}>
+          <View
+            style={[
+              styles.emptyContainer,
+              { height: viewportHeightRef.current || 400 },
+            ]}
+          >
             <Text style={styles.welcomeEmoji}>👋</Text>
             <Text style={[styles.welcomeTitle, { color: theme.textMain }]}>
               你好，欢迎使用 AI 智能体
@@ -1618,10 +1622,10 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   emptyContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingTop: 240,
   },
   welcomeEmoji: {
     fontSize: 42,
@@ -1647,10 +1651,10 @@ const styles = StyleSheet.create({
   /**
    * 流式正文容器：作为 flex item 收缩到可用宽度（气泡宽度只随内容增长、不会来回变），
    * minHeight 与单行正文对齐，避免「只有一个跳动的点」那一刻高度从 22 掉到 16。
-   * （流式期与结束后都是 markdown，行高统一由 dynamicMarkdownStyles.body 的 24 决定，
-   *   所以这里不再需要单独的 streamingText 样式去对齐行高。）
    */
   streamingBody: { flexShrink: 1, minHeight: 22 },
+  /** 原生流式正文：行高与 markdown body 的 24 对齐，吐字结束不再跳一行 */
+  streamingText: { fontSize: 15, lineHeight: 24 },
   rowUser: { justifyContent: 'flex-end' },
   rowAi: { justifyContent: 'flex-start' },
   bubble: { padding: 14, borderRadius: 16 },

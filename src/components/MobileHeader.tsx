@@ -69,7 +69,7 @@ export function MobileHeader({
                 ? 'rgba(29, 161, 242, 0.15)'
                 : 'transparent',
               borderRadius: 8,
-              marginLeft: 5,
+              marginLeft: 8,
               padding: 4,
             },
           ]}
