@@ -35,19 +35,17 @@ import type { ViewStyle } from 'react-native';
  *    不只是 transform。header/empty/footer 也各自翻一次：:958 / :918 / :1077）
  *   ⇒ 落在视觉底部的是布局起点，也就是**数组第一个元素**
  *   ⇒ 所以官方 inverted FlatList 的 data 必须**反转**（最新在前）。
- * - 本项目：翻 ScrollView + 翻**整个内容容器**（整块镜像，里面所有子节点跟着被镜像）
- *   ⇒ 落在视觉底部的是布局末尾，也就是**数组最后一个元素**
- *   ⇒ 所以 messages **必须保持自然顺序**（最旧 → 最新），**绝对不要再 reverse**，
- *      否则新旧整体颠倒（真机表现就是「老的记录跑到下面来了」）。
- * 两种写法都满足「翻两次 → 文字方向正常 + offset 0 = 视觉底部」，只是锚住内容的另一头。
- * 本项目选后者（整块镜像）的原因：
- * - 聊天区是普通 `<ScrollView>` + `displayMessages.map(...)`（ChatArea.tsx），**不是 FlatList**，
- *   根本没有 CellRenderer 这一层 —— `inverted` 属性是 VirtualizedList 的，这里无处可挂；
- * - RN 那条「逐条翻」的路必须走 `CellRendererComponent` 才生效，为了一个 transform 引入
- *   虚拟化不划算（流式 Markdown 每帧重排会变成异步 cell 更新）；
- * - 代价（自己实现的账，别忘）：滚动条也会被镜像；`contentContainerStyle` 上挂 transform
- *   不是 RN 的文档化 inverting 路径，**RN/Expo 升级时要重点回归这里**。
- * ⚠️ 换版本后若出现「老消息跑到下面」或镜像失效，先来这一行核对 RN 的实现有没有变。
+ * - 本项目：翻 ScrollView + **逐条**翻 cell（手动模拟 RN CellRenderer 逻辑，
+ *   见 CELL_INVERSION_STYLE），不翻 contentContainer。
+ *   ⇒ 落在视觉底部的是布局起点 = **数组第一个元素**
+ *   ⇒ 所以 messages **必须反转**（最新在前），与官方 inverted FlatList 一致。
+ *   cell 的 scale(-1) 与 ScrollView 的 scale(-1) 抵消 → cell 内部坐标系正常，
+ *   思考窗等嵌套内容不受翻转影响。
+ * 两种写法都满足「翻两次 → 文字方向正常 + offset 0 = 视觉底部」。
+ * 本项目选 ScrollView + 逐条 cell 翻转（而非 FlatList inverted）的原因：
+ * - 同步渲染（ScrollView + map）→ 切会话丝滑，无 FlatList 虚拟化分批闪烁；
+ * - 流式 Markdown 每帧重排是同步的，不走 VirtualizedList 异步 cell 更新；
+ * - 代价：长会话（200+ 条）内存压力大，届时加「加载更多」分页即可。
  *
  * Web 端不翻转，继续走 useLayoutEffect + scrollTop：它在 paint 之前同步完成，
  * 本来就是零抖动。**原因不是「Web 没有这个能力」**——react-native-web 自己的
@@ -74,8 +72,8 @@ import type { ViewStyle } from 'react-native';
  *     `showsVerticalScrollIndicator={false}`，代价是两端都再也看不到滚动条）；
  *  2. `contentContainerStyle` 挂 transform **不是 RN 文档化的 inverting 路径**
  *     → 升级回归风险，见上面那条警告；
- *  3. 镜像轴决定了锚住的是数组**末尾** ⇒「不要 reverse data」这条反直觉约束
- *     （与官方 inverted FlatList 恰好相反）；
+ *  3. 镜像轴决定了锚住的是数组**开头** ⇒ data 必须反转（最新在前），
+ *     与官方 inverted FlatList 一致；
  *  4. **offset 语义在全工程范围内颠倒**：scrollChatToBottom / chatDistanceFromBottom /
  *     进场动画（ChatArea.tsx 的 playEntryScroll 要手动「先跳视觉顶部再滚回 0」）
  *     —— 每处读到 offset 都要先问一句「这是哪个坐标系」，这是持续的认知税。
@@ -96,6 +94,13 @@ import type { ViewStyle } from 'react-native';
 export const INVERTED_CHAT_LIST = Platform.OS !== 'web';
 
 /**
+ * 思考框滚到边界后是否联动外层聊天列表滚动（scroll chaining）。代码里一键开关：
+ *  - true  = 放开：内层滚到顶/底后继续拖，外层聊天列表跟着滚；
+ *  - false = 贴边锁死：内层怎么滚都不带动外层。
+ */
+export const THOUGHT_EDGE_SCROLL_ENABLED = false;
+
+/**
  * 翻转视图用的 transform。
  * Android 与 RN 自带实现保持一致用 `scale: -1`（X/Y 都翻，两层叠加即抵消水平方向），
  * iOS 用 `scaleY: -1`。
@@ -105,8 +110,20 @@ export const CHAT_INVERSION_STYLE: ViewStyle = {
 };
 
 /**
+ * 逐条 cell 翻转样式（模拟 RN inverted FlatList 的 CellRenderer 逻辑）。
+ * ScrollView 翻一次 + 每个 cell 翻一次 = 两次抵消 → cell 内部坐标系正常。
+ * flexDirection: 'column-reverse' 让 cell 内部的布局方向也翻转回来。
+ */
+export const CELL_INVERSION_STYLE: ViewStyle = {
+  ...(Platform.OS === 'android'
+    ? { transform: [{ scale: -1 }] }
+    : { transform: [{ scaleY: -1 }] }),
+  flexDirection: 'column-reverse',
+};
+
+/**
  * 滚到「视觉底部」：
- * - 原生 inverted：offset 0 就是底部，交给 ScrollView 自带命令（native 自己 clamp）；
+ * - 原生 inverted ScrollView：offset 0 就是底部，`scrollTo({ y: 0 })`；
  * - Web：继续用 react-native-web 的 `scrollToEnd`（内部读 scrollHeight，行为不变）。
  */
 export function scrollChatToBottom(ref: any, animated = false): void {

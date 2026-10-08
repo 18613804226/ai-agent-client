@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Platform, Vibration } from 'react-native';
+import { useAnimatedRef } from 'react-native-reanimated';
 import { api } from '../services/api';
 import {
   chatDistanceFromBottom,
@@ -70,7 +71,8 @@ export function useChatManager() {
 
   const autoFollowRef = useRef(true);
   const isAtBottomRef = useRef(true);
-  const scrollViewRef = useRef<any>(null);
+  // animated ref：思考框贴边联动要用 UI 线程 scrollTo 驱动外层滚动（丝滑 + 惯性）
+  const scrollViewRef = useAnimatedRef<any>();
 
   // ==================== 吐字参数 ====================
   /**
