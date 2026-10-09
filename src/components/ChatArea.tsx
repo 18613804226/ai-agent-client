@@ -32,7 +32,7 @@ export default function ChatArea({
   autoRead = false, // 💡 新增
   isDrawerOpen = false, // 抽屉打开时禁用文本选择，防止误触
 }: ChatAreaProps) {
-  const { scrollViewRef } = useChat();
+const { scrollViewRef } = useChat();
   const [playingMsgId, setPlayingMsgId] = useState<string | null>(null);
 
   // 🧹 抽屉打开时清掉 Web 端已选中的蓝色文本选择框

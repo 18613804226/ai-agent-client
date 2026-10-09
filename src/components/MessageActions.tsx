@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -11,7 +11,7 @@ import Svg, { Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
 import { playText, stopSpeech } from '../services/speechPlayer';
 import { api } from '../services/api';
-import { IconSpeakerOn, IconSpeakerOff } from './Icons';
+import { IconSpeakerOff } from './Icons';
 
 export interface MessageActionsTheme {
   isDark: boolean;
@@ -56,6 +56,20 @@ const CopyIcon = ({ color, size = 14 }: { color: string; size?: number }) => (
   </Svg>
 );
 
+/** 停止方块：朗读时喇叭位替换成它，暗示「点这里中断」 */
+const StopIcon = ({ color, size = 12 }: { color: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect
+      x="5"
+      y="5"
+      width="14"
+      height="14"
+      rx="2"
+      fill={color}
+    />
+  </Svg>
+);
+
 /**
  * AI 气泡底部操作区：复制 icon + 喇叭 icon。
  * 组件自身保持固定高度，外部只需切换 opacity，避免「吐字完成」瞬间整条气泡重排。
@@ -69,9 +83,17 @@ const MessageActions = memo(
     onPlayingChange,
     ready = true,
   }: MessageActionsProps) {
-    const [isHovered, setIsHovered] = useState(false);
-    const [loading, setLoading] = useState(false);
+    const [hoverCopy, setHoverCopy] = useState(false);
+    const [hoverSpeaker, setHoverSpeaker] = useState(false);
+    // 三个视觉状态：
+    //   喇叭（未读） → 点击后「转圈」（正在请求/合成，还没出声）→ 「停止」（第一个音频真的开播）。
+    const [preparing, setPreparing] = useState(false);
     const isPlaying = playingMsgId === messageId;
+
+    // 别的消息接管了播放 / 播放结束等 → 本条的「转圈」要复位，避免卡在转圈不消失
+    useEffect(() => {
+      if (!isPlaying) setPreparing(false);
+    }, [isPlaying]);
 
     const handleCopy = useCallback(async () => {
       try {
@@ -83,35 +105,41 @@ const MessageActions = memo(
     }, [content]);
 
     const handleToggleSpeech = useCallback(async () => {
-      // 正在播这条 → 停止
+      // 正在播放或准备中（点击时已置 playingMsgId）→ 中断（喇叭位变「停止」，可随时点掉）
       if (isPlaying) {
         stopSpeech();
+        setPreparing(false);
         onPlayingChange(null);
         return;
       }
       // 先停掉其他播放（包括自动朗读正在播的内容）
       stopSpeech();
+      setPreparing(true);
+      onPlayingChange(messageId);
       try {
-        setLoading(true);
-        onPlayingChange(messageId);
         await playText(content, {
           fetchUrl: async (sentence) => {
             const data = await api.textToSpeech(sentence, 'Nini');
             return data.url;
           },
-          onEnd: () => onPlayingChange(null),
+          onStart: () => setPreparing(false), // 出声了：转圈 → 停止
+          onEnd: () => {
+            setPreparing(false);
+            onPlayingChange(null);
+          },
         });
       } catch (err) {
         console.error('通义 TTS 播放失败:', err);
         MyToast.show('语音合成失败，请稍后重试');
+        setPreparing(false);
         onPlayingChange(null);
-      } finally {
-        setLoading(false);
       }
     }, [content, isPlaying, messageId, onPlayingChange]);
 
-    const active = isPlaying || loading;
-    const iconColor = active ? theme.historyActiveText : theme.textMuted;
+    const active = isPlaying || preparing;
+    // 复制图标颜色与播放状态无关，始终 textMuted；只有喇叭反映播放/加载高亮。
+    const copyColor = theme.textMuted;
+    const activeColor = active ? theme.historyActiveText : theme.textMuted;
     const hoverBg = theme.isDark
       ? 'rgba(255, 255, 255, 0.12)'
       : 'rgba(0, 0, 0, 0.08)';
@@ -122,17 +150,18 @@ const MessageActions = memo(
         style={[styles.row, !ready && styles.hidden]}
         pointerEvents={ready ? 'auto' : 'none'}
       >
+        {/* 复制：独立 hover，只影响自己；颜色固定 textMuted */}
         <View
           style={styles.item}
           {...({
-            onMouseEnter: () => setIsHovered(true),
-            onMouseLeave: () => setIsHovered(false),
+            onMouseEnter: () => setHoverCopy(true),
+            onMouseLeave: () => setHoverCopy(false),
           } as any)}
         >
           <TouchableOpacity
             style={[
               styles.btn,
-              isHovered && ready ? { backgroundColor: hoverBg } : null,
+              hoverCopy && ready ? { backgroundColor: hoverBg } : null,
             ]}
             onPress={handleCopy}
             disabled={!ready}
@@ -140,31 +169,40 @@ const MessageActions = memo(
             accessibilityRole="button"
             accessibilityLabel="复制内容"
           >
-            <CopyIcon color={iconColor} />
+            <CopyIcon color={copyColor} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.item}>
+        {/* 喇叭：独立 hover；播放/加载时用高亮色 + 高亮底，hover 不覆盖播放态 */}
+        <View
+          style={styles.item}
+          {...({
+            onMouseEnter: () => setHoverSpeaker(true),
+            onMouseLeave: () => setHoverSpeaker(false),
+          } as any)}
+        >
           <TouchableOpacity
             style={[
               styles.btn,
               active ? { backgroundColor: activeBg } : null,
-              isHovered && ready && !active
+              hoverSpeaker && ready && !active
                 ? { backgroundColor: hoverBg }
                 : null,
             ]}
             onPress={handleToggleSpeech}
-            disabled={!ready || loading}
+            disabled={!ready}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel={active ? '停止朗读' : '朗读内容'}
+            accessibilityLabel={
+              preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读内容'
+            }
           >
-            {loading ? (
-              <ActivityIndicator size="small" color={iconColor} />
+            {preparing ? (
+              <ActivityIndicator size="small" color={activeColor} />
             ) : isPlaying ? (
-              <IconSpeakerOn size={16} color={iconColor} />
+              <StopIcon color={activeColor} />
             ) : (
-              <IconSpeakerOff size={16} color={iconColor} />
+              <IconSpeakerOff size={16} color={activeColor} />
             )}
           </TouchableOpacity>
         </View>

@@ -20,7 +20,6 @@ import {
 } from './markdown/markdownRules';
 import { StreamingMarkdown } from './markdown/StreamingMarkdown';
 import ThoughtCollapsible from './ThoughtCollapsible';
-import BouncingDot from './BouncingDot';
 import MessageActions from './MessageActions';
 import type { Message, ThemeType } from '../types/chat';
 
@@ -59,6 +58,14 @@ const ChatMessageItem = memo(
     const hasContent = !!(item.content && item.content !== '...');
     const hasThought = !!item.thought;
     const isThinking = !isUser && !hasContent && !hasThought;
+
+    /**
+     * 最终渲染前剥掉末尾的空白/换行。
+     * 模型结尾常带 \n：流式尾巴是纯文本，末尾换行不产生可见空行；但切到最终
+     * Markdown 后，末尾 \n 会被解析成一个额外空行 → 气泡底部多出一段空白。
+     * 这里剥掉，让吐完那一刻与流式期一致、不留那条空白。
+     */
+    const renderContent = item.content ? item.content.trimEnd() : '';
 
     const bubbleStyle = useMemo(
       () => [
@@ -337,23 +344,21 @@ const ChatMessageItem = memo(
                     底部是自动的、不需要任何滚动命令，这份成本只影响吐字流畅度本身，
                     且有 memo 兜底，所以在原生上也直接渲染 markdown。 */}
                   {isStreaming ? (
-                    <View style={styles.streamingRow}>
-                      <View style={styles.streamingBody}>
-                        <StreamingMarkdown
-                          content={item.content || ''}
-                          style={dynamicMarkdownStyles}
-                          rules={
-                            // 与「结束后」保持同一套规则：风格不变、选中能力也不变
-                            Platform.OS === 'web'
-                              ? webMarkdownRules
-                              : textSelectable
-                                ? selectableMarkdownRules
-                                : nonSelectableMarkdownRules
-                          }
-                        />
-                      </View>
-                      <BouncingDot color={theme.textMain} />
-                    </View>
+                    // 月球自转是正文 <Text> 末尾的月相 emoji 内联节点（见 StreamingMarkdown），
+                    // 纯文本不依赖 transform → 安卓也稳，且严格贴着最后一个字、随文字换行。
+                    <StreamingMarkdown
+                      content={item.content || ''}
+                      style={dynamicMarkdownStyles}
+                      selectable={textSelectable}
+                      rules={
+                        // 与「结束后」保持同一套规则：风格不变、选中能力也不变
+                        Platform.OS === 'web'
+                          ? webMarkdownRules
+                          : textSelectable
+                            ? selectableMarkdownRules
+                            : nonSelectableMarkdownRules
+                      }
+                    />
                   ) : (
                     <Markdown
                       style={dynamicMarkdownStyles}
@@ -366,7 +371,7 @@ const ChatMessageItem = memo(
                             : nonSelectableMarkdownRules
                       }
                     >
-                      {item.content || ''}
+                      {renderContent}
                     </Markdown>
                   )}
                 </View>
@@ -411,12 +416,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     alignItems: 'flex-start',
   },
-  streamingRow: { flexDirection: 'row', alignItems: 'center' },
-  /**
-   * 流式正文容器：作为 flex item 收缩到可用宽度（气泡宽度只随内容增长、不会来回变），
-   * minHeight 与单行正文对齐，避免「只有一个跳动的点」那一刻高度从 22 掉到 16。
-   */
-  streamingBody: { flexShrink: 1 },
   rowUser: { justifyContent: 'flex-end' },
   rowAi: { justifyContent: 'flex-start' },
   bubble: { padding: 14, borderRadius: 16 },

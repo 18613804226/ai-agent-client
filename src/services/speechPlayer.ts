@@ -231,9 +231,68 @@ export function splitSentences(text: string): string[] {
   return out;
 }
 
+/**
+ * 把句子合并成「更大一点的请求块」。
+ * 每句单独发请求会让一篇长文轻松几十个 TTS POST（加上 PREFETCH 并发，极易撞
+ * DashScope 的 Throttling.RateQuota）。这里把相邻句子堆到接近 BUDGET 字符再发，
+ * 请求数量从「一句一次」降到「一段次」，显著降低限流触发面。
+ * ⚠️ BUDGET 必须留安全余量：后端有 ~300 字截断，取 150 避免丢字。
+ * （TTS 只念，成块后句子间语调连续读，听感上还是自然的一整段。）
+ *
+ * firstBudget：仅对**第一段**生效。首段越小 → 首批音频越快回到、越快出声；
+ * 用户等的是「第一声响」，所以首段刻意压小，后面的段落用正常 BUDGET，
+ * 在第一段播放的同时后台并行合成，不给等待感。
+ */
+function chunkSentences(
+  sentences: string[],
+  budget: number,
+  firstBudget = budget,
+): string[] {
+  const chunks: string[] = [];
+  let cur = '';
+  let useFirst = firstBudget > 0;
+  const push = () => {
+    if (cur) {
+      chunks.push(cur);
+      cur = '';
+    }
+  };
+  for (const s of sentences) {
+    const lim = useFirst ? firstBudget : budget;
+    if (s.length > budget) {
+      // 单段超预算（罕见，通常是超长无标点文本）：整段单独一个段
+      push();
+      chunks.push(s);
+      useFirst = false;
+      continue;
+    }
+    const joined = cur ? `${cur}\n${s}` : s;
+    if (joined.length <= lim) {
+      cur = joined;
+    } else {
+      push();
+      cur = s;
+      useFirst = false;
+    }
+  }
+  push();
+  return chunks;
+}
+
 /** 让出一次事件循环；用于跳过失败句时避免微任务紧循环空转 */
 function nextTick(): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * 判断错误是不是「限流」（DashScope Throttling.RateQuota / HTTP 429）。
+ * 命中这种错误不该立刻失败，而应退避重试 —— 它不是永久错误，过一会儿就好。
+ */
+function isRateLimitError(e: unknown): boolean {
+  const anyErr = e as any;
+  const code = anyErr?.response?.data?.code ?? anyErr?.code;
+  const status = anyErr?.response?.status ?? anyErr?.status;
+  return status === 429 || code === 'Throttling.RateQuota';
 }
 
 /**
@@ -326,6 +385,7 @@ function waitForWebEndOrCancel(
 function playSequence(
   getNext: () => Promise<string | null>,
   onEnd?: EndCallback,
+  onStart?: () => void,
 ): Promise<void> {
   let settle!: () => void;
   const done = new Promise<void>((resolve) => {
@@ -342,6 +402,18 @@ function playSequence(
     awaitingTrackEnd: false,
   };
   currentSession = session;
+  // onStart：第一个音频「真的开始播放」才触发一次（UI 依赖它从转圈切到「停止」）。
+  // 不能在上游调用方 setPlaying 就切 —— 那会儿可能还在合成、还没出声。
+  let started = false;
+  const markStarted = () => {
+    if (started) return;
+    started = true;
+    try {
+      onStart?.();
+    } catch (e) {
+      console.error('[TTS] onStart 回调异常:', e);
+    }
+  };
 
   (async () => {
     // 整个序列共用一个原生播放器；createAudioPlayer 是同步的，只需等音频会话
@@ -373,6 +445,7 @@ function playSequence(
       if (Platform.OS === 'web') {
         const audio = await playTrackWeb(session, uri);
         if (audio === null) return; // 被打断或加载失败
+        markStarted();
         await waitForWebEndOrCancel(session, audio);
         continue;
       }
@@ -391,10 +464,12 @@ function playSequence(
           }
         });
         player.play();
+        markStarted();
       } else {
         try {
           session.player.replace({ uri });
           session.player.play();
+          markStarted();
         } catch {
           // 播放器已失效：结束本次序列（不触发 onEnd）
           destroySession(session);
@@ -438,17 +513,34 @@ function waitForTrackEndOrCancel(session: SpeechSession): Promise<void> {
 }
 
 /**
+ * 切块平衡点：
+ * 后端合成耗时对文本长度**超线性**（实测 40 字≈0.6s，150 字≈7.1s）。
+ * 所以段要**小**：小段合成快、出手快，配合并发预取提前灌满缓存，播放不断档；
+ * 段太大会让某一段合成要好几秒，播到它时只能干等 → 中间长停顿。
+ *  - CHUNK_CHARS 普通段（小，快）
+ *  - FAST_FIRST_CHARS 首段（更小，尽快出声）
+ *  - PREFETCH 并发预取：够多，把小段提前准备好，消除段间缝隙
+ * 代价：段小 → 请求数略多，但仍远低于「每句一次」；真撞限流有退避兜底。
+ */
+const CHUNK_CHARS = 60;
+/** 首段再压小：只念开头十几字，首批音频秒回；后面段落照常并行合成接上 */
+const FAST_FIRST_CHARS = 15;
+const PREFETCH = 5;
+
+/**
  * 句子级流水线播放：
  * - 过滤纯表情/纯标点的句子（TTS 对它们会报错）
- * - 第 0 句合成回来立刻播，播放期间后台最多 PREFETCH 句并发预取
- * - native 端整段复用播放器，句间无重建延迟
- * - stopSpeech() 随时打断；单句失败重试 3 次后跳过
+ * - 第 0 段合成回来立刻播，播放期间后台最多 PREFETCH 段并发预取
+ * - native 端整段复用播放器，段间无重建延迟
+ * - stopSpeech() 随时打断；单段失败重试 3 次后跳过；限流退避重试
  */
 export async function playText(
   text: string,
   opts: {
     fetchUrl: (sentence: string) => Promise<string>;
     onEnd?: EndCallback;
+    /** 第一个音频真正开始播放时触发一次（转圈 → 停止按钮的切换点） */
+    onStart?: () => void;
   },
 ): Promise<void> {
   const myToken = playToken;
@@ -460,12 +552,16 @@ export async function playText(
     .map((s) => s.trim())
     // ✅ 只念有意义的句子：纯表情/纯标点直接跳过（TTS 对它们会报 500）
     .filter((s) => /[\p{Script=Han}A-Za-z0-9]/u.test(s));
-  const total = sentences.length;
-  console.log(`[TTS] 开始朗读：共 ${total} 句，文本 ${text.length} 字`);
+  // ✅ 相邻句子合并成块再发。首段压小（FAST_FIRST_CHARS）尽快出声，
+  //    其余段用 CHUNK_CHARS，首段播放时后台并行合成（见 chunkSentences 注释）。
+  const parts = chunkSentences(sentences, CHUNK_CHARS, FAST_FIRST_CHARS);
+  const total = parts.length;
+  console.log(
+    `[TTS] 开始朗读：共 ${total} 段（${sentences.length} 句 / ${text.length} 字）`,
+  );
 
   const urls: (string | null)[] = new Array(total).fill(null);
   const pending = new Map<number, Promise<void>>();
-  const PREFETCH = 6; // 💡 印尼跨境延迟大，预取开 6；部署国内后可调回 3
   let stopped = false;
 
   const fetchOne = (i: number): Promise<void> => {
@@ -475,13 +571,24 @@ export async function playText(
       p = (async () => {
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            urls[i] = await opts.fetchUrl(sentences[i]);
+            urls[i] = await opts.fetchUrl(parts[i]);
             return;
           } catch (e) {
+            // 命中限流：退避重试，别当成普通失败叠出更多请求
+            if (isRateLimitError(e)) {
+              const wait = 1200 * (attempt + 1);
+              console.warn(
+                `[TTS] 第 ${i + 1}/${total} 段触发限流，${wait}ms 后重试(${
+                  attempt + 1
+                }/3)`,
+              );
+              await new Promise((r) => setTimeout(r, wait));
+              continue;
+            }
             if (attempt === 2) {
               console.warn(
-                `[TTS] 第 ${i + 1}/${total} 句合成失败(重试3次):`,
-                sentences[i].slice(0, 30),
+                `[TTS] 第 ${i + 1}/${total} 段合成失败(重试3次):`,
+                parts[i].slice(0, 30),
                 e,
               );
               urls[i] = null;
@@ -496,7 +603,7 @@ export async function playText(
     return p;
   };
 
-  let next = 0;
+  let next = 1;
   let inFlight = 0;
   const pump = () => {
     while (!stopped && inFlight < PREFETCH && next < total) {
@@ -508,6 +615,10 @@ export async function playText(
       });
     }
   };
+  // ⚠️ 首段必须**先发**：Node https Agent 默认 LIFO 调度，后发的请求先抢 socket，
+  //    若第 0 段和后面几段同时并发，首段会被饿到排在后面（实测 2.9s vs 0.7s）。
+  //    先把第 0 段单独发出，再开并发预取 1..，保证「开播那一下」先拿连接、尽快出声。
+  if (total > 0) fetchOne(0);
   pump();
 
   // 顺序取句给播放器：'' = 失败跳过，null = 结束
@@ -522,7 +633,7 @@ export async function playText(
   };
 
   try {
-    await playSequence(getNext, opts.onEnd);
+    await playSequence(getNext, opts.onEnd, opts.onStart);
   } finally {
     stopped = true;
   }

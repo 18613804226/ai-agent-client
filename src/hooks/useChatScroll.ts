@@ -202,6 +202,24 @@ export function useChatScroll({
     followBottom();
   }, [displayMessages, followBottom]);
 
+  // 流式结束的收尾贴底：只吃「streamingRenderMsg 从有→无」这一下。
+  // 收尾时内容高度还会再动一次（尾巴 → 最终 markdown、思考框折叠），极少数情况下
+  // 会把 offset 顶离 0（原生 inverted）或停在半路（web），而原生端 followBottom
+  // 第一行 return 不会自己补齐 → 底部就留下一小段空白。这里在吐完那刻强制硬贴一次。
+  // 是一次性低频命令（每条回答一次，不是每帧），不破坏 inverted 吐字期的零命令原则。
+  const wasStreamingRef = useRef(false);
+  const isStreamingNow = !!streamingRenderMsg;
+  useEffect(() => {
+    const finished = !isStreamingNow && wasStreamingRef.current;
+    wasStreamingRef.current = isStreamingNow;
+    if (!finished) return;
+    pinToBottom(false);
+    if (INVERTED_CHAT_LIST) {
+      // 原生：内容尺寸回调可能晚一帧，下一帧再兜一次，确保 offset 回到 0。
+      requestAnimationFrame(() => pinToBottom(false));
+    }
+  }, [isStreamingNow, pinToBottom]);
+
   // 关掉浏览器的「滚动锚定」：它会和逐帧写 scrollTop 互相抢，表现为贴底后又自己弹一下。
   // RNW 的样式表透传不到这个属性，直接写 DOM（此时 ref 已在本轮 commit 里挂好）。
   useEffect(() => {
