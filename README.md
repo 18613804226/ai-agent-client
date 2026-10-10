@@ -31,29 +31,23 @@
 
 ---
 
-## 📦 项目架构（前端源码目录）
-
-项目整体采用清晰的现代前端工程化分层设计，核心源码结构如下：
+## 📦 项目结构
 
 ```text
-├── app/                  # Expo Router 页面根目录（或主页面入口）
-│   └── index.tsx         # 主页面（仅负责布局组装与状态调度）
+├── app/                  # Expo Router 页面与导航入口
+├── assets/               # 图片、图标等静态资源
 ├── src/
-│   ├── components/       # UI 组件库
-│   │   ├── Sidebar.tsx       # 侧边栏（会话列表与主题切换）
-│   │   ├── ChatArea.tsx      # 聊天消息展示区域
-│   │   ├── ChatInputBar.tsx  # 底部输入框与发送/终止按钮
-│   │   ├── MobileHeader.tsx  # 移动端顶部导航栏
-│   │   └── MobileDrawer.tsx  # 移动端侧边栏抽屉与蒙层
-│   ├── constants/        # 常量与配置
-│   │   └── theme.ts          # Light / Dark 主题配色方案
-│   ├── hooks/            # 自定义 Hooks（业务逻辑与动画封装）
-│   │   ├── useChatManager.ts       # 会话管理、AsyncStorage 缓存、SSE 流式请求
-│   │   └── useKeyboardAnimation.ts # 跨平台软键盘弹出高度与动画监听
-│   └── services/         # 网络服务层
-│       └── api.ts            # 后端 API 接口封装
-└── package.json
-
+│   ├── components/       # 页面与可复用 UI 组件
+│   ├── constants/        # 主题与应用常量
+│   ├── context/          # 全局状态与 Provider
+│   ├── hooks/            # 聊天、键盘等业务逻辑
+│   ├── services/         # API 与外部服务
+│   ├── store/            # 状态管理
+│   ├── types/            # TypeScript 类型定义
+│   └── utils/            # 通用工具与平台适配
+├── app.json              # Expo 应用配置
+├── package.json          # 依赖与运行脚本
+└── tsconfig.json         # TypeScript 配置
 ```
 
 ---
@@ -63,7 +57,7 @@
 1. **双端一体化体验**：Web 常驻侧边栏与 App 抽屉式知识库无缝切换, 多端业务逻辑高度复用。
 2. **大厂级 UI/UX 交互**：
 * 沉浸式双轨响应式布局（桌面端常驻侧边栏, 移动端抽屉平滑滑入与蒙层过渡）。
-* 支持暗黑模式（Dark Mode）与明亮模式无缝切换。
+* 支持浅色、深色与跟随系统三种外观模式；系统模式会响应设备主题变化，用户选择会保存在本地。
 * 自适应多行输入框, 精美 Markdown 气泡流, 现代滚动条优化与键盘平滑跟随。
 
 
