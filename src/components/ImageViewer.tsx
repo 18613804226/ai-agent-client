@@ -192,7 +192,7 @@ const ViewerPage = memo(function ViewerPage({
           onLoadEnd={() => setLoading(false)}
         />
         {loading ? (
-          <View style={styles.pageLoading} pointerEvents="none">
+          <View style={[styles.pageLoading, { pointerEvents: 'none' }]}>
             <ActivityIndicator size="large" color="#ffffff" />
           </View>
         ) : null}
@@ -403,7 +403,7 @@ export default function ImageViewer({
           </GestureDetector>
 
           {/* 卡片内顶部：序号 + 关闭（小圆钮，落在图片留白处） */}
-          <View style={styles.cardTopBar} pointerEvents="box-none">
+          <View style={[styles.cardTopBar, { pointerEvents: 'box-none' }]}>
             <Text style={styles.counter}>
               {safeIndex + 1} / {images.length}
             </Text>
@@ -421,7 +421,7 @@ export default function ImageViewer({
           </View>
 
           {images.length > 1 ? (
-            <View style={styles.hintWrap} pointerEvents="none">
+            <View style={[styles.hintWrap, { pointerEvents: 'none' }]}>
               <Text style={styles.hint}>双击放大 · 左右拖动切换</Text>
             </View>
           ) : null}
@@ -451,10 +451,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#151618",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
-    shadowRadius: 24,
+    boxShadow: "0px 10px 24px rgba(0, 0, 0, 0.45)",
     elevation: 18,
   },
   viewport: {

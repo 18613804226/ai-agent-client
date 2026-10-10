@@ -2,18 +2,20 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import Sidebar from './Sidebar';
 import { useKnowledge } from '../context/appContexts';
+import type { ThemeMode } from '../context/appContexts';
 
 interface MobileDrawerProps {
   theme: any;
   conversations: any[];
   activeId: string;
   isDarkMode: boolean;
+  themeMode: ThemeMode;
   onClose?: () => void;
   onOpen?: () => void;
   onNewChat: () => void;
   onSelectChat: (id: string) => void;
   onDeleteChat: (e: any, id: string) => void;
-  onToggleTheme: () => void;
+  onThemeModeChange: (mode: ThemeMode) => void;
   [key: string]: any;
 }
 
@@ -24,12 +26,13 @@ export function MobileDrawer({
   conversations,
   activeId,
   isDarkMode,
+  themeMode,
   onClose,
   onOpen,
   onNewChat,
   onSelectChat,
   onDeleteChat,
-  onToggleTheme,
+  onThemeModeChange,
 }: MobileDrawerProps) {
   const { uploadedFiles, handleUploadFile, handleDeleteFile } = useKnowledge();
 
@@ -53,7 +56,8 @@ export function MobileDrawer({
         }}
         onDeleteChat={onDeleteChat}
         isDarkMode={isDarkMode}
-        onToggleTheme={onToggleTheme}
+        themeMode={themeMode}
+        onThemeModeChange={onThemeModeChange}
         theme={theme}
         uploadedFiles={uploadedFiles}
         onUploadFile={() => {

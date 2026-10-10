@@ -33,7 +33,7 @@ export default function ChatScreen() {
   const { width } = useWindowDimensions();
 
   // 从 Context 获取全局主题
-  const { isDarkMode, toggleTheme, theme } = useTheme();
+  const { isDarkMode, themeMode, setThemeMode, theme } = useTheme();
 
   // 💡 2. 核心修改：直接从全局共享的 Context 获取聊天状态，不再私自调用 useChatManager()！
   const {
@@ -201,7 +201,8 @@ export default function ChatScreen() {
                 onSelectChat={handleSelectChat}
                 onDeleteChat={handleDeleteChat}
                 isDarkMode={isDarkMode}
-                onToggleTheme={toggleTheme}
+                themeMode={themeMode}
+                onThemeModeChange={setThemeMode}
                 theme={theme}
                 uploadedFiles={uploadedFiles}
                 onUploadFile={handleUploadFile}
@@ -345,10 +346,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
+    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.15)',
     elevation: 5,
   },
   uploadBannerText: {

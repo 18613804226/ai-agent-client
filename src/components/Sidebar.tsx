@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import type { UploadedFile } from '../hooks/useKnowledgeFiles';
 import { isPCWebWidth } from '../constants/theme';
+import type { ThemeMode } from '../context/appContexts';
 
 interface SidebarProps {
   conversations: any[];
@@ -23,7 +24,8 @@ interface SidebarProps {
   onSelectChat: (id: string) => void;
   onDeleteChat: (e: any, id: string) => void;
   isDarkMode: boolean;
-  onToggleTheme: () => void;
+  themeMode: ThemeMode;
+  onThemeModeChange: (mode: ThemeMode) => void;
   theme: any;
   uploadedFiles: UploadedFile[];
   onUploadFile: () => void;
@@ -386,7 +388,8 @@ export default function Sidebar({
   onSelectChat,
   onDeleteChat,
   isDarkMode,
-  onToggleTheme,
+  themeMode,
+  onThemeModeChange,
   theme,
   uploadedFiles,
   onUploadFile,
@@ -780,23 +783,64 @@ export default function Sidebar({
           </ScrollView>
         </View>
 
-        {/* 5. 底部：主题切换与个人信息 */}
+        {/* 5. 底部：外观设置与个人信息 */}
         <View
           style={[
             styles.sidebarFooter,
             { borderTopColor: theme.border || 'rgba(255,255,255,0.1)' },
           ]}
         >
-          <HoverTouchable
-            style={styles.footerItem}
-            hoverBg={theme.historyActiveBg}
-            onPress={onToggleTheme}
-          >
-            <Text style={{ fontSize: 16 }}>{isDarkMode ? '🌞' : '🌙'}</Text>
-            <Text style={[styles.footerText, { color: theme.textMain }]}>
-              {isDarkMode ? '浅色模式' : '暗黑模式'}
+          <View style={styles.appearanceSection}>
+            <Text style={[styles.appearanceLabel, { color: theme.textMuted }]}>
+              外观
             </Text>
-          </HoverTouchable>
+            <View
+              style={[
+                styles.appearanceOptions,
+                { backgroundColor: theme.bgApp },
+              ]}
+            >
+              {(
+                [
+                  { mode: 'light', label: '浅色', icon: '☀️' },
+                  { mode: 'dark', label: '深色', icon: '🌙' },
+                  { mode: 'system', label: '跟随系统', icon: '◐' },
+                ] as const
+              ).map(({ mode, label, icon }) => {
+                const selected = themeMode === mode;
+                return (
+                  <HoverTouchable
+                    key={mode}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`${label}模式`}
+                    style={[
+                      styles.appearanceOption,
+                      selected && {
+                        backgroundColor: theme.historyActiveBg,
+                      },
+                    ]}
+                    hoverBg={theme.historyActiveBg}
+                    onPress={() => onThemeModeChange(mode)}
+                  >
+                    <Text style={styles.appearanceIcon}>{icon}</Text>
+                    <Text
+                      style={[
+                        styles.appearanceOptionText,
+                        {
+                          color: selected
+                            ? theme.historyActiveText
+                            : theme.textMuted,
+                        },
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </HoverTouchable>
+                );
+              })}
+            </View>
+          </View>
           <View style={styles.userProfile}>
             <View style={styles.avatarMini}>
               <Text style={styles.avatarMiniText}>王</Text>
@@ -997,16 +1041,38 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     marginTop: 4,
   },
-  footerItem: {
+  appearanceSection: {
+    marginBottom: 8,
+  },
+  appearanceLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  appearanceOptions: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 14,
+    padding: 3,
+    borderRadius: 12,
   },
-  footerText: {
-    fontSize: 14,
-    marginLeft: 10,
+  appearanceOption: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+  },
+  appearanceIcon: {
+    fontSize: 12,
+    marginRight: 4,
+  },
+  appearanceOptionText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   userProfile: {
     flexDirection: 'row',
@@ -1047,10 +1113,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     paddingVertical: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.25)',
     elevation: 6,
   },
   sheetTitle: {
@@ -1088,10 +1151,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    boxShadow: '0px 10px 12px rgba(0, 0, 0, 0.4)',
     elevation: 10,
   },
   confirmTitle: {

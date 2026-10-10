@@ -156,7 +156,6 @@ const { scrollViewRef } = useChat();
                 ? 'rgba(40,40,40,0.92)'
                 : 'rgba(255,255,255,0.95)',
               borderColor: theme.border,
-              shadowColor: '#000',
             },
           ]}
         >
@@ -227,9 +226,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
+    boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.15)',
     elevation: 4,
     position: 'absolute',
     bottom: 24,

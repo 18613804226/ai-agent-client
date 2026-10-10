@@ -2,16 +2,61 @@ import 'react-native-gesture-handler';
 import { Drawer } from 'expo-router/drawer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useColorScheme } from 'react-native';
 import { MobileDrawer } from '../src/components/MobileDrawer';
 import { darkTheme, lightTheme } from '../src/constants/theme';
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useChatManager } from '../src/hooks/useChatManager';
-import { ChatContext, ThemeContext } from '../src/context/appContexts';
+import {
+  ChatContext,
+  ThemeContext,
+  type ThemeMode,
+} from '../src/context/appContexts';
 import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
+
+const THEME_MODE_KEY = 'theme-mode';
 
 export default function RootLayout() {
   const chatManager = useChatManager(); // 👈 整个应用的聊天状态在这里统一托管！
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const systemColorScheme = useColorScheme();
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const userChangedTheme = useRef(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    AsyncStorage.getItem(THEME_MODE_KEY)
+      .then((savedMode) => {
+        if (
+          isMounted &&
+          !userChangedTheme.current &&
+          (savedMode === 'light' ||
+            savedMode === 'dark' ||
+            savedMode === 'system')
+        ) {
+          setThemeModeState(savedMode);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load theme preference:', error);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    userChangedTheme.current = true;
+    setThemeModeState(mode);
+    AsyncStorage.setItem(THEME_MODE_KEY, mode).catch((error) => {
+      console.error('Failed to save theme preference:', error);
+    });
+  }, []);
+
+  const isDarkMode =
+    themeMode === 'system'
+      ? systemColorScheme !== 'light'
+      : themeMode === 'dark';
 
   // ✅ useMemo：避免每次渲染都新建 theme 对象 -> 稳定 Context 值，让下游 memo 生效
   const theme = useMemo(
@@ -22,12 +67,10 @@ export default function RootLayout() {
     [isDarkMode],
   );
 
-  const toggleTheme = useCallback(() => setIsDarkMode((prev) => !prev), []);
-
-  // ✅ 稳定的 Context 值（theme / toggleTheme 均已 memo 化）
+  // ✅ 稳定的 Context 值，避免主题下游组件不必要地重渲染
   const themeContextValue = useMemo(
-    () => ({ isDarkMode, toggleTheme, theme }),
-    [isDarkMode, toggleTheme, theme],
+    () => ({ isDarkMode, themeMode, setThemeMode, theme }),
+    [isDarkMode, themeMode, setThemeMode, theme],
   );
 
   return (
@@ -50,7 +93,8 @@ export default function RootLayout() {
                   onSelectChat={chatManager.handleSelectChat}
                   onDeleteChat={chatManager.handleDeleteChat}
                   isDarkMode={isDarkMode}
-                  onToggleTheme={toggleTheme}
+                  themeMode={themeMode}
+                  onThemeModeChange={setThemeMode}
                 />
               )}
               screenOptions={{

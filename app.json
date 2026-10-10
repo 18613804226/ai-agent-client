@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "experiments": {
       "reactCompiler": true
@@ -32,7 +32,8 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "expo-audio"
+      "expo-audio",
+      "expo-system-ui"
     ]
   }
 }

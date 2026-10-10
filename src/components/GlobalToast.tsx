@@ -59,7 +59,7 @@ export default function GlobalToastContainer() {
   if (!visible && !message) return null;
 
   return (
-    <View style={styles.toastOverlay} pointerEvents="none">
+    <View style={[styles.toastOverlay, { pointerEvents: 'none' }]}>
       <Animated.View
         style={[
           styles.toastBox,
@@ -103,10 +103,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    boxShadow: '0px 2px 3.84px rgba(0, 0, 0, 0.25)',
   },
   toastBoxDark: {
     backgroundColor: 'rgba(30, 30, 30, 0.85)',

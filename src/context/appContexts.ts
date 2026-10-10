@@ -18,10 +18,18 @@ export const useChat = () => {
   return context;
 };
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 // 主题 Context
-export const ThemeContext = createContext({
+export const ThemeContext = createContext<{
+  isDarkMode: boolean;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  theme: typeof darkTheme;
+}>({
   isDarkMode: true,
-  toggleTheme: () => {},
+  themeMode: 'dark',
+  setThemeMode: () => {},
   theme: darkTheme,
 });
 export const useTheme = () => useContext(ThemeContext);

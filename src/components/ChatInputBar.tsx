@@ -306,9 +306,9 @@ export default function ChatInputBar({
             {/* 脉冲外圈 */}
             {isRecording && (
               <Animated.View
-                pointerEvents="none"
                 style={[
                   styles.pulseRing,
+                  { pointerEvents: 'none' },
                   {
                     transform: [{ scale: pulseScale }],
                     opacity: pulseOpacity,
@@ -496,10 +496,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingLeft: 8,
     paddingRight: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.15)',
     elevation: 3,
   },
   attachButton: {
@@ -557,10 +554,7 @@ const styles = StyleSheet.create({
   voiceHoldBtnActive: {
     backgroundColor: 'rgba(0, 229, 255, 0.15)',
     borderColor: 'rgba(0, 229, 255, 0.1)',
-    shadowColor: 'rgba(0, 229, 255, 0.3)',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 12,
+    boxShadow: '0px 0px 12px rgba(0, 229, 255, 0.27)',
     elevation: 8,
   },
   voiceHoldText: {
@@ -570,9 +564,14 @@ const styles = StyleSheet.create({
   },
   voiceHoldTextActive: {
     color: 'rgba(0, 229, 255, 0.3)',
-    textShadowColor: 'rgba(0, 229, 255, 0.1)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+    ...Platform.select({
+      web: { textShadow: '0px 0px 8px rgba(0, 229, 255, 0.1)' } as any,
+      default: {
+        textShadowColor: 'rgba(0, 229, 255, 0.1)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 8,
+      },
+    }),
   },
   pulseRing: {
     position: 'absolute',
@@ -587,10 +586,7 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#00E5FF',
-    shadowColor: '#00E5FF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
+    boxShadow: '0px 0px 6px #00E5FF',
   },
 
   /* ---------- 切换按钮 ---------- */

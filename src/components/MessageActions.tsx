@@ -147,8 +147,11 @@ const MessageActions = memo(
 
     return (
       <View
-        style={[styles.row, !ready && styles.hidden]}
-        pointerEvents={ready ? 'auto' : 'none'}
+        style={[
+          styles.row,
+          !ready && styles.hidden,
+          { pointerEvents: ready ? 'auto' : 'none' },
+        ]}
       >
         {/* 复制：独立 hover，只影响自己；颜色固定 textMuted */}
         <View
