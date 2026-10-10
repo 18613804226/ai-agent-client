@@ -67,31 +67,32 @@ export function useChatScroll({
     const ref: any = scrollViewRef.current;
     if (!ref) return;
 
-    // 平滑滚动需要一段时间才到位，这段时间内忽略 onScroll 的「离底很远」
-    if (animated) pinAnimUntilRef.current = Date.now() + PIN_ANIM_MS;
-
     if (Platform.OS === 'web') {
       const node =
-        (typeof ref.getScrollableNode === 'function' &&
-          ref.getScrollableNode()) ||
-        (typeof ref.getInnerViewNode === 'function' &&
-          ref.getInnerViewNode()) ||
-        null;
-      if (node) {
-        if (animated) {
-          // ⚠️ 不能用 node.scrollTo({ top, behavior })：
-          // react-native-web 把 node.scrollTo 覆盖成了自己的 (y, x, animated) 签名
-          // （ScrollView/index.js 里 `node.scrollTo = this.scrollTo`），
-          // 传 { top, behavior } 会被解析成 x/y 全 undefined → 一路兜底成 { x:0, y:0 }
-          // → 平滑滚到顶部。必须用它自己挂上来的 scrollToEnd（内部读 scrollHeight）。
-          ref.scrollToEnd?.({ animated: true });
-        } else {
-          // 吐字过程中 —— 同步定位，零动画、零滞迟
-          node.scrollTop = node.scrollHeight;
-        }
-        return;
+        typeof ref.getScrollableNode === 'function'
+          ? ref.getScrollableNode()
+          : null;
+      if (!node) return;
+
+      // 平滑滚动需要一段时间才到位，这段时间内忽略 onScroll 的「离底很远」
+      if (animated) pinAnimUntilRef.current = Date.now() + PIN_ANIM_MS;
+
+      if (animated) {
+        // ⚠️ 不能用 node.scrollTo({ top, behavior })：
+        // react-native-web 把 node.scrollTo 覆盖成了自己的 (y, x, animated) 签名
+        // （ScrollView/index.js 里 `node.scrollTo = this.scrollTo`），
+        // 传 { top, behavior } 会被解析成 x/y 全 undefined → 一路兜底成 { x:0, y:0 }
+        // → 平滑滚到顶部。必须用它自己挂上来的 scrollToEnd（内部读 scrollHeight）。
+        ref.scrollToEnd?.({ animated: true });
+      } else {
+        // 吐字过程中 —— 同步定位，零动画、零滞迟
+        node.scrollTop = node.scrollHeight;
       }
+      return;
     }
+
+    // 平滑滚动需要一段时间才到位，这段时间内忽略 onScroll 的「离底很远」
+    if (animated) pinAnimUntilRef.current = Date.now() + PIN_ANIM_MS;
 
     // 原生 inverted：offset 0 就是视觉底部；Web：react-native-web 的 scrollToEnd
     scrollChatToBottom(ref, animated);

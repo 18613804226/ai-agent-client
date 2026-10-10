@@ -132,6 +132,11 @@ export function scrollChatToBottom(ref: any, animated = false): void {
     ref.scrollTo?.({ x: 0, y: 0, animated });
     return;
   }
+  const node =
+    typeof ref.getScrollableNode === 'function'
+      ? ref.getScrollableNode()
+      : null;
+  if (!node) return;
   ref.scrollToEnd?.({ animated });
 }
 
