@@ -46,6 +46,8 @@ export function useChatScroll({
   const contentHeightRef = useRef(0);
   /** ScrollView 视口高度（外层 View 的 onLayout 给） */
   const viewportHeightRef = useRef(0);
+  /** 上一次滚动位置，用于识别 Web 用户是否正向底部滚动 */
+  const lastScrollOffsetRef = useRef<number | null>(null);
   /** 外层聊天列表当前原生 offset（原生 inverted：0 = 视觉底部），UI 线程可读 */
   const outerOffsetSV = useSharedValue(0);
   /** 外层可滚动最大 offset（内容高 - 视口高），供思考框贴边联动钳制 */
@@ -122,6 +124,7 @@ export function useChatScroll({
   // - Web：等内容布局完成后平滑贴底（useLayoutEffect + scrollTop 那条路）。
   useEffect(() => {
     autoFollowRef.current = true;
+    lastScrollOffsetRef.current = null;
     if (INVERTED_CHAT_LIST) {
       pendingEntryAnimRef.current = true;
       return;
@@ -137,6 +140,8 @@ export function useChatScroll({
 
       const y = event?.nativeEvent?.contentOffset?.y;
       if (typeof y === 'number') outerOffsetSV.value = y;
+      const previousY = lastScrollOffsetRef.current;
+      if (typeof y === 'number') lastScrollOffsetRef.current = y;
 
       // 程序化平滑贴底动画进行中：此时的高 distance 是动画本身，不是用户上滑
       if (Date.now() < pinAnimUntilRef.current) return;
@@ -155,7 +160,13 @@ export function useChatScroll({
       //    它只决定「回到底部」按钮的显隐和吐字期要不要额外插手（见 followBottom）。
       if (autoFollowRef.current) {
         if (distanceFromBottom > 120) autoFollowRef.current = false;
-      } else if (distanceFromBottom < 40) {
+      } else if (
+        distanceFromBottom < 40 &&
+        (Platform.OS !== 'web' ||
+          (typeof y === 'number' &&
+            typeof previousY === 'number' &&
+            y > previousY))
+      ) {
         autoFollowRef.current = true;
       }
     },
@@ -231,6 +242,23 @@ export function useChatScroll({
         : null) || null;
     if (node && node.style) node.style.overflowAnchor = 'none';
   }, []);
+
+  // 鼠标向上滚动时先于 ScrollView 的 onScroll 关闭自动贴底，避免吐字 layout
+  // effect 抢在滚动事件后执行，把用户刚滚上去的位置又拉回底部。
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const ref: any = scrollViewRef.current;
+    const node =
+      (ref && typeof ref.getScrollableNode === 'function'
+        ? ref.getScrollableNode()
+        : null) || null;
+    if (!node) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) autoFollowRef.current = false;
+    };
+    node.addEventListener('wheel', handleWheel, { passive: true });
+    return () => node.removeEventListener('wheel', handleWheel);
+  }, [activeId, autoFollowRef, scrollViewRef]);
 
   // 用户手指一碰上去 → 立即取消自动跟随（两端一致：原生也走 JS 的 onScrollBeginDrag）
   const handleScrollBeginDrag = useCallback(() => {

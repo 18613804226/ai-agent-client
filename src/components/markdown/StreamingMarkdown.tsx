@@ -1,14 +1,16 @@
-import React, { memo, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import Markdown, { RenderRules } from 'react-native-markdown-display';
-import Animated, {
+import React, { memo, useEffect, useMemo, useState } from 'react'
+import { StyleSheet, Text, View } from 'react-native'
+import Markdown, { RenderRules } from 'react-native-markdown-display'
+import {
+  cancelAnimation,
   Easing,
-  useAnimatedStyle,
+  useAnimatedReaction,
   useSharedValue,
   withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
-import { splitStableBlocks } from './streamingSplit';
+  withTiming
+} from 'react-native-reanimated'
+import { scheduleOnRN } from 'react-native-worklets'
+import { splitStableBlocks } from './streamingSplit'
 
 /**
  * 已成形段落：props 只有字符串 + 两个稳定引用，内容不变时 memo 直接跳过，
@@ -17,66 +19,51 @@ import { splitStableBlocks } from './streamingSplit';
 const StableMarkdown = memo(function StableMarkdown({
   text,
   style,
-  rules,
+  rules
 }: {
-  text: string;
-  style: any;
-  rules: RenderRules;
+  text: string
+  style: any
+  rules: RenderRules
 }) {
   return (
     <Markdown style={style} rules={rules}>
       {text}
     </Markdown>
-  );
-});
+  )
+})
 
 /** 月相序列：一轮「新→满→新」，视觉上是月球自转、暗面逐片扫过 */
-const PHASES = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
+const PHASES = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘']
 
 /**
  * 内联在正文末尾的「月球自转」提示。
  * 用月相 emoji 字形轮换，纯文本内联 → 贴着最后一个字、随文字换行，安卓也不用 transform。
- * 为消除「硬切帧」的僵硬感：
- *  - 每次换相做一个缓出淡入（不闪烁着跳变）；
- *  - 叠加一个持续的轻微呼吸（亮度缓缓起伏），元素始终有生命感。
- * 安卓内联 span 只支持 opacity，故用透明度做过渡（transform 会被忽略）。
+ * 月相按固定间隔匀速推进，不叠加透明度变化。
  */
 const InlineMoonPhase = memo(function InlineMoonPhase() {
-  const [i, setI] = useState(0);
-  const enter = useSharedValue(0);
-  const breath = useSharedValue(0);
+  const [i, setI] = useState(0)
+  const progress = useSharedValue(0)
 
   useEffect(() => {
-    const id = setInterval(() => setI((v) => (v + 1) % PHASES.length), 220);
-    return () => clearInterval(id);
-  }, []);
+    progress.value = withRepeat(
+      withTiming(PHASES.length, {
+        duration: PHASES.length * 200,
+        easing: Easing.linear
+      }),
+      -1
+    )
+    return () => cancelAnimation(progress)
+  }, [progress])
 
-  useEffect(() => {
-    enter.value = 0;
-    enter.value = withTiming(1, {
-      duration: 200,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [enter, i]);
+  useAnimatedReaction(
+    () => Math.floor(progress.value) % PHASES.length,
+    (phase, previousPhase) => {
+      if (phase !== previousPhase) scheduleOnRN(setI, phase)
+    }
+  )
 
-  useEffect(() => {
-    breath.value = withRepeat(
-      withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true,
-    );
-  }, [breath]);
-
-  const istyle = useAnimatedStyle(() => ({
-    opacity: (0.2 + 0.8 * enter.value) * (0.85 + 0.15 * breath.value),
-  }));
-
-  return (
-    <Animated.Text style={[styles.inlineMoon, istyle]}>
-      {PHASES[i]}
-    </Animated.Text>
-  );
-});
+  return <Text style={styles.inlineMoon}>{PHASES[i]}</Text>
+})
 
 /**
  * 还在增长的最后一行：纯文本渲染（不做 markdown 解析）。
@@ -94,19 +81,19 @@ const InlineMoonPhase = memo(function InlineMoonPhase() {
 const TailText = memo(function TailText({
   text,
   selectable,
-  color,
+  color
 }: {
-  text: string;
-  selectable: boolean;
-  color: string;
+  text: string
+  selectable: boolean
+  color: string
 }) {
   return (
     <Text selectable={selectable} style={[styles.tail, { color }]}>
       {text}
       <InlineMoonPhase />
     </Text>
-  );
-});
+  )
+})
 
 /**
  * 流式正文：已成形段落 memo 化，只有尾巴每帧重新解析。
@@ -122,15 +109,15 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   content,
   style,
   rules,
-  selectable = true,
+  selectable = true
 }: {
-  content: string;
-  style: any;
-  rules: RenderRules;
-  selectable?: boolean;
+  content: string
+  style: any
+  rules: RenderRules
+  selectable?: boolean
 }) {
-  const { blocks, tail } = useMemo(() => splitStableBlocks(content), [content]);
-  const color = style.body?.color ?? '#000';
+  const { blocks, tail } = useMemo(() => splitStableBlocks(content), [content])
+  const color = style.body?.color ?? '#000'
 
   return (
     <View>
@@ -144,17 +131,17 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
       ))}
       <TailText text={tail} selectable={selectable} color={color} />
     </View>
-  );
-});
+  )
+})
 
 const styles = StyleSheet.create({
   tail: {
     fontSize: 15,
-    lineHeight: 24,
+    lineHeight: 24
   },
   inlineMoon: {
     fontSize: 12,
     lineHeight: 24,
-    marginLeft: 2,
-  },
-});
+    marginLeft: 2
+  }
+})
