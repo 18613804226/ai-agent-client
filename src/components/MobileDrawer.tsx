@@ -34,7 +34,12 @@ export function MobileDrawer({
   onDeleteChat,
   onThemeModeChange,
 }: MobileDrawerProps) {
-  const { uploadedFiles, handleUploadFile, handleDeleteFile } = useKnowledge();
+  const {
+    uploadedFiles,
+    handleUploadFile,
+    handleDeleteFile,
+    toggleKnowledgeFileEnabled,
+  } = useKnowledge();
 
   return (
     <View
@@ -71,6 +76,7 @@ export function MobileDrawer({
           }, 320);
         }}
         onDeleteFile={handleDeleteFile}
+        onToggleFileEnabled={toggleKnowledgeFileEnabled}
       />
     </View>
   );

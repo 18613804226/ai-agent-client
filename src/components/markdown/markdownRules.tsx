@@ -1,12 +1,12 @@
-import React from 'react';
-import { Text, View, TouchableOpacity, Platform } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Text, View, Pressable, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import {
   renderRules,
   RenderRules,
   hasParents,
 } from 'react-native-markdown-display';
-import { IconCopy } from '../Icons';
+import { IconCheck, IconCopy } from '../Icons';
 import { MyToast } from '../GlobalToast';
 
 // ===================== Markdown 渲染规则 =====================
@@ -25,7 +25,65 @@ export const MONO_FONT = Platform.select({
 // 复制代码到剪贴板并提示
 const copyCodeToClipboard = async (code: string) => {
   await Clipboard.setStringAsync(code);
-  MyToast.show('已复制');
+};
+
+const CodeCopyButton = ({
+  code,
+  styles,
+}: {
+  code: string;
+  styles: Record<string, any>;
+}) => {
+  const [hovered, setHovered] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
+
+  const copy = async () => {
+    try {
+      await copyCodeToClipboard(code);
+      setCopied(true);
+      MyToast.show('已复制到剪贴板');
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      console.error('复制代码失败:', error);
+      MyToast.show('复制失败，请稍后重试');
+    }
+  };
+
+  return (
+    <Pressable
+      onPress={copy}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[
+        styles.codeCopyBtn,
+        (hovered || copied) && styles.codeCopyBtnActive,
+      ]}
+      accessibilityLabel={copied ? '已复制代码' : '复制代码'}
+      accessibilityRole="button"
+    >
+      {copied ? (
+        <IconCheck size={14} color={styles.codeCopyIcon.color} />
+      ) : (
+        <IconCopy size={14} color={styles.codeCopyIcon.color} />
+      )}
+      {hovered && (
+        <View style={styles.codeCopyTooltip}>
+          <Text style={styles.codeCopyTooltipText}>
+            {copied ? '已复制' : '复制代码'}
+          </Text>
+        </View>
+      )}
+    </Pressable>
+  );
 };
 
 export const createMarkdownRules = (selectable: boolean): RenderRules => ({
@@ -268,14 +326,7 @@ export const createMarkdownRules = (selectable: boolean): RenderRules => ({
     }
     return (
       <View key={node.key} style={styles.codeBox}>
-        <TouchableOpacity
-          onPress={() => copyCodeToClipboard(content)}
-          style={styles.codeCopyBtn}
-          activeOpacity={0.7}
-          accessibilityLabel="复制代码"
-        >
-          <IconCopy size={14} color={styles.codeCopyIcon.color} />
-        </TouchableOpacity>
+        <CodeCopyButton code={content} styles={styles} />
         <Text
           selectable={selectable}
           style={[inheritedStyles, styles.codeText]}
@@ -292,14 +343,7 @@ export const createMarkdownRules = (selectable: boolean): RenderRules => ({
     }
     return (
       <View key={node.key} style={styles.codeBox}>
-        <TouchableOpacity
-          onPress={() => copyCodeToClipboard(content)}
-          style={styles.codeCopyBtn}
-          activeOpacity={0.7}
-          accessibilityLabel="复制代码"
-        >
-          <IconCopy size={14} color={styles.codeCopyIcon.color} />
-        </TouchableOpacity>
+        <CodeCopyButton code={content} styles={styles} />
         <Text
           selectable={selectable}
           style={[inheritedStyles, styles.codeText]}
@@ -326,14 +370,7 @@ export const webMarkdownRules: RenderRules = {
     }
     return (
       <View key={node.key} style={styles.codeBox}>
-        <TouchableOpacity
-          onPress={() => copyCodeToClipboard(content)}
-          style={styles.codeCopyBtn}
-          activeOpacity={0.7}
-          accessibilityLabel="复制代码"
-        >
-          <IconCopy size={14} color={styles.codeCopyIcon.color} />
-        </TouchableOpacity>
+        <CodeCopyButton code={content} styles={styles} />
         <Text style={[styles.fence]}>{content}</Text>
       </View>
     );
@@ -348,14 +385,7 @@ export const webMarkdownRules: RenderRules = {
     }
     return (
       <View key={node.key} style={styles.codeBox}>
-        <TouchableOpacity
-          onPress={() => copyCodeToClipboard(content)}
-          style={styles.codeCopyBtn}
-          activeOpacity={0.7}
-          accessibilityLabel="复制代码"
-        >
-          <IconCopy size={14} color={styles.codeCopyIcon.color} />
-        </TouchableOpacity>
+        <CodeCopyButton code={content} styles={styles} />
         <Text style={[inheritedStyles, styles.code_block]}>{content}</Text>
       </View>
     );

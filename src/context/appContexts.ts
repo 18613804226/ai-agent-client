@@ -34,6 +34,15 @@ export const ThemeContext = createContext<{
 });
 export const useTheme = () => useContext(ThemeContext);
 
+export const AdminPreviewContext = createContext<{
+  isAdminPreview: boolean;
+  setAdminPreview: (isAdmin: boolean) => void;
+}>({
+  isAdminPreview: false,
+  setAdminPreview: () => {},
+});
+export const useAdminPreview = () => useContext(AdminPreviewContext);
+
 // 知识库全局 Context：桌面侧栏 / 移动抽屉 / 发送逻辑共用同一份文件状态与上传进度
 export const KnowledgeContext = createContext<ReturnType<
   typeof useKnowledgeFiles

@@ -17,6 +17,10 @@ export interface UploadedFile {
   progress?: number;
   /** 是否正在处理（processing 的别名，供 UI 兼容） */
   uploading?: boolean;
+  /** 是否参与检索，由后端持久化并强制执行 */
+  enabled: boolean;
+  enabledUpdating?: boolean;
+  enabledError?: string;
   /** 是否失败 */
   error?: boolean;
   /** 刚刚处理完：短暂显示结果图标（成功 ✓），随后自动隐藏 */
@@ -33,6 +37,7 @@ const RESULT_HOLD_MS = 1500;
 
 export function useKnowledgeFiles() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const enabledRequestsRef = useRef(new Set<string>());
   const pollTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>(
     {},
   );
@@ -108,6 +113,8 @@ export function useKnowledgeFiles() {
                   name,
                   size,
                   status,
+                  enabled:
+                    typeof p.enabled === 'boolean' ? p.enabled : f.enabled,
                   progress: percent,
                   uploading: status === 'processing',
                   error: status === 'failed',
@@ -162,6 +169,7 @@ export function useKnowledgeFiles() {
               name: fixMojibake(file.name) || file.name,
               size: file.size,
               status: 'processing',
+              enabled: true,
               uploading: true,
               progress: 0,
             },
@@ -199,6 +207,10 @@ export function useKnowledgeFiles() {
                       name,
                       size: file.size,
                       status,
+                      enabled:
+                        typeof uploaded.enabled === 'boolean'
+                          ? uploaded.enabled
+                          : f.enabled,
                       progress: percent,
                       uploading: status === 'processing',
                       error: status === 'failed',
@@ -250,6 +262,60 @@ export function useKnowledgeFiles() {
     [stopPolling, stopResultTimer],
   );
 
+  const toggleKnowledgeFileEnabled = useCallback(
+    async (fileId: string, enabled: boolean) => {
+      const file = uploadedFiles.find((item) => item.id === fileId);
+      if (
+        !file ||
+        enabledRequestsRef.current.has(fileId) ||
+        file.enabledUpdating ||
+        file.status === 'processing' ||
+        file.uploading ||
+        file.status === 'failed' ||
+        file.error ||
+        typeof enabled !== 'boolean'
+      ) {
+        return;
+      }
+
+      enabledRequestsRef.current.add(fileId);
+      setUploadedFiles((prev) =>
+        prev.map((item) =>
+          item.id === fileId
+            ? { ...item, enabledUpdating: true, enabledError: undefined }
+            : item,
+        ),
+      );
+
+      try {
+        await api.setKnowledgeFileEnabled(fileId, enabled);
+        setUploadedFiles((prev) =>
+          prev.map((item) =>
+            item.id === fileId
+              ? { ...item, enabled, enabledUpdating: false }
+              : item,
+          ),
+        );
+      } catch (error) {
+        console.error('更新知识库文档启用状态失败:', error);
+        setUploadedFiles((prev) =>
+          prev.map((item) =>
+            item.id === fileId
+              ? {
+                  ...item,
+                  enabledUpdating: false,
+                  enabledError: '状态保存失败，请检查网络后重试',
+                }
+              : item,
+          ),
+        );
+      } finally {
+        enabledRequestsRef.current.delete(fileId);
+      }
+    },
+    [uploadedFiles],
+  );
+
   // 3. 初始化时从后端获取文件列表（processing 的继续轮询）
   const loadKnowledgeFiles = useCallback(async () => {
     try {
@@ -276,12 +342,12 @@ export function useKnowledgeFiles() {
           uri: f.url ?? f.fileUrl ?? f.path,
           size: f.size,
           status,
+          enabled: typeof f.enabled === 'boolean' ? f.enabled : true,
           progress: percent,
           uploading: status === 'processing',
           error: status === 'failed',
         };
       });
-
       setUploadedFiles((prev) => {
         const serverIds = new Set(mapped.map((f) => f.id));
         // 保留本地正在上传、但服务端列表尚未返回的占位项，避免整体替换把它们冲掉
@@ -316,6 +382,7 @@ export function useKnowledgeFiles() {
     uploadedFiles,
     handleUploadFile,
     handleDeleteFile,
+    toggleKnowledgeFileEnabled,
     loadKnowledgeFiles,
   };
 }

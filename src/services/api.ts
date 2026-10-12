@@ -41,6 +41,7 @@ export interface KnowledgeFileResult {
   fileName?: string;
   name?: string;
   status?: KnowledgeStatus;
+  enabled?: boolean;
   totalChunks?: number;
   processedChunks?: number;
   progress?: number;
@@ -216,6 +217,22 @@ export const api = {
      */
     deleteKnowledgeFile: async (fileId: string): Promise<void> => {
       await httpClient.delete(`/chat/knowledge/files/${fileId}`);
+    },
+
+    /**
+     * 启用或停用知识库文档；服务端负责持久化并在检索时应用状态。
+     */
+    setKnowledgeFileEnabled: async (
+      fileId: string,
+      enabled: boolean,
+    ): Promise<void> => {
+      if (typeof enabled !== 'boolean') {
+        throw new TypeError('Knowledge file enabled state must be a boolean');
+      }
+      await httpClient.put(
+        `/chat/knowledge/files/${encodeURIComponent(fileId)}/enabled`,
+        { enabled },
+      );
     },
 
     /**

@@ -2,6 +2,7 @@ import 'react-native-gesture-handler';
 import { Drawer } from 'expo-router/drawer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
 import { MobileDrawer } from '../src/components/MobileDrawer';
@@ -9,6 +10,7 @@ import { darkTheme, lightTheme } from '../src/constants/theme';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useChatManager } from '../src/hooks/useChatManager';
 import {
+  AdminPreviewContext,
   ChatContext,
   ThemeContext,
   type ThemeMode,
@@ -20,6 +22,7 @@ const THEME_MODE_KEY = 'theme-mode';
 export default function RootLayout() {
   const chatManager = useChatManager(); // 👈 整个应用的聊天状态在这里统一托管！
   const systemColorScheme = useColorScheme();
+  const [isAdminPreview, setAdminPreview] = useState(false);
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const userChangedTheme = useRef(false);
 
@@ -75,47 +78,66 @@ export default function RootLayout() {
 
   return (
     <ThemeContext.Provider value={themeContextValue}>
-      {/* 💡 2. 用 ChatContext.Provider 包裹全局 */}
-      <ChatContext.Provider value={chatManager}>
-        <KnowledgeProvider>
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <StatusBar style={isDarkMode ? 'light' : 'dark'} />
-            <Drawer
-              drawerContent={(props) => (
-                <MobileDrawer
-                  {...props}
-                  theme={theme}
-                  conversations={chatManager.conversations}
-                  activeId={chatManager.activeId}
-                  onClose={() => props.navigation.closeDrawer()}
-                  onOpen={() => props.navigation.openDrawer()}
-                  onNewChat={chatManager.handleNewChat}
-                  onSelectChat={chatManager.handleSelectChat}
-                  onDeleteChat={chatManager.handleDeleteChat}
-                  isDarkMode={isDarkMode}
-                  themeMode={themeMode}
-                  onThemeModeChange={setThemeMode}
-                />
-              )}
-              screenOptions={{
-                headerShown: false,
-                drawerType: 'slide',
-                overlayColor: 'rgba(0, 0, 0, 0.5)',
-                swipeMinDistance: 30,
-                swipeEdgeWidth: 45,
-                drawerStyle: {
-                  width: 280,
-                  backgroundColor: theme.bgSidebar,
-                  borderRightColor: 'transparent',
-                  borderRightWidth: 0,
-                },
-              }}
-            >
-              <Drawer.Screen name="index" options={{ title: 'AI 聊天' }} />
-            </Drawer>
-          </GestureHandlerRootView>
-        </KnowledgeProvider>
-      </ChatContext.Provider>
+      <AdminPreviewContext.Provider
+        value={{ isAdminPreview, setAdminPreview }}
+      >
+        <ChatContext.Provider value={chatManager}>
+          <KnowledgeProvider>
+            <SafeAreaProvider>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+                <Drawer
+                  drawerContent={(props) => (
+                    <MobileDrawer
+                      {...props}
+                      theme={theme}
+                      conversations={chatManager.conversations}
+                      activeId={chatManager.activeId}
+                      onClose={() => props.navigation.closeDrawer()}
+                      onOpen={() => props.navigation.openDrawer()}
+                      onNewChat={chatManager.handleNewChat}
+                      onSelectChat={chatManager.handleSelectChat}
+                      onDeleteChat={chatManager.handleDeleteChat}
+                      isDarkMode={isDarkMode}
+                      themeMode={themeMode}
+                      onThemeModeChange={setThemeMode}
+                    />
+                  )}
+                  screenOptions={{
+                    headerShown: false,
+                    drawerType: 'slide',
+                    overlayColor: 'rgba(0, 0, 0, 0.5)',
+                    swipeMinDistance: 30,
+                    swipeEdgeWidth: 45,
+                    drawerStyle: {
+                      width: 280,
+                      backgroundColor: theme.bgSidebar,
+                      borderRightColor: 'transparent',
+                      borderRightWidth: 0,
+                    },
+                  }}
+                >
+                  <Drawer.Screen name="index" options={{ title: 'AI 聊天' }} />
+                  <Drawer.Screen
+                    name="admin-login"
+                    options={{
+                      drawerItemStyle: { display: 'none' },
+                      swipeEnabled: false,
+                    }}
+                  />
+                  <Drawer.Screen
+                    name="admin"
+                    options={{
+                      drawerItemStyle: { display: 'none' },
+                      swipeEnabled: false,
+                    }}
+                  />
+                </Drawer>
+              </GestureHandlerRootView>
+            </SafeAreaProvider>
+          </KnowledgeProvider>
+        </ChatContext.Provider>
+      </AdminPreviewContext.Provider>
     </ThemeContext.Provider>
   );
 }

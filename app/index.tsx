@@ -93,7 +93,12 @@ export default function ChatScreen() {
     },
     // { id: 'canvas', icon: '🎨', label: 'Canvas', onPress: () => {} }
   ];
-  const { uploadedFiles, handleUploadFile, handleDeleteFile } = useKnowledge();
+  const {
+    uploadedFiles,
+    handleUploadFile,
+    handleDeleteFile,
+    toggleKnowledgeFileEnabled,
+  } = useKnowledge();
 
   // 知识库上传进度（用于全局悬浮进度条）
   const uploadingFiles = uploadedFiles.filter((f) => f.uploading);
@@ -120,7 +125,8 @@ export default function ChatScreen() {
           !f.uploading &&
           !f.error &&
           f.status !== 'failed' &&
-          f.status !== 'processing',
+          f.status !== 'processing' &&
+          f.enabled,
       )
       .map((f) => f.id);
     handleSend(overrideText, selectedImages, knowledgeFileIds);
@@ -207,6 +213,7 @@ export default function ChatScreen() {
                 uploadedFiles={uploadedFiles}
                 onUploadFile={handleUploadFile}
                 onDeleteFile={handleDeleteFile}
+                onToggleFileEnabled={toggleKnowledgeFileEnabled}
               />
             </View>
           )}

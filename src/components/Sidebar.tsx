@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react'
 import {
+  Animated,
   StyleSheet,
   Text,
   View,
@@ -9,37 +10,98 @@ import {
   Modal,
   Pressable,
   useWindowDimensions,
-  Vibration,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
-import type { UploadedFile } from '../hooks/useKnowledgeFiles';
-import { isPCWebWidth } from '../constants/theme';
-import type { ThemeMode } from '../context/appContexts';
+  Vibration
+} from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import Svg, { Path } from 'react-native-svg'
+import { useRouter } from 'expo-router'
+import type { UploadedFile } from '../hooks/useKnowledgeFiles'
+import { isPCWebWidth } from '../constants/theme'
+import type { ThemeMode } from '../context/appContexts'
 
 interface SidebarProps {
-  conversations: any[];
-  activeId: string;
-  onNewChat: () => void;
-  onSelectChat: (id: string) => void;
-  onDeleteChat: (e: any, id: string) => void;
-  isDarkMode: boolean;
-  themeMode: ThemeMode;
-  onThemeModeChange: (mode: ThemeMode) => void;
-  theme: any;
-  uploadedFiles: UploadedFile[];
-  onUploadFile: () => void;
-  onDeleteFile: (id: string) => void;
+  conversations: any[]
+  activeId: string
+  onNewChat: () => void
+  onSelectChat: (id: string) => void
+  onDeleteChat: (e: any, id: string) => void
+  isDarkMode: boolean
+  themeMode: ThemeMode
+  onThemeModeChange: (mode: ThemeMode) => void
+  theme: any
+  uploadedFiles: UploadedFile[]
+  onUploadFile: () => void
+  onDeleteFile: (id: string) => void
+  onToggleFileEnabled: (id: string, enabled: boolean) => void
 }
 
 // 💡 统一的 Hover 组件：全部采用“新建对话按钮”同款的悬停变色逻辑（悬停时叠加统一的半透明遮罩/高亮层）
 interface HoverItemProps {
-  style?: any;
-  hoverBg?: string;
-  onPress?: () => void;
-  activeOpacity?: number;
-  children: React.ReactNode;
-  [key: string]: any;
+  style?: any
+  hoverBg?: string
+  onPress?: () => void
+  activeOpacity?: number
+  children: React.ReactNode
+  [key: string]: any
+}
+
+interface FileEnabledSwitchProps {
+  value: boolean
+  disabled: boolean
+  onValueChange: (value: boolean) => void
+  accessibilityLabel: string
+  theme: any
+}
+
+function FileEnabledSwitch({
+  value,
+  disabled,
+  onValueChange,
+  accessibilityLabel,
+  theme
+}: FileEnabledSwitchProps) {
+  const thumbPosition = useRef(new Animated.Value(value ? 18 : 0)).current
+
+  useEffect(() => {
+    Animated.timing(thumbPosition, {
+      toValue: value ? 18 : 0,
+      duration: 150,
+      useNativeDriver: Platform.OS !== 'web'
+    }).start()
+  }, [thumbPosition, value])
+
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint="启用状态会保存到服务器，并决定文档是否参与检索"
+      accessibilityState={{ checked: value, disabled }}
+      disabled={disabled}
+      onPress={() => onValueChange(!value)}
+      style={[styles.fileEnabledSwitch, disabled && styles.fileSwitchDisabled]}
+    >
+      <View
+        style={[
+          styles.fileSwitchTrack,
+          {
+            backgroundColor: value
+              ? theme.sendBtnActive
+              : theme.isDark
+                ? '#3A3B3D'
+                : theme.border
+          }
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.fileSwitchThumb,
+            { shadowColor: theme.bgApp },
+            { transform: [{ translateX: thumbPosition }] }
+          ]}
+        />
+      </View>
+    </Pressable>
+  )
 }
 
 const HoverTouchable = React.forwardRef<any, HoverItemProps>(
@@ -52,9 +114,9 @@ const HoverTouchable = React.forwardRef<any, HoverItemProps>(
       children,
       ...props
     },
-    ref,
+    ref
   ) {
-    const [isHovered, setIsHovered] = useState(false);
+    const [isHovered, setIsHovered] = useState(false)
 
     return (
       <TouchableOpacity
@@ -65,9 +127,9 @@ const HoverTouchable = React.forwardRef<any, HoverItemProps>(
             transitionProperty: 'background-color',
             transitionDuration: '0.15s',
             transitionTimingFunction: 'ease',
-            cursor: 'pointer',
+            cursor: 'pointer'
           },
-          Platform.OS === 'web' && isHovered && { backgroundColor: hoverBg },
+          Platform.OS === 'web' && isHovered && { backgroundColor: hoverBg }
         ]}
         onPress={onPress}
         activeOpacity={activeOpacity}
@@ -78,59 +140,59 @@ const HoverTouchable = React.forwardRef<any, HoverItemProps>(
       >
         {children}
       </TouchableOpacity>
-    );
-  },
-);
+    )
+  }
+)
 
 // 📱 长按菜单卡片尺寸（用于夹取在容器范围内）
-const CTX_CARD_W = 168;
-const CTX_CARD_H = 150; // 估算：标题 + 两个选项
+const CTX_CARD_W = 168
+const CTX_CARD_H = 150 // 估算：标题 + 两个选项
 
 // 获取组件在「窗口/视口」中的位置。
 // 原生优先 measureInWindow；Web 端 DOM 节点回退到 getBoundingClientRect，
 // 保证与容器坐标系一致，避免滚动偏移导致菜单位置偏下。
 function measureWindowPos(
   node: any,
-  cb: (x: number, y: number, w: number, h: number) => void,
+  cb: (x: number, y: number, w: number, h: number) => void
 ) {
   if (!node) {
-    cb(0, 0, 0, 0);
-    return;
+    cb(0, 0, 0, 0)
+    return
   }
   if (typeof node.measureInWindow === 'function') {
     node.measureInWindow((x: number, y: number, w: number, h: number) =>
-      cb(x, y, w, h),
-    );
-    return;
+      cb(x, y, w, h)
+    )
+    return
   }
   if (typeof node.getBoundingClientRect === 'function') {
-    const r = node.getBoundingClientRect();
-    cb(r.left, r.top, r.width, r.height);
-    return;
+    const r = node.getBoundingClientRect()
+    cb(r.left, r.top, r.width, r.height)
+    return
   }
   if (typeof node.measure === 'function') {
     node.measure(
       (_x: number, _y: number, w: number, h: number, px: number, py: number) =>
-        cb(px, py, w, h),
-    );
-    return;
+        cb(px, py, w, h)
+    )
+    return
   }
-  cb(0, 0, 0, 0);
+  cb(0, 0, 0, 0)
 }
 
 // 📱 移动端 / H5 端：长按文件后在当前位置弹出的小型操作菜单。
 // 直接渲染在侧边栏根容器内（与文件项同一坐标系），不再用独立 Modal，避免坐标系偏差。
 interface FileActionSheetProps {
-  fileName: string;
+  fileName: string
   /** 相对侧边栏根容器的位置 */
-  x: number;
-  y: number;
-  rootW: number;
-  rootH: number;
-  onCancel: () => void;
-  onDelete: () => void;
-  theme: any;
-  isDarkMode: boolean;
+  x: number
+  y: number
+  rootW: number
+  rootH: number
+  onCancel: () => void
+  onDelete: () => void
+  theme: any
+  isDarkMode: boolean
 }
 
 function FileActionSheet({
@@ -142,12 +204,12 @@ function FileActionSheet({
   onCancel,
   onDelete,
   theme,
-  isDarkMode,
+  isDarkMode
 }: FileActionSheetProps) {
   // 优先向触摸点右下方展开；靠近右/下边缘时翻转到左/上方，
   // 保证菜单完整可见且始终贴着手指
-  const left = x + CTX_CARD_W > rootW - 8 ? Math.max(8, x - CTX_CARD_W) : x;
-  const top = y + CTX_CARD_H > rootH - 8 ? Math.max(8, y - CTX_CARD_H) : y;
+  const left = x + CTX_CARD_W > rootW - 8 ? Math.max(8, x - CTX_CARD_W) : x
+  const top = y + CTX_CARD_H > rootH - 8 ? Math.max(8, y - CTX_CARD_H) : y
 
   return (
     <View style={styles.sheetOverlay}>
@@ -159,8 +221,8 @@ function FileActionSheet({
             left,
             top,
             backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-            borderColor: theme.border,
-          },
+            borderColor: theme.border
+          }
         ]}
         onPress={(e) => e.stopPropagation()}
       >
@@ -180,21 +242,21 @@ function FileActionSheet({
         </TouchableOpacity>
       </Pressable>
     </View>
-  );
+  )
 }
 
 // 📱 移动端 / H5 端：长按对话后在当前位置弹出的小型操作菜单
 interface ConversationActionSheetProps {
-  conversationTitle: string;
+  conversationTitle: string
   /** 相对侧边栏根容器的位置 */
-  x: number;
-  y: number;
-  rootW: number;
-  rootH: number;
-  onCancel: () => void;
-  onDelete: () => void;
-  theme: any;
-  isDarkMode: boolean;
+  x: number
+  y: number
+  rootW: number
+  rootH: number
+  onCancel: () => void
+  onDelete: () => void
+  theme: any
+  isDarkMode: boolean
 }
 
 function ConversationActionSheet({
@@ -206,10 +268,10 @@ function ConversationActionSheet({
   onCancel,
   onDelete,
   theme,
-  isDarkMode,
+  isDarkMode
 }: ConversationActionSheetProps) {
-  const left = x + CTX_CARD_W > rootW - 8 ? Math.max(8, x - CTX_CARD_W) : x;
-  const top = y + CTX_CARD_H > rootH - 8 ? Math.max(8, y - CTX_CARD_H) : y;
+  const left = x + CTX_CARD_W > rootW - 8 ? Math.max(8, x - CTX_CARD_W) : x
+  const top = y + CTX_CARD_H > rootH - 8 ? Math.max(8, y - CTX_CARD_H) : y
 
   return (
     <View style={styles.sheetOverlay}>
@@ -221,8 +283,8 @@ function ConversationActionSheet({
             left,
             top,
             backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-            borderColor: theme.border,
-          },
+            borderColor: theme.border
+          }
         ]}
         onPress={(e) => e.stopPropagation()}
       >
@@ -242,17 +304,17 @@ function ConversationActionSheet({
         </TouchableOpacity>
       </Pressable>
     </View>
-  );
+  )
 }
 
 // ⚠️ 三端统一的二次确认弹窗（文件）
 interface ConfirmDeleteDialogProps {
-  visible: boolean;
-  fileName: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-  theme: any;
-  isDarkMode: boolean;
+  visible: boolean
+  fileName: string
+  onCancel: () => void
+  onConfirm: () => void
+  theme: any
+  isDarkMode: boolean
 }
 
 function ConfirmDeleteDialog({
@@ -261,9 +323,9 @@ function ConfirmDeleteDialog({
   onCancel,
   onConfirm,
   theme,
-  isDarkMode,
+  isDarkMode
 }: ConfirmDeleteDialogProps) {
-  if (!visible) return null;
+  if (!visible) return null
 
   return (
     <Modal
@@ -279,8 +341,8 @@ function ConfirmDeleteDialog({
             styles.confirmCard,
             {
               backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-              borderColor: theme.border,
-            },
+              borderColor: theme.border
+            }
           ]}
         >
           <Text style={[styles.confirmTitle, { color: theme.textMain }]}>
@@ -310,17 +372,17 @@ function ConfirmDeleteDialog({
         </View>
       </View>
     </Modal>
-  );
+  )
 }
 
 // ⚠️ 对话删除二次确认弹窗
 interface ConfirmDeleteConversationDialogProps {
-  visible: boolean;
-  conversationTitle: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-  theme: any;
-  isDarkMode: boolean;
+  visible: boolean
+  conversationTitle: string
+  onCancel: () => void
+  onConfirm: () => void
+  theme: any
+  isDarkMode: boolean
 }
 
 function ConfirmDeleteConversationDialog({
@@ -329,9 +391,9 @@ function ConfirmDeleteConversationDialog({
   onCancel,
   onConfirm,
   theme,
-  isDarkMode,
+  isDarkMode
 }: ConfirmDeleteConversationDialogProps) {
-  if (!visible) return null;
+  if (!visible) return null
 
   return (
     <Modal
@@ -347,8 +409,8 @@ function ConfirmDeleteConversationDialog({
             styles.confirmCard,
             {
               backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-              borderColor: theme.border,
-            },
+              borderColor: theme.border
+            }
           ]}
         >
           <Text style={[styles.confirmTitle, { color: theme.textMain }]}>
@@ -378,7 +440,7 @@ function ConfirmDeleteConversationDialog({
         </View>
       </View>
     </Modal>
-  );
+  )
 }
 
 export default function Sidebar({
@@ -394,67 +456,69 @@ export default function Sidebar({
   uploadedFiles,
   onUploadFile,
   onDeleteFile,
+  onToggleFileEnabled
 }: SidebarProps) {
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets()
+  const { width } = useWindowDimensions()
+  const router = useRouter()
   // 📱 记录每个文件项的 ref，用于长按时测量实际屏幕坐标
-  const fileItemRefs = useRef<Record<string, any>>({});
+  const fileItemRefs = useRef<Record<string, any>>({})
   // 📱 记录每个对话项的 ref
-  const convItemRefs = useRef<Record<string, any>>({});
+  const convItemRefs = useRef<Record<string, any>>({})
   // 侧边栏根容器 ref，用于把菜单坐标换算到根容器坐标系
-  const sidebarRef = useRef<any>(null);
+  const sidebarRef = useRef<any>(null)
 
   // 🖥️ 与 app/index.tsx 保持一致的三端判断：仅电脑端网页保留 X 删除
-  const isPCWeb = Platform.OS === 'web' && isPCWebWidth(width);
+  const isPCWeb = Platform.OS === 'web' && isPCWebWidth(width)
 
   // 长按操作菜单（文件）
   const [menu, setMenu] = useState<{
-    file: UploadedFile;
-    x: number;
-    y: number;
-    rootW: number;
-    rootH: number;
-  } | null>(null);
-  const [confirmFile, setConfirmFile] = useState<UploadedFile | null>(null);
+    file: UploadedFile
+    x: number
+    y: number
+    rootW: number
+    rootH: number
+  } | null>(null)
+  const [confirmFile, setConfirmFile] = useState<UploadedFile | null>(null)
 
   // 长按操作菜单（对话）
   const [convMenu, setConvMenu] = useState<{
-    conversation: { id: string; title: string };
-    x: number;
-    y: number;
-    rootW: number;
-    rootH: number;
-  } | null>(null);
+    conversation: { id: string; title: string }
+    x: number
+    y: number
+    rootW: number
+    rootH: number
+  } | null>(null)
   const [confirmConv, setConfirmConv] = useState<{
-    id: string;
-    title: string;
-  } | null>(null);
+    id: string
+    title: string
+  } | null>(null)
 
   // 统一的删除入口：先关掉菜单，再弹二次确认
   const requestDeleteFile = (file: UploadedFile) => {
-    setMenu(null);
-    setConfirmFile(file);
-  };
+    setMenu(null)
+    setConfirmFile(file)
+  }
 
   const requestDeleteConversation = (conversation: {
-    id: string;
-    title: string;
+    id: string
+    title: string
   }) => {
-    setConvMenu(null);
-    setConfirmConv(conversation);
-  };
+    setConvMenu(null)
+    setConfirmConv(conversation)
+  }
 
   // 📱 长按某文件项：在手指当前位置打开操作菜单
   // offsetX/offsetY 为触摸点相对文件项左上角的偏移
   const openMenuAtFile = (
     file: UploadedFile,
     offsetX: number,
-    offsetY: number,
+    offsetY: number
   ) => {
     // 长按弹出菜单时给一下轻震动反馈
-    Vibration.vibrate(50);
-    const node = fileItemRefs.current[file.id];
-    const root = sidebarRef.current;
+    Vibration.vibrate(50)
+    const node = fileItemRefs.current[file.id]
+    const root = sidebarRef.current
     measureWindowPos(node, (ix, iy, _iw, _ih) => {
       measureWindowPos(root, (rx, ry, rw, rh) => {
         setMenu({
@@ -462,21 +526,21 @@ export default function Sidebar({
           x: ix - rx + offsetX,
           y: iy - ry + offsetY,
           rootW: rw,
-          rootH: rh,
-        });
-      });
-    });
-  };
+          rootH: rh
+        })
+      })
+    })
+  }
 
   // 📱 长按某对话项：在手指当前位置打开操作菜单
   const openMenuAtConversation = (
     conversation: { id: string; title: string },
     offsetX: number,
-    offsetY: number,
+    offsetY: number
   ) => {
-    Vibration.vibrate(50);
-    const node = convItemRefs.current[conversation.id];
-    const root = sidebarRef.current;
+    Vibration.vibrate(50)
+    const node = convItemRefs.current[conversation.id]
+    const root = sidebarRef.current
     measureWindowPos(node, (ix, iy, _iw, _ih) => {
       measureWindowPos(root, (rx, ry, rw, rh) => {
         setConvMenu({
@@ -484,21 +548,21 @@ export default function Sidebar({
           x: ix - rx + offsetX,
           y: iy - ry + offsetY,
           rootW: rw,
-          rootH: rh,
-        });
-      });
-    });
-  };
+          rootH: rh
+        })
+      })
+    })
+  }
 
   const handleConfirmDelete = () => {
-    if (confirmFile) onDeleteFile(confirmFile.id);
-    setConfirmFile(null);
-  };
+    if (confirmFile) onDeleteFile(confirmFile.id)
+    setConfirmFile(null)
+  }
 
   const handleConfirmDeleteConversation = () => {
-    if (confirmConv) onDeleteChat(null, confirmConv.id);
-    setConfirmConv(null);
-  };
+    if (confirmConv) onDeleteChat(null, confirmConv.id)
+    setConfirmConv(null)
+  }
 
   return (
     <View
@@ -509,8 +573,8 @@ export default function Sidebar({
         style={[
           styles.sidebarInner,
           {
-            paddingTop: Platform.OS === 'web' ? 40 : insets.top + 10,
-          },
+            paddingTop: Platform.OS === 'web' ? 40 : insets.top + 10
+          }
         ]}
       >
         {/* 1. 顶部：新建对话按钮 */}
@@ -546,6 +610,9 @@ export default function Sidebar({
             <Text style={[styles.categoryTitle, { color: theme.textMuted }]}>
               已上传文件 ({uploadedFiles.length})
             </Text>
+            <Text style={[styles.fileToggleHint, { color: theme.textMuted }]}>
+              停用的文档不会随新问题发送
+            </Text>
             <ScrollView
               style={styles.subScrollContainer}
               showsVerticalScrollIndicator={false}
@@ -554,17 +621,17 @@ export default function Sidebar({
                 <HoverTouchable
                   key={file.id}
                   ref={(el: any) => {
-                    fileItemRefs.current[file.id] = el;
+                    fileItemRefs.current[file.id] = el
                   }}
                   style={[
                     styles.fileItem,
                     {
-                      backgroundColor: theme.btnBg || 'rgba(255,255,255,0.05)',
+                      backgroundColor: theme.btnBg || 'rgba(255,255,255,0.05)'
                     },
                     // 长按菜单打开时高亮当前项
                     menu?.file.id === file.id && {
-                      backgroundColor: theme.historyActiveBg,
-                    },
+                      backgroundColor: theme.historyActiveBg
+                    }
                   ]}
                   hoverBg={theme.historyActiveBg}
                   activeOpacity={1}
@@ -581,7 +648,7 @@ export default function Sidebar({
                           openMenuAtFile(
                             file,
                             e.nativeEvent?.locationX ?? 0,
-                            e.nativeEvent?.locationY ?? 0,
+                            e.nativeEvent?.locationY ?? 0
                           )
                       : undefined
                   }
@@ -589,11 +656,37 @@ export default function Sidebar({
                 >
                   <View style={styles.fileInfo}>
                     <Text
-                      style={[styles.fileText, { color: theme.textMain }]}
+                      style={[
+                        styles.fileText,
+                        {
+                          color: file.enabled ? theme.textMain : theme.textMuted
+                        }
+                      ]}
                       numberOfLines={1}
                     >
                       📄 {file.name}
                     </Text>
+                    <Text
+                      style={[
+                        styles.fileEnabledText,
+                        {
+                          color: file.enabled
+                            ? theme.sendBtnActive
+                            : theme.textMuted
+                        }
+                      ]}
+                    >
+                      {file.enabledUpdating
+                        ? '保存中…'
+                        : file.enabled
+                          ? '已启用'
+                          : '已停用'}
+                    </Text>
+                    {file.enabledError ? (
+                      <Text style={styles.fileErrorText}>
+                        {file.enabledError}
+                      </Text>
+                    ) : null}
 
                     {/* 处理进度条 / 结果图标 */}
                     {file.status === 'processing' || file.uploading ? (
@@ -605,15 +698,15 @@ export default function Sidebar({
                               {
                                 width: `${Math.max(0, Math.min(100, file.progress ?? 0))}%`,
                                 backgroundColor:
-                                  theme.sendBtnActive || '#3b82f6',
-                              },
+                                  theme.sendBtnActive || '#3b82f6'
+                              }
                             ]}
                           />
                         </View>
                         <Text
                           style={[
                             styles.progressPct,
-                            { color: theme.textMuted },
+                            { color: theme.textMuted }
                           ]}
                         >
                           {Math.round(file.progress ?? 0)}%
@@ -626,7 +719,7 @@ export default function Sidebar({
                           <View
                             style={[
                               styles.progressFill,
-                              { width: '100%', backgroundColor: '#22c55e' },
+                              { width: '100%', backgroundColor: '#22c55e' }
                             ]}
                           />
                         </View>
@@ -649,6 +742,22 @@ export default function Sidebar({
                     ) : null}
                   </View>
 
+                  <FileEnabledSwitch
+                    accessibilityLabel={`${file.enabled ? '停用' : '启用'}文档 ${file.name}`}
+                    disabled={
+                      file.status === 'processing' ||
+                      file.uploading === true ||
+                      file.status === 'failed' ||
+                      file.error === true ||
+                      file.enabledUpdating === true
+                    }
+                    onValueChange={(enabled) =>
+                      onToggleFileEnabled(file.id, enabled)
+                    }
+                    value={file.enabled}
+                    theme={theme}
+                  />
+
                   {/* 🖥️ 仅电脑端网页保留 X 删除；移动端 / H5 走长按菜单。
                     处理中/结果展示时隐藏删除按钮 */}
                   {isPCWeb &&
@@ -657,30 +766,30 @@ export default function Sidebar({
                       file.uploading ||
                       file.showResult
                     ) && (
-                      <TouchableOpacity
+                      <HoverTouchable
+                        style={styles.deleteBtn}
                         onPress={() => requestDeleteFile(file)}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        hoverBg={theme.deleteHoverBg || 'rgba(255, 0, 0, 0.1)'}
                       >
-                        <Text
-                          style={[
-                            styles.deleteBtnText,
-                            { color: theme.textMuted },
-                          ]}
+                        <Svg
+                          width={14}
+                          height={14}
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={theme.textMuted}
+                          strokeWidth={2.5}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          style={
+                            Platform.OS === 'web'
+                              ? ({ cursor: 'pointer' } as any)
+                              : undefined
+                          }
                         >
-                          <Svg
-                            width={14}
-                            height={14}
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke={theme.textMuted}
-                            strokeWidth={2.5}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <Path d="M18 6L6 18M6 6l12 12" />
-                          </Svg>
-                        </Text>
-                      </TouchableOpacity>
+                          <Path d="M18 6L6 18M6 6l12 12" />
+                        </Svg>
+                      </HoverTouchable>
                     )}
                 </HoverTouchable>
               ))}
@@ -698,20 +807,20 @@ export default function Sidebar({
             showsVerticalScrollIndicator={false}
           >
             {conversations.map((conv) => {
-              const isActive = conv.id === activeId;
+              const isActive = conv.id === activeId
               return (
                 <HoverTouchable
                   key={conv.id}
                   ref={(el: any) => {
-                    convItemRefs.current[conv.id] = el;
+                    convItemRefs.current[conv.id] = el
                   }}
                   style={[
                     styles.historyItem,
                     isActive && { backgroundColor: theme.historyActiveBg },
                     // 长按菜单打开时高亮当前项
                     convMenu?.conversation.id === conv.id && {
-                      backgroundColor: theme.historyActiveBg,
-                    },
+                      backgroundColor: theme.historyActiveBg
+                    }
                   ]}
                   hoverBg={theme.historyActiveBg}
                   onPress={() => onSelectChat(conv.id)}
@@ -722,7 +831,7 @@ export default function Sidebar({
                           openMenuAtConversation(
                             { id: conv.id, title: conv.title },
                             e.nativeEvent?.locationX ?? 0,
-                            e.nativeEvent?.locationY ?? 0,
+                            e.nativeEvent?.locationY ?? 0
                           )
                       : undefined
                   }
@@ -734,9 +843,9 @@ export default function Sidebar({
                       {
                         color: isActive
                           ? theme.historyActiveText
-                          : theme.textMain,
+                          : theme.textMain
                       },
-                      { flex: 1 },
+                      { flex: 1 }
                     ]}
                     numberOfLines={1}
                   >
@@ -750,7 +859,7 @@ export default function Sidebar({
                       onPress={() =>
                         requestDeleteConversation({
                           id: conv.id,
-                          title: conv.title,
+                          title: conv.title
                         })
                       }
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -778,7 +887,7 @@ export default function Sidebar({
                     </HoverTouchable>
                   )}
                 </HoverTouchable>
-              );
+              )
             })}
           </ScrollView>
         </View>
@@ -787,9 +896,24 @@ export default function Sidebar({
         <View
           style={[
             styles.sidebarFooter,
-            { borderTopColor: theme.border || 'rgba(255,255,255,0.1)' },
+            { borderTopColor: theme.border || 'rgba(255,255,255,0.1)' }
           ]}
         >
+          <HoverTouchable
+            accessibilityRole="button"
+            accessibilityLabel="管理员登录"
+            style={styles.adminEntry}
+            hoverBg={theme.historyActiveBg}
+            onPress={() => router.push('/admin-login')}
+          >
+            <Text style={styles.adminEntryIcon}>⚙️</Text>
+            <Text style={[styles.adminEntryText, { color: theme.textMain }]}>
+              管理后台
+            </Text>
+            <Text style={[styles.adminEntryHint, { color: theme.textMuted }]}>
+              ADMIN
+            </Text>
+          </HoverTouchable>
           <View style={styles.appearanceSection}>
             <Text style={[styles.appearanceLabel, { color: theme.textMuted }]}>
               外观
@@ -797,17 +921,17 @@ export default function Sidebar({
             <View
               style={[
                 styles.appearanceOptions,
-                { backgroundColor: theme.bgApp },
+                { backgroundColor: theme.bgApp }
               ]}
             >
               {(
                 [
                   { mode: 'light', label: '浅色', icon: '☀️' },
                   { mode: 'dark', label: '深色', icon: '🌙' },
-                  { mode: 'system', label: '跟随系统', icon: '◐' },
+                  { mode: 'system', label: '跟随系统', icon: '◐' }
                 ] as const
               ).map(({ mode, label, icon }) => {
-                const selected = themeMode === mode;
+                const selected = themeMode === mode
                 return (
                   <HoverTouchable
                     key={mode}
@@ -817,8 +941,8 @@ export default function Sidebar({
                     style={[
                       styles.appearanceOption,
                       selected && {
-                        backgroundColor: theme.historyActiveBg,
-                      },
+                        backgroundColor: theme.historyActiveBg
+                      }
                     ]}
                     hoverBg={theme.historyActiveBg}
                     onPress={() => onThemeModeChange(mode)}
@@ -830,14 +954,14 @@ export default function Sidebar({
                         {
                           color: selected
                             ? theme.historyActiveText
-                            : theme.textMuted,
-                        },
+                            : theme.textMuted
+                        }
                       ]}
                     >
                       {label}
                     </Text>
                   </HoverTouchable>
-                );
+                )
               })}
             </View>
           </View>
@@ -905,30 +1029,30 @@ export default function Sidebar({
         isDarkMode={isDarkMode}
       />
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   sidebarRoot: {
-    flex: 1,
+    flex: 1
   },
   sidebarInner: {
     flex: 1,
     padding: 12,
-    justifyContent: 'space-between',
+    justifyContent: 'space-between'
   },
   sidebarTop: {
-    marginBottom: 4,
+    marginBottom: 4
   },
   newChatBtn: {
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 16,
-    alignItems: 'center',
+    alignItems: 'center'
   },
   newChatBtnText: {
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 14
   },
   uploadSection: {
     paddingVertical: 10,
@@ -937,83 +1061,121 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderStyle: 'dashed',
-    alignItems: 'center',
+    alignItems: 'center'
   },
   uploadText: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '500'
   },
   uploadHint: {
     fontSize: 11,
     marginTop: 0,
     marginBottom: 0,
-    textAlign: 'center',
+    textAlign: 'center'
   },
   categoryTitle: {
     fontSize: 12,
     marginVertical: 6,
     paddingHorizontal: 4,
-    fontWeight: '500',
+    fontWeight: '500'
   },
   fileListContainer: {
     maxHeight: 200,
-    marginVertical: 2,
+    marginVertical: 2
   },
   subScrollContainer: {
-    maxHeight: 190,
+    maxHeight: 190
   },
   fileItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: Platform.OS === 'web' ? 6 : 6,
     paddingHorizontal: 10,
     borderRadius: 16,
-    marginBottom: 4,
+    marginBottom: 4
   },
   fileInfo: {
     flex: 1,
-    marginRight: 6,
+    marginRight: 6
   },
   fileText: {
-    fontSize: 13,
+    fontSize: 13
+  },
+  fileEnabledText: {
+    fontSize: 10,
+    marginTop: 2
+  },
+  fileToggleHint: {
+    fontSize: 10,
+    marginTop: -4,
+    marginBottom: 6,
+    paddingHorizontal: 4
+  },
+  fileEnabledSwitch: {
+    marginLeft: 2,
+    marginRight: 2,
+    width: 40,
+    height: 24,
+    justifyContent: 'center'
+  },
+  fileSwitchDisabled: {
+    opacity: 0.55
+  },
+  fileSwitchTrack: {
+    width: 40,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center'
+  },
+  fileSwitchThumb: {
+    position: 'absolute',
+    left: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ffffff',
+    shadowOpacity: 0.8,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3
   },
   progressTrack: {
     flex: 1,
     height: 5,
     borderRadius: 3,
     backgroundColor: 'rgba(150, 150, 150, 0.25)',
-    overflow: 'hidden',
+    overflow: 'hidden'
   },
   progressFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 3
   },
   progressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 4
   },
   progressPct: {
     fontSize: 10,
     marginLeft: 6,
     minWidth: 30,
-    textAlign: 'right',
+    textAlign: 'right'
   },
   resultIcon: {
-    marginLeft: 6,
+    marginLeft: 6
   },
   fileErrorText: {
     fontSize: 11,
     marginTop: 3,
-    color: '#ef4444',
+    color: '#ef4444'
   },
   historyContainer: {
     flex: 1,
-    marginVertical: 4,
+    marginVertical: 4
   },
   historyList: {
-    flex: 1,
+    flex: 1
   },
   historyItem: {
     flexDirection: 'row',
@@ -1022,39 +1184,61 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 10,
     borderRadius: 16,
-    marginBottom: 4,
+    marginBottom: 4
   },
   historyText: {
-    fontSize: 14,
+    fontSize: 14
   },
   deleteBtn: {
     padding: 3,
     marginLeft: 6,
-    borderRadius: 12,
+    borderRadius: 12
   },
   deleteBtnText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '600'
   },
   sidebarFooter: {
     borderTopWidth: 1,
     paddingTop: 10,
-    marginTop: 4,
+    marginTop: 4
+  },
+  adminEntry: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 8,
+    borderRadius: 15
+  },
+  adminEntryIcon: {
+    fontSize: 15,
+    marginRight: 9
+  },
+  adminEntryText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500'
+  },
+  adminEntryHint: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.8
   },
   appearanceSection: {
-    marginBottom: 8,
+    marginBottom: 8
   },
   appearanceLabel: {
     fontSize: 11,
     fontWeight: '600',
     marginBottom: 6,
-    paddingHorizontal: 4,
+    paddingHorizontal: 4
   },
   appearanceOptions: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 3,
-    borderRadius: 12,
+    borderRadius: 15
   },
   appearanceOption: {
     flex: 1,
@@ -1064,22 +1248,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 7,
     paddingHorizontal: 4,
-    borderRadius: 9,
+    borderRadius: 13
   },
   appearanceIcon: {
     fontSize: 12,
-    marginRight: 4,
+    marginRight: 4
   },
   appearanceOptionText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '500'
   },
   userProfile: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 4
   },
   avatarMini: {
     width: 28,
@@ -1088,16 +1272,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#8AB4F8',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: 8
   },
   avatarMiniText: {
     color: '#000',
     fontWeight: 'bold',
-    fontSize: 12,
+    fontSize: 12
   },
   userName: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '500'
   },
   sheetOverlay: {
     position: 'absolute',
@@ -1105,7 +1289,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 999,
+    zIndex: 999
   },
   sheetCard: {
     position: 'absolute',
@@ -1114,27 +1298,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingVertical: 4,
     boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.25)',
-    elevation: 6,
+    elevation: 6
   },
   sheetTitle: {
     fontSize: 11,
     fontWeight: '500',
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 6,
+    paddingBottom: 6
   },
   sheetItem: {
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 12
   },
   sheetItemText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '500'
   },
   confirmOverlay: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center'
   },
   confirmBackdrop: {
     position: 'absolute',
@@ -1142,7 +1326,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)'
   },
   confirmCard: {
     width: '80%',
@@ -1152,32 +1336,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     boxShadow: '0px 10px 12px rgba(0, 0, 0, 0.4)',
-    elevation: 10,
+    elevation: 10
   },
   confirmTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 8
   },
   confirmDesc: {
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 20,
-    lineHeight: 20,
+    lineHeight: 20
   },
   confirmBtnRow: {
     flexDirection: 'row',
     width: '100%',
-    gap: 12,
+    gap: 12
   },
   confirmBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 16,
-    alignItems: 'center',
+    alignItems: 'center'
   },
   confirmBtnText: {
     fontSize: 15,
-    fontWeight: '600',
-  },
-});
+    fontWeight: '600'
+  }
+})
