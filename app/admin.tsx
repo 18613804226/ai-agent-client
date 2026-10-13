@@ -32,6 +32,9 @@ export default function AdminDashboardScreen() {
   const [query, setQuery] = useState('');
   const [draftLimits, setDraftLimits] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState('');
+  // 退出动画进行中：保持本屏内容挂载，避免 <Redirect/> 在侧滑转场前
+  // 把内容提前清空（表现为"内容先消失、外框再滑出"）
+  const [isExiting, setIsExiting] = useState(false);
 
   const filteredRecords = useMemo(
     () =>
@@ -52,7 +55,16 @@ export default function AdminDashboardScreen() {
     (record) => record.todayRequests >= record.dailyLimit,
   ).length;
 
-  if (!isAdminPreview) return <Redirect href="/admin-login" />;
+  if (!isAdminPreview && !isExiting) return <Redirect href="/admin-login" />;
+
+  /** 侧滑返回上一屏（聊天页）；无上级栈时兜底 replace 回首页 */
+  const goBackToChat = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
 
   const saveLimit = (record: DeviceUsageRecord) => {
     const value = Number(draftLimits[record.id] ?? record.dailyLimit);
@@ -74,8 +86,12 @@ export default function AdminDashboardScreen() {
   };
 
   const logout = () => {
+    // 顺序很重要：先标记"退出中"锁住本屏内容，再关闭演示模式、触发侧滑返回。
+    // 这样 <Redirect/> 守卫不会在动画开始前清空屏幕内容。
+    setIsExiting(true);
     setAdminPreview(false);
-    router.replace('/');
+    // 侧滑退回聊天页（Stack pop）
+    goBackToChat();
   };
 
   const cardStyle = {
@@ -98,7 +114,7 @@ export default function AdminDashboardScreen() {
         <View style={styles.topBarInner}>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.replace('/')}
+            onPress={goBackToChat}
             style={styles.brand}
           >
             <Text style={[styles.brandIcon, { color: theme.sendBtnActive }]}>

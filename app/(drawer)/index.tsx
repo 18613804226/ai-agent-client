@@ -16,17 +16,17 @@ import { DrawerActions } from 'expo-router/react-navigation';
 import { useNavigation } from 'expo-router';
 import { useDrawerStatus } from 'expo-router/drawer';
 
-import Sidebar from '../src/components/Sidebar';
-import ChatArea from '../src/components/ChatArea';
-import ChatInputBar from '../src/components/ChatInputBar';
-import { MobileHeader } from '../src/components/MobileHeader';
+import Sidebar from '../../src/components/Sidebar';
+import ChatArea from '../../src/components/ChatArea';
+import ChatInputBar from '../../src/components/ChatInputBar';
+import { MobileHeader } from '../../src/components/MobileHeader';
 
-import { useKeyboardAnimation } from '../src/hooks/useKeyboardAnimation';
-import GlobalToastContainer from '../src/components/GlobalToast';
-import { useImagePicker } from '../src/hooks/useImagePicker';
-import { useTheme, useChat, useKnowledge } from '../src/context/appContexts'; // 💡 全局 Context（与 app/_layout 共用）
-import { isPCWebWidth, isMobileWebWidth } from '../src/constants/theme';
-import CustomActionSheet from '../src/components/CustomActionSheet';
+import { useKeyboardAnimation } from '../../src/hooks/useKeyboardAnimation';
+import GlobalToastContainer from '../../src/components/GlobalToast';
+import { useImagePicker } from '../../src/hooks/useImagePicker';
+import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts'; // 💡 全局 Context（与 app/_layout 共用）
+import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme';
+import CustomActionSheet from '../../src/components/CustomActionSheet';
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();

@@ -906,7 +906,7 @@ export default function Sidebar({
             hoverBg={theme.historyActiveBg}
             onPress={() => router.push('/admin-login')}
           >
-            <Text style={styles.adminEntryIcon}>⚙️</Text>
+            {/* <Text style={styles.adminEntryIcon}>⚙️</Text> */}
             <Text style={[styles.adminEntryText, { color: theme.textMain }]}>
               管理后台
             </Text>
@@ -926,9 +926,9 @@ export default function Sidebar({
             >
               {(
                 [
-                  { mode: 'light', label: '浅色', icon: '☀️' },
-                  { mode: 'dark', label: '深色', icon: '🌙' },
-                  { mode: 'system', label: '跟随系统', icon: '◐' }
+                  { mode: 'light', label: '浅色', icon: '' },
+                  { mode: 'dark', label: '深色', icon: '' },
+                  { mode: 'system', label: '跟随系统', icon: '' }
                 ] as const
               ).map(({ mode, label, icon }) => {
                 const selected = themeMode === mode

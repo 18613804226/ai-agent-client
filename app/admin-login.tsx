@@ -21,9 +21,20 @@ export default function AdminLoginScreen() {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  // 登录跳转进行中：保持本屏内容挂载到转场结束，避免 <Redirect/> 提前清空内容
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
 
-  if (isAdminPreview) return <Redirect href="/admin" />;
+  if (isAdminPreview && !isRedirecting) return <Redirect href="/admin" />;
+
+  /** 侧滑返回上一屏（聊天页）；无上级栈时兜底 replace 回首页 */
+  const goBackToChat = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
 
   const handleLogin = () => {
     if (!account.trim() || !password.trim()) {
@@ -31,7 +42,11 @@ export default function AdminLoginScreen() {
       return;
     }
     setError('');
+    // 顺序很重要：先标记"跳转中"锁住本屏内容，避免 <Redirect/> 守卫
+    // 在转场动画前把登录页内容清空
+    setIsRedirecting(true);
     setAdminPreview(true);
+    // 栈顶替换：登录成功后直接进入 admin，返回时不会再退回登录页
     router.replace('/admin');
   };
 
@@ -42,7 +57,7 @@ export default function AdminLoginScreen() {
     >
       <Pressable
         accessibilityRole="button"
-        onPress={() => router.replace('/')}
+        onPress={goBackToChat}
         style={[
           styles.backButton,
           { top: insets.top + 8, left: Math.max(insets.left, 16) },
