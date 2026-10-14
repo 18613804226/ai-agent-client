@@ -43,6 +43,44 @@ export const AdminPreviewContext = createContext<{
 });
 export const useAdminPreview = () => useContext(AdminPreviewContext);
 
+// 💡 全局角色：user 普通用户 / admin 管理员，默认 user。
+// 桌面侧栏与移动抽屉共用同一份状态，切一次两端同步。
+// 只有 admin 才露出「管理后台」登录入口。
+export type RoleMode = 'user' | 'admin';
+export const RoleContext = createContext<{
+  role: RoleMode;
+  setRole: (role: RoleMode) => void;
+}>({
+  role: 'user',
+  setRole: () => {},
+});
+export const useRole = () => useContext(RoleContext);
+
+import type { AuthDevice } from '../services/authStore';
+
+// 认证全局 Context：token + 设备信息 + 配额快照
+export const AuthContext = createContext<{
+  ready: boolean;
+  authed: boolean;
+  device: AuthDevice | null;
+  loginAsDevice: () => Promise<void>;
+  loginAsAdmin: (password: string) => Promise<void>;
+  /** 免密激活缓存的 admin 会话；true = 已切到 admin，false = 需要去输密码 */
+  activateAdmin: () => Promise<boolean>;
+  logoutToDevice: () => Promise<void>;
+  refreshQuota: () => Promise<void>;
+}>({
+  ready: false,
+  authed: false,
+  device: null,
+  loginAsDevice: async () => {},
+  loginAsAdmin: async () => {},
+  activateAdmin: async () => false,
+  logoutToDevice: async () => {},
+  refreshQuota: async () => {},
+});
+export const useAuth = () => useContext(AuthContext);
+
 // 知识库全局 Context：桌面侧栏 / 移动抽屉 / 发送逻辑共用同一份文件状态与上传进度
 export const KnowledgeContext = createContext<ReturnType<
   typeof useKnowledgeFiles

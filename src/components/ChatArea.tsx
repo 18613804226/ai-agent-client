@@ -1,25 +1,13 @@
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
-} from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import ImageViewer from './ImageViewer';
-import { useChat } from '../context/appContexts';
-import { INVERTED_CHAT_LIST } from '../utils/chatScroll';
-import { useChatScroll } from '../hooks/useChatScroll';
-import ChatMessageItem from './ChatMessageItem';
-import type { ChatAreaProps } from '../types/chat';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { StyleSheet, Text, View, ScrollView, Platform } from 'react-native'
+import Svg, { Path } from 'react-native-svg'
+import ImageViewer from './ImageViewer'
+import { HoverTouchable } from './HoverTouchable'
+import { useChat } from '../context/appContexts'
+import { INVERTED_CHAT_LIST } from '../utils/chatScroll'
+import { useChatScroll } from '../hooks/useChatScroll'
+import ChatMessageItem from './ChatMessageItem'
+import type { ChatAreaProps } from '../types/chat'
 
 // ===================== ChatArea 根组件 =====================
 export default function ChatArea({
@@ -30,38 +18,38 @@ export default function ChatArea({
   activeId,
   streamingRenderMsg = null,
   autoRead = false, // 💡 新增
-  isDrawerOpen = false, // 抽屉打开时禁用文本选择，防止误触
+  isDrawerOpen = false // 抽屉打开时禁用文本选择，防止误触
 }: ChatAreaProps) {
-const { scrollViewRef } = useChat();
-  const [playingMsgId, setPlayingMsgId] = useState<string | null>(null);
+  const { scrollViewRef } = useChat()
+  const [playingMsgId, setPlayingMsgId] = useState<string | null>(null)
 
   // 🧹 抽屉打开时清掉 Web 端已选中的蓝色文本选择框
   // （App 端靠 textSelectable=false 让原生选择自动收起）
   useEffect(() => {
-    if (!isDrawerOpen) return;
-    if (Platform.OS !== 'web') return;
-    const sel = (globalThis as any).getSelection?.();
-    sel?.removeAllRanges?.();
-  }, [isDrawerOpen]);
+    if (!isDrawerOpen) return
+    if (Platform.OS !== 'web') return
+    const sel = (globalThis as any).getSelection?.()
+    sel?.removeAllRanges?.()
+  }, [isDrawerOpen])
 
   // ==================== 图片全屏预览 ====================
   const [preview, setPreview] = useState<{
-    images: string[];
-    index: number;
-  } | null>(null);
+    images: string[]
+    index: number
+  } | null>(null)
   const openPreview = useCallback(
     (images: string[], index: number) => setPreview({ images, index }),
-    [],
-  );
-  const closePreview = useCallback(() => setPreview(null), []);
+    []
+  )
+  const closePreview = useCallback(() => setPreview(null), [])
   const changePreviewIndex = useCallback(
     (index: number) => setPreview((prev) => (prev ? { ...prev, index } : prev)),
-    [],
-  );
+    []
+  )
 
   // 💡 自动朗读相关引用
-  const lastAutoReadKeyRef = useRef<string | null>(null);
-  const autoPlayingRef = useRef(false);
+  const lastAutoReadKeyRef = useRef<string | null>(null)
+  const autoPlayingRef = useRef(false)
 
   // 合并流式临时内容
   const displayMessages = useMemo(() => {
@@ -73,19 +61,19 @@ const { scrollViewRef } = useChat();
               ...msg,
               content: streamingRenderMsg.content || msg.content,
               thought: streamingRenderMsg.thought || msg.thought,
-              isStreaming: true,
-            };
+              isStreaming: true
+            }
           }
-          return msg;
-        });
+          return msg
+        })
 
     // 逐条 cell 翻转（模拟 RN inverted FlatList）：锚住数组开头 = 视觉底部，
     // 所以原生端需要反转 data（最新在 index 0）。Web 端保持自然顺序。
-    return INVERTED_CHAT_LIST ? [...merged].reverse() : merged;
-  }, [messages, streamingRenderMsg]);
+    return INVERTED_CHAT_LIST ? [...merged].reverse() : merged
+  }, [messages, streamingRenderMsg])
 
   const showWelcome =
-    (!displayMessages || displayMessages.length === 0) && !isKeyboardUp;
+    (!displayMessages || displayMessages.length === 0) && !isKeyboardUp
 
   const {
     scrollViewProps,
@@ -94,8 +82,8 @@ const { scrollViewRef } = useChat();
     handleScrollToBottom,
     outerOffsetSV,
     outerMaxSV,
-    viewportOnLayout,
-  } = useChatScroll({ activeId, streamingRenderMsg, displayMessages });
+    viewportOnLayout
+  } = useChatScroll({ activeId, streamingRenderMsg, displayMessages })
 
   return (
     <View style={{ flex: 1 }} onLayout={viewportOnLayout}>
@@ -120,7 +108,7 @@ const { scrollViewRef } = useChat();
             styles.scrollContent,
             INVERTED_CHAT_LIST
               ? { flexGrow: 1, justifyContent: 'flex-end' }
-              : null,
+              : null
           ]}
           alwaysBounceVertical={false}
           nativeID="chat-scroll"
@@ -146,17 +134,20 @@ const { scrollViewRef } = useChat();
 
       {/* ✅ 悬浮「回到底部」按钮：上滑超过一定距离才显示 */}
       {!showWelcome && showScrollToBottom && (
-        <TouchableOpacity
+        <HoverTouchable
           onPress={handleScrollToBottom}
           activeOpacity={0.8}
+          rippleColor={
+            theme.isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.15)'
+          }
           style={[
             styles.scrollToBottomBtn,
             {
               backgroundColor: theme.isDark
                 ? 'rgba(40,40,40,0.92)'
                 : 'rgba(255,255,255,0.95)',
-              borderColor: theme.border,
-            },
+              borderColor: theme.border
+            }
           ]}
         >
           <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -168,7 +159,7 @@ const { scrollViewRef } = useChat();
               strokeLinejoin="round"
             />
           </Svg>
-        </TouchableOpacity>
+        </HoverTouchable>
       )}
 
       {/* 点气泡里的图片 → 全屏预览 */}
@@ -180,14 +171,14 @@ const { scrollViewRef } = useChat();
         onIndexChange={changePreviewIndex}
       />
     </View>
-  );
+  )
 }
 
 // ===================== StyleSheet =====================
 const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
-    paddingBottom: 20,
+    paddingBottom: 16
   },
   welcomeOverlay: {
     position: 'absolute',
@@ -197,27 +188,27 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    pointerEvents: 'none',
+    pointerEvents: 'none'
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 24
   },
   welcomeEmoji: {
     fontSize: 42,
-    marginBottom: 12,
+    marginBottom: 12
   },
   welcomeTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 8,
-    textAlign: 'center',
+    textAlign: 'center'
   },
   welcomeSubtitle: {
     fontSize: 14,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 20
   },
   scrollToBottomBtn: {
     width: 40,
@@ -230,6 +221,6 @@ const styles = StyleSheet.create({
     elevation: 4,
     position: 'absolute',
     bottom: 24,
-    alignSelf: 'center',
-  },
-});
+    alignSelf: 'center'
+  }
+})

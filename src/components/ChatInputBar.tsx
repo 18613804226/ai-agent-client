@@ -17,6 +17,7 @@ import {
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import ImageViewer from './ImageViewer';
+import { HoverTouchable } from './HoverTouchable';
 
 if (Platform.OS === 'web') {
   const styleId = 'web-modern-scrollbar';
@@ -251,23 +252,22 @@ export default function ChatInputBar({
         >
           {selectedImages.map((imgUri, index) => (
             <View key={index} style={styles.previewItem}>
-              <TouchableOpacity
+              <HoverTouchable
                 activeOpacity={0.85}
+                rippleColor="rgba(255, 255, 255, 0.35)"
                 onPress={() => setPreviewIndex(index)}
-                style={[
-                  styles.previewImageTap,
-                  isWeb ? ({ cursor: 'pointer' } as any) : null,
-                ]}
+                style={styles.previewImageTap}
               >
                 <Image source={{ uri: imgUri }} style={styles.previewImage} />
-              </TouchableOpacity>
-              <TouchableOpacity
+              </HoverTouchable>
+              <HoverTouchable
                 style={styles.deleteBadge}
+                rippleColor="rgba(255, 255, 255, 0.35)"
                 onPress={() => handleRemoveImage(index)}
                 hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
               >
                 <Text style={styles.deleteBadgeText}>✕</Text>
-              </TouchableOpacity>
+              </HoverTouchable>
             </View>
           ))}
         </ScrollView>
@@ -290,14 +290,14 @@ export default function ChatInputBar({
       >
         {/* 附件按钮（语音模式下隐藏） */}
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
-          <TouchableOpacity
+          <HoverTouchable
             style={styles.attachButton}
             onPress={onPickImage}
             disabled={isGenerating}
             activeOpacity={0.6}
           >
             <Feather name="plus" size={20} color={theme.textMuted} />
-          </TouchableOpacity>
+          </HoverTouchable>
         )}
 
         {/* 输入框 / 按住说话 */}
@@ -378,7 +378,7 @@ export default function ChatInputBar({
 
         {/* 语音/键盘 切换按钮 */}
         {!isGenerating && (
-          <TouchableOpacity
+          <HoverTouchable
             style={styles.modeToggleBtn}
             onPress={toggleVoiceMode}
             activeOpacity={0.6}
@@ -392,39 +392,59 @@ export default function ChatInputBar({
             ) : (
               <Feather name="mic" size={20} color={theme.textMuted} />
             )}
-          </TouchableOpacity>
+          </HoverTouchable>
         )}
 
         {/* 发送 / 停止 按钮 */}
-        <TouchableOpacity
-          style={
-            [
-              styles.sendButton,
-              { backgroundColor: sendColor },
-              isWeb && {
-                transitionProperty: 'background-color, transform',
-                transitionDuration: '0.2s',
-                transitionTimingFunction: 'ease',
-                cursor: isStopMode || canSubmit ? 'pointer' : 'default',
-              },
-              isWeb && isHovered && (canSubmit || isStopMode)
-                ? { transform: [{ scale: 1.05 }] }
-                : null,
-            ] as any
-          }
-          onPress={handleSendOrStop}
-          disabled={isSendDisabled}
-          activeOpacity={0.8}
-          // @ts-ignore
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-        >
-          <Feather
-            name={isStopMode ? 'square' : 'arrow-up'}
-            size={20}
-            color="#FFFFFF"
-          />
-        </TouchableOpacity>
+        {Platform.OS === 'android' ? (
+          // 📱 Android：Material 白色水波纹（彩色按钮上），圆形裁剪
+          <Pressable
+            style={[styles.sendButton, { backgroundColor: sendColor, overflow: 'hidden' }]}
+            android_ripple={{
+              color: 'rgba(255, 255, 255, 0.35)',
+              foreground: true,
+              borderless: false,
+            }}
+            onPress={handleSendOrStop}
+            disabled={isSendDisabled}
+          >
+            <Feather
+              name={isStopMode ? 'square' : 'arrow-up'}
+              size={20}
+              color="#FFFFFF"
+            />
+          </Pressable>
+        ) : (
+          <TouchableOpacity
+            style={
+              [
+                styles.sendButton,
+                { backgroundColor: sendColor },
+                isWeb && {
+                  transitionProperty: 'background-color, transform',
+                  transitionDuration: '0.2s',
+                  transitionTimingFunction: 'ease',
+                  cursor: isStopMode || canSubmit ? 'pointer' : 'default',
+                },
+                isWeb && isHovered && (canSubmit || isStopMode)
+                  ? { transform: [{ scale: 1.05 }] }
+                  : null,
+              ] as any
+            }
+            onPress={handleSendOrStop}
+            disabled={isSendDisabled}
+            activeOpacity={0.8}
+            // @ts-ignore
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+          >
+            <Feather
+              name={isStopMode ? 'square' : 'arrow-up'}
+              size={20}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        )}
       </View>
 
       {!isKeyboardUp ? (

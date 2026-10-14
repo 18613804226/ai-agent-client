@@ -2,11 +2,11 @@ import React from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Platform,
 } from 'react-native';
 import { IconPlus, IconSpeakerOn, IconSpeakerOff } from './Icons';
+import { HoverTouchable } from './HoverTouchable';
 interface MobileHeaderProps {
   theme: any;
   insetsTop: number;
@@ -41,9 +41,14 @@ export function MobileHeader({
       ]}
     >
       {/* 左侧：菜单切换按钮 (☰) */}
-      <TouchableOpacity style={styles.menuToggleBtn} onPress={onToggleDrawer}>
+      <HoverTouchable
+        style={styles.menuToggleBtn}
+        onPress={onToggleDrawer}
+        accessibilityRole="button"
+        accessibilityLabel="打开侧边栏"
+      >
         <Text style={{ fontSize: 20, color: theme.textMain }}>☰</Text>
-      </TouchableOpacity>
+      </HoverTouchable>
 
       {/* 中间：显示当前会话标题（已解开注释并完美适配居中截断） */}
       {/* <Text
@@ -54,15 +59,29 @@ export function MobileHeader({
       </Text> */}
       <View style={styles.menuToggleBtn}>
         {/* 右侧：新建会话按钮 (+) */}
-        <TouchableOpacity onPress={onNewChat}>
+        <HoverTouchable
+          style={{
+            borderRadius: 8,
+            padding: 4,
+          }}
+          hoverBg={
+            theme.isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
+          }
+          rippleColor={
+            theme.isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.15)'
+          }
+          onPress={onNewChat}
+          accessibilityRole="button"
+          accessibilityLabel="新建对话"
+        >
           <IconPlus
             size={20} // 设置图标大小
             color={theme.textMain} // 设置图标颜色跟随主题
             strokeWidth={2.5} // 设置线条粗细，比文字更清晰
           />
-        </TouchableOpacity>
+        </HoverTouchable>
         {/* 💡 右侧：自动朗读开关按钮 */}
-        <TouchableOpacity
+        <HoverTouchable
           style={[
             {
               backgroundColor: autoRead
@@ -73,7 +92,23 @@ export function MobileHeader({
               padding: 4,
             },
           ]}
+          hoverBg={
+            autoRead
+              ? 'rgba(29, 161, 242, 0.15)'
+              : theme.isDark
+                ? 'rgba(255, 255, 255, 0.12)'
+                : 'rgba(0, 0, 0, 0.08)'
+          }
+          rippleColor={
+            autoRead
+              ? theme.historyActiveText
+              : theme.isDark
+                ? 'rgba(255, 255, 255, 0.25)'
+                : 'rgba(0, 0, 0, 0.15)'
+          }
           onPress={onToggleAutoRead}
+          accessibilityRole="button"
+          accessibilityLabel={autoRead ? '关闭自动朗读' : '开启自动朗读'}
         >
           <View>
             {autoRead ? (
@@ -90,7 +125,7 @@ export function MobileHeader({
               />
             )}
           </View>
-        </TouchableOpacity>
+        </HoverTouchable>
       </View>
     </View>
   );

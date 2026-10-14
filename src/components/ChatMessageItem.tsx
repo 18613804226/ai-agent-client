@@ -21,6 +21,7 @@ import {
 import { StreamingMarkdown } from './markdown/StreamingMarkdown'
 import ThoughtCollapsible from './ThoughtCollapsible'
 import MessageActions from './MessageActions'
+import { normalizeInlineEmphasis } from '../utils/normalizeEmphasis'
 import type { Message, ThemeType } from '../types/chat'
 
 // ===================== ChatMessageItem =====================
@@ -60,12 +61,16 @@ const ChatMessageItem = memo(
     const isThinking = !isUser && !hasContent && !hasThought
 
     /**
-     * 最终渲染前剥掉末尾的空白/换行。
-     * 模型结尾常带 \n：流式尾巴是纯文本，末尾换行不产生可见空行；但切到最终
-     * Markdown 后，末尾 \n 会被解析成一个额外空行 → 气泡底部多出一段空白。
-     * 这里剥掉，让吐完那一刻与流式期一致、不留那条空白。
+     * 最终渲染前的两件归一化：
+     * 1. 剥掉末尾的空白/换行。模型结尾常带 \n：流式尾巴是纯文本，末尾换行不产生
+     *    可见空行；但切到最终 Markdown 后，末尾 \n 会被解析成一个额外空行 →
+     *    气泡底部多出一段空白。剥掉它，吐完那一刻与流式期一致、不留空白。
+     * 2. 修掉 `** xx **`（定界符内侧带空格）→ `**xx**`：CommonMark 规定闭定界符前
+     *    不能是空白，否则整段当字面量、加粗不生效，而模型很爱输出带空格版。
      */
-    const renderContent = item.content ? item.content.trimEnd() : ''
+    const renderContent = item.content
+      ? normalizeInlineEmphasis(item.content.trimEnd())
+      : ''
 
     const bubbleStyle = useMemo(
       () => [

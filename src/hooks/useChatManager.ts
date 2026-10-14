@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Platform, Vibration } from 'react-native';
 import { useAnimatedRef } from 'react-native-reanimated';
-import { api } from '../services/api';
+import { api, refreshDeviceSnapshot, refreshMyDevice } from '../services/api';
+import { getToken, onTokenChange, bumpLocalUsage, getDevice } from '../services/authStore';
+import { MyToast } from '../components/GlobalToast';
 import {
   chatDistanceFromBottom,
   scrollChatToBottom,
@@ -60,6 +62,11 @@ export function useChatManager() {
   const streamEpochRef = useRef(0);
   /** handleSend 轮次令牌：旧轮的 finally 不允许覆盖新一轮的状态 */
   const sendRunRef = useRef(0);
+  /**
+   * 本轮是否不计费：用户中止 / 429 超限 / 401 未登录 / 请求异常时为 true，
+   * finally 里据此决定要不要本地乐观 +1 配额（服务端这些场景不计数）。
+   */
+  const sendNotCountedRef = useRef(false);
 
   // ==================== 吐字引擎状态 ====================
   /** 队列里还没吐出来的字数 */
@@ -145,6 +152,8 @@ export function useChatManager() {
    * 复活吐字链，落盘时那条消息已被 getSessionDetail 覆盖 → 永久「思考中...」。
    */
   const abortActiveStream = useCallback(() => {
+    // 中止的请求服务端不计费（清单：abort 不计费）
+    sendNotCountedRef.current = true;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -166,17 +175,33 @@ export function useChatManager() {
     setIsGenerating(false);
   }, []);
 
-  // 1. 初始化
+  // 1. 初始化：等 device-login 落 token 后再拉会话；
+  // 若首轮拿过期 token 被 401，新 token 落盘后自动重拉一次
+  // 上次已加载会话的 deviceId：切角色只换 token、deviceId 不变，
+  // 此时无需重拉（会把当前会话重置回第一个、消息重新加载 = 聊天窗口刷新）
+  const lastLoadedDeviceIdRef = useRef<string | null>(null);
   useEffect(() => {
+    let cancelled = false;
     const initChatData = async () => {
       try {
+        // 还没登录（无 token）就等 token-change，不先打 401
+        const token = await getToken();
+        if (!token) return;
+        // 会话按 deviceId 绑定：deviceId 没变（典型 = 切 user/admin 角色）就跳过重拉，
+        // 保持当前会话与消息不动，避免聊天窗口被重置刷新
+        const device = await getDevice();
+        const deviceId = device?.deviceId ?? null;
+        if (deviceId && deviceId === lastLoadedDeviceIdRef.current) return;
+        lastLoadedDeviceIdRef.current = deviceId;
         const sessions: any = await api.getSessions();
+        if (cancelled) return;
         if (sessions && sessions.length > 0) {
           setConversations(sessions);
           const firstId = sessions[0].id;
           setActiveId(firstId);
 
           const detail: any = await api.getSessionDetail(firstId);
+          if (cancelled) return;
           setConversations((prev) =>
             prev.map((c) =>
               c.id === firstId ? { ...c, messages: detail.messages || [] } : c,
@@ -187,19 +212,71 @@ export function useChatManager() {
         setConversations([]);
         setActiveId('');
       } catch (error) {
-        console.error('初始化后端会话失败:', error);
+        // 401 是旧 token 过期的预期失败（会自动续期+onTokenChange 重拉），不刷错
+        const status = (error as any)?.response?.status ?? (error as any)?.status;
+        if (!cancelled && status !== 401) console.error('初始化后端会话失败:', error);
       }
     };
     initChatData();
+    const off = onTokenChange((token) => {
+      if (token) initChatData();
+      else if (!cancelled) {
+        // token 清空（登出/401 自愈）：重置 deviceId 记录，下次登录无论是否同设备都重拉
+        lastLoadedDeviceIdRef.current = null;
+        setConversations([]);
+        setActiveId('');
+      }
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
   }, []);
 
   const currentChat =
     conversations.find((c) => c.id === activeId) || conversations[0];
 
-  // 2. 创建新会话
+  /**
+   * 判断会话是否为「空白新会话」：
+   * - messages 为空数组 / 尚未加载(undefined) 且标题仍是默认「新对话」
+   *
+   * 为什么把 messages===undefined 也算空白：
+   * 刚创建的会话本地没有 messages 字段（handleSelectChat 才会回填），
+   * 如果这时把它判成「非空白」，点 + 会再建一个，用户会看到两个空白。
+   * 真正从后端加载过的会话只要发过言就有 messages（发送即本地落盘），
+   * 所以 undefined + 默认标题 ≈ 刚建还没用过的会话，误判概率极低。
+   */
+  const isBlankSession = (conv?: Conversation) =>
+    !!conv &&
+    conv.title === '新对话' &&
+    (!conv.messages || conv.messages.length === 0);
+
+  // 2. 创建新会话（幂等：已停留在空白会话上时复用，不再建）
   const handleNewChat = async () => {
+    // ① 当前已是空白会话 → 原地复用，不调后端，避免攒出一堆「新对话」
+    const activeConv = conversations.find((c) => c.id === activeId);
+    if (activeConv && isBlankSession(activeConv)) {
+      // 草稿是全局 inputText，切会话不丢，这里不用管
+      return activeConv.id;
+    }
+
     // 新会话不继承旧会话在途的流（abortActiveStream 内含 setIsGenerating(false)）
     abortActiveStream();
+
+    // ② 顺手清掉列表里其他的空白会话（只保留当前这一个），历史记录立刻干净。
+    //    后端删除异步进行、失败静默（下次点 + 还会再清一次），不阻塞不报错。
+    //    安全边界：只有「默认标题 + 本地无消息」才算空白——发过言的会话标题
+    //    会在发送瞬间同步改掉（本地 + 后端），所以不会误删有内容的会话。
+    const blankIds = conversations
+      .filter((c) => c.id !== activeId && isBlankSession(c))
+      .map((c) => c.id);
+    if (blankIds.length > 0) {
+      setConversations((prev) => prev.filter((c) => !blankIds.includes(c.id)));
+      // 异步删后端，失败静默（下次打开还会再清一次）
+      blankIds.forEach((id) => {
+        api.deleteSession(id).catch(() => {});
+      });
+    }
 
     const tempId = 'temp_' + Date.now();
     const newConv = { id: tempId, title: '新对话' };
@@ -508,19 +585,31 @@ export function useChatManager() {
 
     try {
       const parsed = JSON.parse(jsonText);
-      const delta = parsed.choices?.[0]?.delta || {};
+      // 新版后端信封：{ data: { type, content } }，兼容旧版直铺形态
+      const payload = parsed?.data ?? parsed;
+      const delta = payload.choices?.[0]?.delta || {};
 
       let chunkThought = '';
       let chunkContent = '';
 
-      if (parsed.type === 'thought') {
-        chunkThought = parsed.thought || parsed.content || '';
-      } else if (parsed.type === 'content') {
-        chunkContent = parsed.content || '';
+      if (payload.type === 'thought') {
+        chunkThought = payload.thought || payload.content || '';
+      } else if (payload.type === 'content') {
+        chunkContent = payload.content || '';
+      } else if (payload.type === 'error') {
+        // 服务端错误帧：直接展示，避免气泡一直「思考中...」
+        updateAiMessageFields(currentStreamingMsgIdRef.current, {
+          content: payload.content || payload.message || '服务器开小差了，请稍后再试。',
+        });
+        setStreamingRenderMsg(null);
+        streamFinishedRef.current = true;
+        return;
+      } else if (payload.type === 'sources') {
+        return; // 引用来源帧：暂不渲染
       } else {
         chunkThought =
-          delta.reasoning_content || parsed.reasoning_content || '';
-        chunkContent = delta.content || parsed.content || '';
+          delta.reasoning_content || payload.reasoning_content || '';
+        chunkContent = delta.content || payload.content || '';
       }
 
       if (chunkThought) enqueue('thought', chunkThought);
@@ -561,9 +650,13 @@ export function useChatManager() {
     // ========== WEB：fetch + ReadableStream ==========
     if (Platform.OS === 'web') {
       try {
+        const streamToken = await getToken();
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(streamToken ? { Authorization: 'Bearer ' + streamToken } : {}),
+          },
           body: JSON.stringify({
             query: queryText,
             images: imageUrls,
@@ -572,6 +665,32 @@ export function useChatManager() {
           signal: abortControllerRef.current!.signal,
         });
 
+        if (response.status === 429) {
+          let quotaMsg = '今日体验次数已用完，明天再来吧';
+          try {
+            const errJson = await response.json();
+            if (errJson?.message) quotaMsg = errJson.message;
+          } catch (e) {}
+          MyToast.show(quotaMsg);
+          updateAiMessageFields(thinkingMsgId, { content: quotaMsg, systemNote: true });
+          setStreamingRenderMsg(null);
+          streamFinishedRef.current = true;
+          sendNotCountedRef.current = true; // 超限未处理，不计费
+          refreshDeviceSnapshot();
+          return;
+        }
+        if (response.status === 401) {
+          sendNotCountedRef.current = true; // 未登录不计费
+          const { notifyUnauthorized } = await import('../services/authStore');
+          notifyUnauthorized();
+          updateAiMessageFields(thinkingMsgId, { content: '登录已过期，正在重新登录，请稍后重试。', systemNote: true });
+          setStreamingRenderMsg(null);
+          streamFinishedRef.current = true;
+          return;
+        }
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status);
+        }
         if (!response.body) {
           throw new Error('ReadableStream not supported');
         }
@@ -600,6 +719,7 @@ export function useChatManager() {
           }
         }
       } catch (err: any) {
+        sendNotCountedRef.current = true; // 网络/HTTP 异常，服务端大概率不计费
         if (err.name !== 'AbortError') {
           console.error('web stream error', err);
           updateAiMessageFields(thinkingMsgId, {
@@ -616,10 +736,14 @@ export function useChatManager() {
       // 之前分支里 xhr.send() 之后 async 函数就结束了 → handleSend 的
       // finally 立刻执行 setIsGenerating(false) → 停止按钮在流式期间
       // 就切回「发送」状态、点击无效。
-      await new Promise<void>((resolve) => {
+      await new Promise<void>(async (resolve) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', url);
         xhr.setRequestHeader('Content-Type', 'application/json');
+        try {
+          const t = await getToken();
+          if (t) xhr.setRequestHeader('Authorization', 'Bearer ' + t);
+        } catch (e) {}
         let lastReadPos = 0;
         /**
          * SSE 半行缓冲：XHR 的 progress 按网络包切分，不会对齐 \n。
@@ -647,6 +771,38 @@ export function useChatManager() {
         };
 
         xhr.onload = () => {
+          if (xhr.status === 429) {
+            let quotaMsg = '今日体验次数已用完，明天再来吧';
+            try {
+              const errJson = JSON.parse(xhr.responseText);
+              if (errJson?.message) quotaMsg = errJson.message;
+            } catch (e) {}
+            MyToast.show(quotaMsg);
+            updateAiMessageFields(thinkingMsgId, { content: quotaMsg, systemNote: true });
+            setStreamingRenderMsg(null);
+            streamFinishedRef.current = true;
+            sendNotCountedRef.current = true; // 超限未处理，不计费
+            refreshDeviceSnapshot();
+            settle();
+            return;
+          }
+          if (xhr.status === 401) {
+            sendNotCountedRef.current = true; // 未登录不计费
+            import('../services/authStore').then((m) => m.notifyUnauthorized());
+            updateAiMessageFields(thinkingMsgId, { content: '登录已过期，正在重新登录，请稍后重试。', systemNote: true });
+            setStreamingRenderMsg(null);
+            streamFinishedRef.current = true;
+            settle();
+            return;
+          }
+          if (xhr.status < 200 || xhr.status >= 300) {
+            sendNotCountedRef.current = true; // 非 2xx，服务端不计费
+            updateAiMessageFields(thinkingMsgId, { content: '服务器开小差了，请检查网络或后端连接。' });
+            setStreamingRenderMsg(null);
+            streamFinishedRef.current = true;
+            settle();
+            return;
+          }
           drainSSE(true);
           streamFinishedRef.current = true;
           if (!isConsumingRef.current) {
@@ -656,6 +812,7 @@ export function useChatManager() {
         };
 
         xhr.onerror = () => {
+          sendNotCountedRef.current = true; // 网络错误，服务端不计费
           updateAiMessageFields(thinkingMsgId, {
             content: '服务器开小差了，请检查网络或后端连接。',
           });
@@ -716,6 +873,9 @@ export function useChatManager() {
     // 否则两条流共用一个队列会互相串字，旧流的 onload 还会提前结束新一轮
     abortActiveStream();
     const myRun = ++sendRunRef.current;
+    // 上面的 abortActiveStream 会把标志位置成「不计费」，这里立刻复位；
+    // 本轮真被中止/超限/401 时对应的处理路径会再标回去
+    sendNotCountedRef.current = false;
 
     let currentActiveId = activeId;
     let isBrandNewSession = false;
@@ -813,6 +973,8 @@ export function useChatManager() {
         knowledgeFileIds,
       );
     } catch (error: any) {
+      // 请求异常这一轮大概率没被服务端计数：标为不计费（真值由下次登录校准）
+      sendNotCountedRef.current = true;
       if (error.name !== 'AbortError') {
         console.error('发送消息失败:', error);
         updateAiMessageFields(thinkingMsgId, {
@@ -826,6 +988,12 @@ export function useChatManager() {
         setIsGenerating(false);
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
+        }
+        // 正常完成 = 服务端 usedToday+1：
+        // 先本地乐观自增让文字立刻动，再拉 /auth/me 真值校准（接口未上线时静默）
+        if (!sendNotCountedRef.current) {
+          bumpLocalUsage();
+          refreshMyDevice();
         }
         Vibration.vibrate(100);
       }

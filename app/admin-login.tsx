@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState } from 'react'
 import {
   KeyboardAvoidingView,
   Platform,
@@ -7,48 +7,67 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
-} from 'react-native';
-import { Redirect, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAdminPreview, useTheme } from '../src/context/appContexts';
+  View
+} from 'react-native'
+import { Redirect, useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Feather } from '@expo/vector-icons'
+import { useAdminPreview, useAuth, useTheme } from '../src/context/appContexts'
+import { MyToast } from '../src/components/GlobalToast'
 
 export default function AdminLoginScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { isAdminPreview, setAdminPreview } = useAdminPreview();
-  const { theme } = useTheme();
-  const [account, setAccount] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const router = useRouter()
+  const insets = useSafeAreaInsets()
+  const { isAdminPreview, setAdminPreview } = useAdminPreview()
+  const { loginAsAdmin } = useAuth()
+  const { theme } = useTheme()
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   // 登录跳转进行中：保持本屏内容挂载到转场结束，避免 <Redirect/> 提前清空内容
-  const [isRedirecting, setIsRedirecting] = useState(false);
-  const passwordInputRef = useRef<TextInput>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const passwordInputRef = useRef<TextInput>(null)
 
-  if (isAdminPreview && !isRedirecting) return <Redirect href="/admin" />;
+  if (isAdminPreview && !isRedirecting) return <Redirect href="/admin" />
 
   /** 侧滑返回上一屏（聊天页）；无上级栈时兜底 replace 回首页 */
   const goBackToChat = () => {
     if (router.canGoBack()) {
-      router.back();
+      router.back()
     } else {
-      router.replace('/');
+      router.replace('/')
     }
-  };
+  }
 
-  const handleLogin = () => {
-    if (!account.trim() || !password.trim()) {
-      setError('请输入管理员账号和密码');
-      return;
+  const handleLogin = async () => {
+    if (!password.trim()) {
+      setError('请输入管理员密码')
+      return
     }
-    setError('');
-    // 顺序很重要：先标记"跳转中"锁住本屏内容，避免 <Redirect/> 守卫
-    // 在转场动画前把登录页内容清空
-    setIsRedirecting(true);
-    setAdminPreview(true);
-    // 栈顶替换：登录成功后直接进入 admin，返回时不会再退回登录页
-    router.replace('/admin');
-  };
+    if (loading) return
+    setError('')
+    setLoading(true)
+    try {
+      // 后端 admin-login：deviceId 会把当前设备升级为 admin
+      // loginAsAdmin 内部已同步 setRole('admin') + 缓存 admin 会话（下次免密）
+      await loginAsAdmin(password.trim())
+      // 顺序很重要：先标记"跳转中"锁住本屏内容，避免 <Redirect/> 守卫
+      // 在转场动画前把登录页内容清空
+      setIsRedirecting(true)
+      // 登录成功 → 直接进管理后台详情页（token/角色已在 loginAsAdmin 里落地并缓存）
+      router.replace('/admin')
+    } catch (e: any) {
+      const status = e?.response?.status
+      const msg =
+        status === 401
+          ? '密码错误，请重试'
+          : (e?.response?.data?.message ?? '登录失败，请检查网络或后端连接')
+      setError(msg)
+      MyToast.show(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <KeyboardAvoidingView
@@ -60,20 +79,27 @@ export default function AdminLoginScreen() {
         onPress={goBackToChat}
         style={[
           styles.backButton,
-          { top: insets.top + 8, left: Math.max(insets.left, 16) },
+          { top: insets.top + 8, left: Math.max(insets.left, 16) }
         ]}
       >
-        <Text style={[styles.backText, { color: theme.textMuted }]}>
-          ‹ 返回聊天
-        </Text>
+        <View style={styles.backButtonRow}>
+          <Feather
+            name="arrow-left"
+            size={16}
+            color={theme.textMuted}
+          />
+          <Text style={[styles.backText, { color: theme.textMuted }]}>
+            返回聊天
+          </Text>
+        </View>
       </Pressable>
       <ScrollView
         contentContainerStyle={[
           styles.content,
           {
             paddingTop: insets.top + 56,
-            paddingBottom: insets.bottom + 24,
-          },
+            paddingBottom: insets.bottom + 24
+          }
         ]}
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         keyboardShouldPersistTaps="handled"
@@ -81,13 +107,13 @@ export default function AdminLoginScreen() {
         <View
           style={[
             styles.card,
-            { backgroundColor: theme.bgSidebar, borderColor: theme.border },
+            { backgroundColor: theme.bgSidebar, borderColor: theme.border }
           ]}
         >
           <View
             style={[
               styles.brandMark,
-              { backgroundColor: theme.historyActiveBg },
+              { backgroundColor: theme.historyActiveBg }
             ]}
           >
             <Text
@@ -103,43 +129,10 @@ export default function AdminLoginScreen() {
             管理员登录
           </Text>
           <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-            登录后查看设备使用量与每日额度
+            输入管理员密码登录（默认 123456）
           </Text>
 
-          <Text style={[styles.label, { color: theme.textMain }]}>
-            管理员账号
-          </Text>
-          <TextInput
-            accessibilityLabel="管理员账号"
-            autoCapitalize="none"
-            autoComplete="username"
-            onChangeText={setAccount}
-            onSubmitEditing={(event) => {
-              event.preventDefault();
-              passwordInputRef.current?.focus();
-            }}
-            placeholder="输入管理员账号"
-            placeholderTextColor={theme.textMuted}
-            returnKeyType="next"
-            style={[
-              styles.input,
-              {
-                backgroundColor: theme.bgApp,
-                borderColor: theme.border,
-                color: theme.textMain,
-              },
-            ]}
-            value={account}
-          />
-          <Text
-            style={[
-              styles.label,
-              styles.passwordLabel,
-              { color: theme.textMain },
-            ]}
-          >
-            密码
-          </Text>
+          <Text style={[styles.label, { color: theme.textMain }]}>密码</Text>
           <TextInput
             ref={passwordInputRef}
             accessibilityLabel="管理员密码"
@@ -155,8 +148,8 @@ export default function AdminLoginScreen() {
               {
                 backgroundColor: theme.bgApp,
                 borderColor: theme.border,
-                color: theme.textMain,
-              },
+                color: theme.textMain
+              }
             ]}
             value={password}
           />
@@ -170,39 +163,46 @@ export default function AdminLoginScreen() {
             onPress={handleLogin}
             style={[
               styles.loginButton,
-              { backgroundColor: theme.sendBtnActive },
+              { backgroundColor: theme.sendBtnActive }
             ]}
           >
-            <Text style={styles.loginButtonText}>登录管理后台</Text>
+            <Text style={styles.loginButtonText}>
+              {loading ? '登录中…' : '登录管理后台'}
+            </Text>
           </Pressable>
           <View style={[styles.previewNote, { backgroundColor: theme.bgApp }]}>
             <Text style={[styles.previewNoteText, { color: theme.textMuted }]}>
-              前端演示模式：任意非空账号和密码均可进入。此登录尚未连接后端，不提供真实身份验证或安全保护。
+              管理员登录后当前设备升级为 admin，配额不受限，可查看全站统计。
             </Text>
           </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   page: {
-    flex: 1,
+    flex: 1
   },
   content: {
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 24
   },
   backButton: {
     position: 'absolute',
     zIndex: 1,
-    padding: 8,
+    padding: 8
+  },
+  backButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
   },
   backText: {
-    fontSize: 14,
+    fontSize: 14
   },
   card: {
     width: '100%',
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     padding: 32,
     borderWidth: 1,
     borderRadius: 20,
-    boxShadow: '0px 16px 48px rgba(0, 0, 0, 0.12)',
+    boxShadow: '0px 16px 48px rgba(0, 0, 0, 0.12)'
   },
   brandMark: {
     width: 42,
@@ -218,34 +218,34 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 22,
+    marginBottom: 22
   },
   brandIcon: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: '700'
   },
   eyebrow: {
     fontSize: 10,
     letterSpacing: 2,
     fontWeight: '700',
-    marginBottom: 7,
+    marginBottom: 7
   },
   title: {
     fontSize: 26,
-    fontWeight: '700',
+    fontWeight: '700'
   },
   subtitle: {
     fontSize: 14,
     marginTop: 8,
-    marginBottom: 26,
+    marginBottom: 26
   },
   label: {
     fontSize: 13,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 8
   },
   passwordLabel: {
-    marginTop: 18,
+    marginTop: 18
   },
   input: {
     height: 46,
@@ -253,32 +253,32 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 13,
     fontSize: 14,
-    outlineStyle: 'none',
+    outlineStyle: 'none'
   } as any,
   error: {
     color: '#ef4444',
     fontSize: 12,
-    marginTop: 10,
+    marginTop: 10
   },
   loginButton: {
     height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 10,
-    marginTop: 22,
+    marginTop: 22
   },
   loginButtonText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '700'
   },
   previewNote: {
     padding: 11,
     borderRadius: 9,
-    marginTop: 18,
+    marginTop: 18
   },
   previewNoteText: {
     fontSize: 11,
-    lineHeight: 16,
-  },
-});
+    lineHeight: 16
+  }
+})

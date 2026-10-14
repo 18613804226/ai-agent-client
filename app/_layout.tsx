@@ -18,17 +18,21 @@ import { useChatManager } from '../src/hooks/useChatManager';
 import {
   AdminPreviewContext,
   ChatContext,
+  RoleContext,
   ThemeContext,
+  type RoleMode,
   type ThemeMode,
 } from '../src/context/appContexts';
 import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
+import { AuthProvider } from '../src/context/AuthProvider';
+import { useAuth } from '../src/context/appContexts';
 
 const THEME_MODE_KEY = 'theme-mode';
 
 export default function RootLayout() {
-  const chatManager = useChatManager(); // 👈 整个应用的聊天状态在这里统一托管！
   const systemColorScheme = useColorScheme();
   const [isAdminPreview, setAdminPreview] = useState(false);
+  const [role, setRole] = useState<RoleMode>('user');
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const userChangedTheme = useRef(false);
 
@@ -95,8 +99,10 @@ export default function RootLayout() {
       <AdminPreviewContext.Provider
         value={{ isAdminPreview, setAdminPreview }}
       >
-        <ChatContext.Provider value={chatManager}>
-          <KnowledgeProvider>
+        <RoleContext.Provider value={{ role, setRole }}>
+        <AuthProvider>
+        <AuthGate>
+          <ChatHost>
             <SafeAreaProvider>
               <GestureHandlerRootView
                 style={{ flex: 1, backgroundColor: theme.bgApp }}
@@ -120,9 +126,37 @@ export default function RootLayout() {
                 </Stack>
               </GestureHandlerRootView>
             </SafeAreaProvider>
-          </KnowledgeProvider>
-        </ChatContext.Provider>
+          </ChatHost>
+        </AuthGate>
+        </AuthProvider>
+        </RoleContext.Provider>
       </AdminPreviewContext.Provider>
     </ThemeContext.Provider>
+  );
+}
+
+/**
+ * 启动门控：device-login 完成前显示空白底（避免无 token 就打会话接口）。
+ * AuthProvider 必须在外层，useChatManager 的初始化请求会带上 token。
+ */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { ready, authed, loginAsDevice } = useAuth();
+  React.useEffect(() => {
+    if (ready && !authed) loginAsDevice();
+  }, [ready, authed, loginAsDevice]);
+  if (!ready) return null;
+  return <>{children}</>;
+}
+
+/**
+ * 聊天状态宿主：挂在 AuthGate 之内，保证 useChatManager 的
+ * 初始化会话请求发生在 device-login（token 落盘）之后。
+ */
+function ChatHost({ children }: { children: React.ReactNode }) {
+  const chatManager = useChatManager(); // 👈 整个应用的聊天状态在这里统一托管！
+  return (
+    <ChatContext.Provider value={chatManager}>
+      <KnowledgeProvider>{children}</KnowledgeProvider>
+    </ChatContext.Provider>
   );
 }

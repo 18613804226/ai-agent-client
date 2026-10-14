@@ -3,9 +3,9 @@ import {
   ActivityIndicator,
   Platform,
   StyleSheet,
-  TouchableOpacity,
   View,
 } from 'react-native';
+import { HoverTouchable } from './HoverTouchable';
 import * as Clipboard from 'expo-clipboard';
 import Svg, { Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
@@ -83,8 +83,6 @@ const MessageActions = memo(
     onPlayingChange,
     ready = true,
   }: MessageActionsProps) {
-    const [hoverCopy, setHoverCopy] = useState(false);
-    const [hoverSpeaker, setHoverSpeaker] = useState(false);
     // 三个视觉状态：
     //   喇叭（未读） → 点击后「转圈」（正在请求/合成，还没出声）→ 「停止」（第一个音频真的开播）。
     const [preparing, setPreparing] = useState(false);
@@ -153,19 +151,12 @@ const MessageActions = memo(
           { pointerEvents: ready ? 'auto' : 'none' },
         ]}
       >
-        {/* 复制：独立 hover，只影响自己；颜色固定 textMuted */}
-        <View
-          style={styles.item}
-          {...({
-            onMouseEnter: () => setHoverCopy(true),
-            onMouseLeave: () => setHoverCopy(false),
-          } as any)}
-        >
-          <TouchableOpacity
-            style={[
-              styles.btn,
-              hoverCopy && ready ? { backgroundColor: hoverBg } : null,
-            ]}
+        {/* 复制：hover 底色由 HoverTouchable 统一处理；颜色固定 textMuted */}
+        <View style={styles.item}>
+          <HoverTouchable
+            style={styles.btn}
+            hoverBg={hoverBg}
+            rippleColor={theme.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'}
             onPress={handleCopy}
             disabled={!ready}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -173,25 +164,24 @@ const MessageActions = memo(
             accessibilityLabel="复制内容"
           >
             <CopyIcon color={copyColor} />
-          </TouchableOpacity>
+          </HoverTouchable>
         </View>
 
-        {/* 喇叭：独立 hover；播放/加载时用高亮色 + 高亮底，hover 不覆盖播放态 */}
-        <View
-          style={styles.item}
-          {...({
-            onMouseEnter: () => setHoverSpeaker(true),
-            onMouseLeave: () => setHoverSpeaker(false),
-          } as any)}
-        >
-          <TouchableOpacity
+        {/* 喇叭：播放/加载时用高亮色 + 高亮底；hover 只影响非播放态 */}
+        <View style={styles.item}>
+          <HoverTouchable
             style={[
               styles.btn,
               active ? { backgroundColor: activeBg } : null,
-              hoverSpeaker && ready && !active
-                ? { backgroundColor: hoverBg }
-                : null,
             ]}
+            hoverBg={active ? activeBg : hoverBg}
+            rippleColor={
+              active
+                ? theme.historyActiveText
+                : theme.isDark
+                  ? 'rgba(255,255,255,0.25)'
+                  : 'rgba(0,0,0,0.15)'
+            }
             onPress={handleToggleSpeech}
             disabled={!ready}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -207,7 +197,7 @@ const MessageActions = memo(
             ) : (
               <IconSpeakerOff size={16} color={activeColor} />
             )}
-          </TouchableOpacity>
+          </HoverTouchable>
         </View>
       </View>
     );

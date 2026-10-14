@@ -1,5 +1,5 @@
 {
-  "name": "ai-agent-client",
+  "name": "dietai-ai-agent-client",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
@@ -9,11 +9,13 @@
     "axios": "^1.20.0",
     "dayjs": "^1.11.23",
     "expo": "~57.0.28",
+    "expo-application": "~57.0.3",
     "expo-audio": "~57.0.5",
     "expo-av": "^16.0.8",
     "expo-blur": "~57.0.3",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.19",
+    "expo-device": "~57.0.2",
     "expo-document-picker": "~57.0.3",
     "expo-image-picker": "~57.0.20",
     "expo-linking": "~57.0.12",

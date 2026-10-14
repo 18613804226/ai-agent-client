@@ -6,4 +6,9 @@ export interface DeviceUsageRecord {
   todayRequests: number;
   dailyLimit: number;
   lastActiveAt: string;
+  role?: string;
+  platform?: string;
+  model?: string;
+  osVersion?: string;
+  createdAt?: string;
 }

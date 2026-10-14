@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
+import { getToken, notifyUnauthorized, setDevice } from './authStore';
+import type { DeviceMeta } from '../utils/deviceInfo';
 
 // 从环境变量读取后端地址，若未配置则使用默认值
-const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+export const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 export const httpClient = axios.create({
   baseURL,
@@ -12,9 +14,18 @@ export const httpClient = axios.create({
   },
 });
 
-// 请求拦截器（可在此处统一注入 Authorization Token 等）
+// 请求拦截器：统一注入 Authorization Token
 httpClient.interceptors.request.use(
-  (config) => {
+  async (config) => {
+    try {
+      const token = await getToken();
+      if (token) {
+        config.headers = config.headers ?? ({} as any);
+        (config.headers as any).Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // 拿不到 token 就直接发，后端会回 401
+    }
     return config;
   },
   (error) => {
@@ -28,7 +39,12 @@ httpClient.interceptors.response.use(
     return response.data;
   },
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    const status = error.response?.status;
+    const data = error.response?.data;
+    // 401 是预期的登录过期信号（会自动续期+重试），不刷 console.error 吓人
+    if (status !== 401) console.error('API Error:', data || error.message);
+    // 401 = 未登录/过期：通知全局订阅者清 token 跳登录
+    if (status === 401) notifyUnauthorized();
     return Promise.reject(error);
   },
 );
@@ -50,8 +66,107 @@ export interface KnowledgeFileResult {
   path?: string;
 }
 
+export interface DeviceInfo {
+  id: string;
+  deviceId: string;
+  role: 'user' | 'admin';
+  dailyQuota: number;
+  usedToday: number;
+  totalCount: number;
+  totalTokens: string;
+  usedTokensToday?: string;
+  createdAt: string;
+  lastSeenAt: string;
+  platform?: string;
+  model?: string;
+  osVersion?: string;
+}
+
+export interface AdminStats {
+  deviceCount: number;
+  adminCount: number;
+  todayActiveDevices: number;
+  totalRequests: number;
+  totalTokens: string;
+  topDevicesToday: {
+    deviceId: string;
+    role: string;
+    usedToday: number;
+    totalCount: number;
+    totalTokens: string;
+  }[];
+}
+
 // 定义具体的 API 调用方法
 export const api = {
+  // ===== Auth（公开）=====
+  deviceLogin: async (deviceId: string, info?: DeviceMeta) => {
+    // 只发请求不落地：token 由 AuthProvider 统一应用（带世代号，防迟到响应顶号）
+    const data: any = await httpClient.post('/auth/device-login', { deviceId, ...(info ?? {}) });
+    return data as { token: string; device: DeviceInfo };
+  },
+  adminLogin: async (password: string, deviceId?: string, info?: DeviceMeta) => {
+    // 只发请求不落地：token 由 AuthProvider 统一应用（带世代号，防迟到响应顶号）
+    const data: any = await httpClient.post('/auth/admin-login', {
+      ...(deviceId ? { deviceId } : {}),
+      password,
+      ...(info ?? {}),
+    });
+    return data as { token: string; device: DeviceInfo };
+  },
+  /**
+   * 查询当前设备配额真值（只读、无副作用，不签发 token）。
+   * 依赖后端新增：GET /auth/me（带任意有效 token）→ { device: {...} }
+   * 接口未上线时静默失败（404），侧栏继续显示本地自增值。
+   */
+  getMyDevice: async (): Promise<DeviceInfo | null> => {
+    try {
+      const data: any = await httpClient.get('/auth/me');
+      return (data?.device ?? data) as DeviceInfo;
+    } catch {
+      return null;
+    }
+  },
+  /**
+   * 探测缓存的 admin token 是否仍有效。
+   * 用裸 axios 直连：不走 httpClient 拦截器（不注入当前 active token、不触发全局 401 自愈），
+   * 避免拿「别人的 token」去探测时把正常会话打下线。
+   */
+  verifyAdminToken: async (adminToken: string): Promise<boolean> => {
+    try {
+      await axios.get(`${baseURL}/admin/stats`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        timeout: 8000,
+      });
+      return true;
+    } catch (e: any) {
+      // 只有 401/403 才算 token 死了；网络错误 / 5xx 不算（授权层已通过或根本没到），
+      // 否则网络抖一下就被迫重新输密码
+      const status = e?.response?.status;
+      return status !== 401 && status !== 403;
+    }
+  },
+  // ===== Admin（需 admin token）=====
+  getAdminDevices: async (page = 1, pageSize = 20) => {
+    return httpClient.get('/admin/devices', { params: { page, pageSize } }) as Promise<{
+      total: number;
+      page: number;
+      pageSize: number;
+      list: DeviceInfo[];
+    }>;
+  },
+  getAdminStats: async () => {
+    return httpClient.get('/admin/stats') as Promise<AdminStats>;
+  },
+  /**
+   * 修改单个设备每日限额（需 admin token）。
+   * PUT /admin/devices/:id/quota  body: { dailyQuota }
+   */
+  updateDeviceQuota: async (id: string, dailyQuota: number) => {
+    return httpClient.put(`/admin/devices/${encodeURIComponent(id)}/quota`, {
+      dailyQuota,
+    });
+  },
   // 1. 创建聊天会话
   createSession: async (title = '新对话') => {
     return httpClient.post('/chat/session', { title });
@@ -136,6 +251,7 @@ export const api = {
        mimeType?: string;
      },
    ): Promise<KnowledgeFileResult | null> => {
+     // 知识库接口：/chat/knowledge/*（任意登录用户可用，全局共享）
      const url = `${baseURL}/chat/knowledge/upload`;
 
      // ================= Web =================
@@ -145,8 +261,9 @@ export const api = {
            const blob = await (await fetch(file.uri)).blob();
            const formData = new FormData();
            formData.append('file', blob, file.name);
-           const resp = await fetch(url, { method: 'POST', body: formData });
-           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+           const token = await getToken();
+            const resp = await fetch(url, { method: 'POST', headers: token ? { Authorization: 'Bearer ' + token } : {}, body: formData });
+           if (!resp.ok) { if (resp.status === 401) notifyUnauthorized(); throw new Error('HTTP ' + resp.status); }
            return await resp.json();
          } catch (err) {
            console.error('上传知识库文件失败:', err);
@@ -160,6 +277,9 @@ export const api = {
        const xhr = new XMLHttpRequest();
        xhr.open('POST', url);
        xhr.timeout = 60000;
+        getToken().then((xhrToken) => {
+          if (xhrToken) { try { xhr.setRequestHeader('Authorization', 'Bearer ' + xhrToken); } catch (e) {} }
+        }).catch(() => {});
 
        xhr.onload = () => {
          if (xhr.status >= 200 && xhr.status < 300) {
@@ -204,6 +324,7 @@ export const api = {
      try {
        const data: any = await httpClient.get(
          `/chat/knowledge/files/${id}/progress`,
+          { params: { id } } as any,
        );
        return data;
      } catch (err) {
@@ -229,10 +350,10 @@ export const api = {
       if (typeof enabled !== 'boolean') {
         throw new TypeError('Knowledge file enabled state must be a boolean');
       }
-      await httpClient.put(
-        `/chat/knowledge/files/${encodeURIComponent(fileId)}/enabled`,
-        { enabled },
-      );
+    await httpClient.put(
+      `/chat/knowledge/files/${encodeURIComponent(fileId)}/enabled`,
+      { enabled },
+    );
     },
 
     /**
@@ -240,5 +361,38 @@ export const api = {
      */
     getKnowledgeFiles: async (): Promise<any[]> => {
       return httpClient.get('/chat/knowledge/files');
-   },
+    },
 };
+
+/**
+ * 拉取配额真值并广播到 UI（GET /auth/me，无副作用）。
+ * 发完一条消息后调用：本地乐观自增先让数字动起来，这里随后用真值校准。
+ * 接口未上线时静默返回 false。
+ */
+export async function refreshMyDevice(): Promise<boolean> {
+  try {
+    const { setDevice } = await import('./authStore');
+    const d = await api.getMyDevice();
+    if (!d) return false;
+    await setDevice(d);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function refreshDeviceSnapshot(): Promise<void> {
+  try {
+    const { getDevice, setDevice, setToken, saveUserSession } = await import('./authStore');
+    const device = await getDevice();
+    if (!device || !device.deviceId) return;
+    const data = await httpClient.post('/auth/device-login', { deviceId: device.deviceId }) as any;
+    // device-login 会签发新 token：必须立即落地并同步 user 缓存，
+    // 否则旧 token 可能在服务端被顶作废，后续请求 401
+    if (data && data.token) {
+      await setToken(data.token);
+      await saveUserSession(data.token, data.device ?? null);
+    }
+    if (data && data.device) await setDevice(data.device);
+  } catch (e) {}
+}

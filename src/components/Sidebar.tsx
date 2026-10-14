@@ -17,7 +17,10 @@ import Svg, { Path } from 'react-native-svg'
 import { useRouter } from 'expo-router'
 import type { UploadedFile } from '../hooks/useKnowledgeFiles'
 import { isPCWebWidth } from '../constants/theme'
-import type { ThemeMode } from '../context/appContexts'
+import type { ThemeMode, RoleMode } from '../context/appContexts'
+import { useAuth, useRole } from '../context/appContexts'
+import { MyToast } from './GlobalToast'
+import HoverTouchable from './HoverTouchable'
 
 interface SidebarProps {
   conversations: any[]
@@ -103,46 +106,6 @@ function FileEnabledSwitch({
     </Pressable>
   )
 }
-
-const HoverTouchable = React.forwardRef<any, HoverItemProps>(
-  function HoverTouchable(
-    {
-      style,
-      hoverBg = 'rgba(0, 0, 0, 0.06)', // 默认采用新建对话同款的轻量悬停加深/提亮效果
-      onPress,
-      activeOpacity = 0.7,
-      children,
-      ...props
-    },
-    ref
-  ) {
-    const [isHovered, setIsHovered] = useState(false)
-
-    return (
-      <TouchableOpacity
-        ref={ref}
-        style={[
-          style,
-          Platform.OS === 'web' && {
-            transitionProperty: 'background-color',
-            transitionDuration: '0.15s',
-            transitionTimingFunction: 'ease',
-            cursor: 'pointer'
-          },
-          Platform.OS === 'web' && isHovered && { backgroundColor: hoverBg }
-        ]}
-        onPress={onPress}
-        activeOpacity={activeOpacity}
-        // @ts-ignore
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        {...props}
-      >
-        {children}
-      </TouchableOpacity>
-    )
-  }
-)
 
 // 📱 长按菜单卡片尺寸（用于夹取在容器范围内）
 const CTX_CARD_W = 168
@@ -461,6 +424,9 @@ export default function Sidebar({
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const router = useRouter()
+  // 💡 全局角色：紧凑分段器切换，admin 才显示「管理后台」入口。
+  const { role } = useRole()
+  const { device, logoutToDevice, activateAdmin } = useAuth()
   // 📱 记录每个文件项的 ref，用于长按时测量实际屏幕坐标
   const fileItemRefs = useRef<Record<string, any>>({})
   // 📱 记录每个对话项的 ref
@@ -899,21 +865,105 @@ export default function Sidebar({
             { borderTopColor: theme.border || 'rgba(255,255,255,0.1)' }
           ]}
         >
-          <HoverTouchable
-            accessibilityRole="button"
-            accessibilityLabel="管理员登录"
-            style={styles.adminEntry}
-            hoverBg={theme.historyActiveBg}
-            onPress={() => router.push('/admin-login')}
-          >
-            {/* <Text style={styles.adminEntryIcon}>⚙️</Text> */}
-            <Text style={[styles.adminEntryText, { color: theme.textMain }]}>
-              管理后台
-            </Text>
-            <Text style={[styles.adminEntryHint, { color: theme.textMuted }]}>
-              ADMIN
-            </Text>
-          </HoverTouchable>
+          {role === 'admin' && (
+            <HoverTouchable
+              accessibilityRole="button"
+              accessibilityLabel="管理员登录"
+              style={styles.adminEntry}
+              hoverBg={theme.historyActiveBg}
+              onPress={() => router.push('/admin')}
+            >
+              {/* <Text style={styles.adminEntryIcon}>⚙️</Text> */}
+              <Text style={[styles.adminEntryText, { color: theme.textMain }]}>
+                管理后台
+              </Text>
+              <Text style={[styles.adminEntryHint, { color: theme.textMuted }]}>
+                ADMIN
+              </Text>
+            </HoverTouchable>
+          )}
+          {/* 💡 角色切换：和「外观」同款的紧凑分段器，不单独成卡。 */}
+          <View style={styles.appearanceSection}>
+            <View style={styles.appearanceLabelRow}>
+              <Text style={[styles.appearanceLabel, { color: theme.textMuted }]}>
+                角色
+              </Text>
+              {role === 'admin' ? (
+                <Text style={[styles.quotaText, { color: theme.textMuted }]}>
+                  无限制
+                </Text>
+              ) : typeof device?.usedToday === 'number' &&
+                typeof device?.dailyQuota === 'number' ? (
+                <Text style={[styles.quotaText, { color: theme.textMuted }]}>
+                  {device.usedToday}/{device.dailyQuota}
+                </Text>
+              ) : null}
+            </View>
+            <View
+              style={[
+                styles.appearanceOptions,
+                { backgroundColor: theme.bgApp }
+              ]}
+            >
+              {(
+                [
+                  { value: 'user', label: 'User' },
+                  { value: 'admin', label: 'Admin' }
+                ] as { value: RoleMode; label: string }[]
+              ).map(({ value, label }) => {
+                const selected = role === value
+                return (
+                  <HoverTouchable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={label}
+                    style={[
+                      styles.appearanceOption,
+                      selected && {
+                        backgroundColor: theme.historyActiveBg
+                      }
+                    ]}
+                    hoverBg={theme.historyActiveBg}
+                    onPress={async () => {
+                      if (value === 'admin') {
+                        if (role === 'admin') return;
+                        // 免密激活缓存的 admin 会话；没有缓存（首次/已过期）才去密码页
+                        const ok = await activateAdmin();
+                        if (ok) {
+                          MyToast.show('已切换为管理员');
+                        } else {
+                          router.push('/admin-login');
+                        }
+                        return;
+                      }
+                      if (role === 'admin') {
+                        try {
+                          await logoutToDevice();
+                          MyToast.show('已切换为普通用户');
+                        } catch {
+                          MyToast.show('切换失败，请检查网络');
+                        }
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.appearanceOptionText,
+                        {
+                          color: selected
+                            ? theme.historyActiveText
+                            : theme.textMuted
+                        }
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </HoverTouchable>
+                )
+              })}
+            </View>
+          </View>
           <View style={styles.appearanceSection}>
             <Text style={[styles.appearanceLabel, { color: theme.textMuted }]}>
               外观
@@ -964,17 +1014,6 @@ export default function Sidebar({
                 )
               })}
             </View>
-          </View>
-          <View style={styles.userProfile}>
-            <View style={styles.avatarMini}>
-              <Text style={styles.avatarMiniText}>王</Text>
-            </View>
-            <Text
-              style={[styles.userName, { color: theme.textMain }]}
-              numberOfLines={1}
-            >
-              王 toto
-            </Text>
           </View>
         </View>
       </View>
@@ -1228,6 +1267,17 @@ const styles = StyleSheet.create({
   appearanceSection: {
     marginBottom: 8
   },
+  appearanceLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    paddingHorizontal: 4
+  },
+  quotaText: {
+    fontSize: 11,
+    fontWeight: '600'
+  },
   appearanceLabel: {
     fontSize: 11,
     fontWeight: '600',
@@ -1256,31 +1306,6 @@ const styles = StyleSheet.create({
   },
   appearanceOptionText: {
     fontSize: 12,
-    fontWeight: '500'
-  },
-  userProfile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4
-  },
-  avatarMini: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#8AB4F8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8
-  },
-  avatarMiniText: {
-    color: '#000',
-    fontWeight: 'bold',
-    fontSize: 12
-  },
-  userName: {
-    fontSize: 14,
     fontWeight: '500'
   },
   sheetOverlay: {

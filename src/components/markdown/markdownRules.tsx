@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, View, Pressable, Platform } from 'react-native';
+import { Text, View, Platform } from 'react-native';
+import { HoverTouchable } from '../HoverTouchable';
 import * as Clipboard from 'expo-clipboard';
 import {
   renderRules,
@@ -59,22 +60,34 @@ const CodeCopyButton = ({
   };
 
   return (
-    <Pressable
-      onPress={copy}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
+    <View
       style={[
         styles.codeCopyBtn,
         (hovered || copied) && styles.codeCopyBtnActive,
       ]}
-      accessibilityLabel={copied ? '已复制代码' : '复制代码'}
-      accessibilityRole="button"
+      {...({
+        onMouseEnter: () => setHovered(true),
+        onMouseLeave: () => setHovered(false),
+      } as any)}
     >
-      {copied ? (
-        <IconCheck size={14} color={styles.codeCopyIcon.color} />
-      ) : (
-        <IconCopy size={14} color={styles.codeCopyIcon.color} />
-      )}
+      <HoverTouchable
+        onPress={copy}
+        hoverBg="transparent"
+        style={{
+          width: '100%',
+          height: '100%',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={copied ? '已复制代码' : '复制代码'}
+      >
+        {copied ? (
+          <IconCheck size={14} color={styles.codeCopyIcon.color} />
+        ) : (
+          <IconCopy size={14} color={styles.codeCopyIcon.color} />
+        )}
+      </HoverTouchable>
       {hovered && (
         <View style={styles.codeCopyTooltip}>
           <Text style={styles.codeCopyTooltipText}>
@@ -82,7 +95,7 @@ const CodeCopyButton = ({
           </Text>
         </View>
       )}
-    </Pressable>
+    </View>
   );
 };
 

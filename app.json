@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "ai-agent-client",
+    "name": "dietai-ai",
     "slug": "ai-agent-client",
     "scheme": "ai-agent-client-toto",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-1024.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "experiments": {
@@ -27,7 +27,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo-favicon.png"
     },
     "plugins": [
       "expo-router",

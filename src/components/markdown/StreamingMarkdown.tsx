@@ -11,6 +11,13 @@ import {
 } from 'react-native-reanimated'
 import { scheduleOnRN } from 'react-native-worklets'
 import { splitStableBlocks } from './streamingSplit'
+import { normalizeInlineEmphasis } from '../../utils/normalizeEmphasis'
+import {
+  hasInlineMarkup,
+  splitInlineSegments,
+  type InlineSeg
+} from '../../utils/emphasisSplit'
+import { MONO_FONT } from './markdownRules'
 
 /**
  * 已成形段落：props 只有字符串 + 两个稳定引用，内容不变时 memo 直接跳过，
@@ -66,17 +73,17 @@ const InlineMoonPhase = memo(function InlineMoonPhase() {
 })
 
 /**
- * 还在增长的最后一行：纯文本渲染（不做 markdown 解析）。
- * 文字尾部分月相 emoji 自转提示，跟随最后一个字。
+ * 还在增长的最后一行。
  *
- * 之前尾巴每帧都走 markdown：
- * - 半截 token（**bo、1. 列表、|表格）会被解析成不同的节点结构，行内/换行不断变化；
- * - 段落规则对 index>0 的段落前面插 '\n'，结构一变整体就上下平移。
- * 这些都会让已显示的字在吐快时「重排跳动」。
+ * 之前这里是纯文本，导致吐字期 `**加粗**` 原样显示、要等段落成形才变粗。
+ * 现在用 splitInlineSegments 做**内联强调**切分：`**`/`__` → 粗、`*`/`_` → 斜，
+ * 行内代码按等宽字面量。块级语法（标题/列表/表格）仍不在这里解析，等段落成形
+ * 后交给 StableMarkdown —— 因为块级结构每帧变才是当初「正文重排跳动」的根源。
  *
- * 这里把它改成纯文本：只有换行会自然断行，markdown 结构在「该行成长为稳定块」
- * 的那一帧才生效（由上面的 StableMarkdown 负责），所以吐字过程平滑，格式化
- * 只晚一个段落出现。
+ * 安全性：切分器**只在强调对真正闭合的那一刻**才产生结构变化，未闭合的 `**bo`
+ * 原样输出（等价于纯文本），所以吐字期的抖动特性与纯文本一致；而对应 span 的
+ * fontSize/lineHeight/粗细与 markdownRules 的 strong/em 保持一致，
+ * 「尾巴升级成稳定段落」那一刻不会跳高度。
  */
 const TailText = memo(function TailText({
   text,
@@ -87,13 +94,44 @@ const TailText = memo(function TailText({
   selectable: boolean
   color: string
 }) {
+  const segs = useMemo(
+    () => (hasInlineMarkup(text) ? splitInlineSegments(text) : null),
+    [text]
+  )
+
   return (
     <Text selectable={selectable} style={[styles.tail, { color }]}>
-      {text}
+      {segs
+        ? segs.map((seg, i) => renderSeg(seg, `s${i}`))
+        : text}
       <InlineMoonPhase />
     </Text>
   )
 })
+
+/** 递归渲染一个内联片段；key 用「路径下标」保证同一位置的节点身份稳定 */
+function renderSeg(seg: InlineSeg, keyPrefix: string): React.ReactNode {
+  if (seg.children) {
+    return (
+      <Text
+        key={keyPrefix}
+        style={seg.strong ? styles.strong : seg.em ? styles.em : undefined}
+      >
+        {seg.children.map((c, i) => renderSeg(c, `${keyPrefix}.${i}`))}
+      </Text>
+    )
+  }
+  if (seg.raw) {
+    return (
+      <Text key={keyPrefix} style={styles.code}>
+        {seg.text}
+      </Text>
+    )
+  }
+  // 纯文本叶子直接返回字符串：RN 的 Text 子节点原生支持字符串，
+  // 省掉每个普通片段一层原生节点（吐字期每帧都少建一大批）
+  return seg.text
+}
 
 /**
  * 流式正文：已成形段落 memo 化，只有尾巴每帧重新解析。
@@ -116,7 +154,13 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   rules: RenderRules
   selectable?: boolean
 }) {
-  const { blocks, tail } = useMemo(() => splitStableBlocks(content), [content])
+  // 已成形段落也过一遍强调归一化（`** xx **` → `**xx**`）：这些段落会走
+  // 真正 的 markdown 解析，内侧带空格的定界符在这里必须修掉，否则加粗失效。
+  // 尾巴仍是纯文本、`**` 只会原样显示，故不处理它（见 TailText 注释）。
+  const { blocks, tail } = useMemo(
+    () => splitStableBlocks(normalizeInlineEmphasis(content)),
+    [content]
+  )
   const color = style.body?.color ?? '#000'
 
   return (
@@ -138,6 +182,16 @@ const styles = StyleSheet.create({
   tail: {
     fontSize: 15,
     lineHeight: 24
+  },
+  // 与 markdownRules 的 strong / em 保持同款粗细斜体，尾巴升级成稳定段落时不跳
+  strong: {
+    fontWeight: 'bold'
+  },
+  em: {
+    fontStyle: 'italic'
+  },
+  code: {
+    fontFamily: MONO_FONT
   },
   inlineMoon: {
     fontSize: 12,
