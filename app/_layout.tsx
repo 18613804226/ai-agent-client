@@ -14,6 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, useColorScheme } from 'react-native';
 import { darkTheme, lightTheme } from '../src/constants/theme';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import * as SplashScreen from 'expo-splash-screen';
+
 import { useChatManager } from '../src/hooks/useChatManager';
 import {
   AdminPreviewContext,
@@ -26,6 +28,13 @@ import {
 import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/context/appContexts';
+import BootSplash, { BOOT_EXIT_MS } from '../src/components/BootSplash';
+
+// 启动屏两段式：原生启动屏先固定住不自动消失，等 JS 层 BootSplash 铺满同色同图后
+// 再由它调 hideAsync() 交接（见 BootSplash 的 onLayout）。这样冷启动期间不会闪白，
+// 也避免原生屏一直挂到 JS 就绪、显得启动很慢。
+// ⚠️ 必须在全局作用域调用且不要 await：放进组件/hook 会太晚，那时它已经自己消失了。
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const THEME_MODE_KEY = 'theme-mode';
 
@@ -136,16 +145,49 @@ export default function RootLayout() {
 }
 
 /**
- * 启动门控：device-login 完成前显示空白底（避免无 token 就打会话接口）。
- * AuthProvider 必须在外层，useChatManager 的初始化请求会带上 token。
+ * 启动门控：device-login 完成前显示 JS 层品牌启动动效（而不是空白底），
+ * 避免无 token 就打会话接口。AuthProvider 必须在外层，useChatManager 的
+ * 初始化请求会带上 token。
+ *
+ * 时序：启动屏**始终**先播完整入场动画，等「动画播完」且「数据 ready」两个条件
+ * 都满足才淡出 —— 不能 ready 一就绪就切，那会把入场动画硬生生截断。
+ * 内容在 ready 时就已在启动屏下面挂载（预热），淡出结束后卸载启动屏，
+ * 不产生「品牌屏 → 白屏 → 内容」的三段跳。
  */
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, authed, loginAsDevice } = useAuth();
+  const [splashMounted, setSplashMounted] = useState(true);
+  const [enterDone, setEnterDone] = useState(false);
+  /** 退场许可：入场动画播完 + 数据就绪 */
+  const canExit = ready && enterDone;
+
+  const handleEntered = useCallback(() => setEnterDone(true), []);
+
   React.useEffect(() => {
     if (ready && !authed) loginAsDevice();
   }, [ready, authed, loginAsDevice]);
-  if (!ready) return null;
-  return <>{children}</>;
+
+  React.useEffect(() => {
+    if (!canExit) return;
+    const id = setTimeout(() => setSplashMounted(false), BOOT_EXIT_MS + 20);
+    return () => clearTimeout(id);
+  }, [canExit]);
+
+  // 兜底：BootSplash 未挂载时也要关掉原生启动屏，
+  // 否则 preventAutoHideAsync 会让它永远停在那儿 → 界面卡死。
+  // 正常路径上 BootSplash 的 onLayout 已提前关过，这里重复调用是无害的空操作。
+  React.useEffect(() => {
+    if (!splashMounted) SplashScreen.hideAsync().catch(() => {});
+  }, [splashMounted]);
+
+  return (
+    <>
+      {ready ? children : null}
+      {splashMounted ? (
+        <BootSplash exiting={canExit} onEntered={handleEntered} />
+      ) : null}
+    </>
+  );
 }
 
 /**

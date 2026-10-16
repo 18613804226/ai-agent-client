@@ -1,28 +1,18 @@
 import React, { memo, useMemo } from 'react'
-import {
-  StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
-  ActivityIndicator,
-  Platform,
-  Image
-} from 'react-native'
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
 import Markdown from 'react-native-markdown-display'
+import { Feather } from '@expo/vector-icons'
 import type { SharedValue } from 'react-native-reanimated'
 import { INVERTED_CHAT_LIST, CELL_INVERSION_STYLE } from '../utils/chatScroll'
 import { WEB_ROW_CONTAINMENT } from '../utils/layout'
-import {
-  MONO_FONT,
-  selectableMarkdownRules,
-  nonSelectableMarkdownRules,
-  webMarkdownRules
-} from './markdown/markdownRules'
+import { selectableMarkdownRules, nonSelectableMarkdownRules, webMarkdownRules } from './markdown/markdownRules'
 import { StreamingMarkdown } from './markdown/StreamingMarkdown'
 import ThoughtCollapsible from './ThoughtCollapsible'
 import MessageActions from './MessageActions'
 import { normalizeInlineEmphasis } from '../utils/normalizeEmphasis'
+import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageItem.styles'
 import type { Message, ThemeType } from '../types/chat'
+import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
 
 // ===================== ChatMessageItem =====================
 const ChatMessageItem = memo(
@@ -34,6 +24,7 @@ const ChatMessageItem = memo(
     playingMsgId,
     setPlayingMsgId,
     onPreviewImage,
+    onPreviewFile,
     textSelectable = true,
     outerOffsetSV,
     outerMaxSV,
@@ -46,6 +37,8 @@ const ChatMessageItem = memo(
     playingMsgId: string | null
     setPlayingMsgId: (id: string | null) => void
     onPreviewImage?: (images: string[], index: number) => void
+    /** 点气泡附件行 → 应用内真预览（与图片 onPreviewImage 同款交互） */
+    onPreviewFile?: (att: PickedAttachment) => void
     /** 抽屉打开时传 false：禁用文本选择并清掉蓝色选择框，避免误触 */
     textSelectable?: boolean
     /** 外层列表当前 offset（UI 线程可读），用于思考框贴边联动 */
@@ -61,6 +54,98 @@ const ChatMessageItem = memo(
     const isThinking = !isUser && !hasContent && !hasThought
 
     /**
+     * 附件统一渲染：图片、文档、视频全部来自 item.attachments（用 kind 区分）。
+     *   - 文档/视频 → 类型图标 + 文件名 + 右箭头（可点预览）
+     *   - 图片     → 缩略图网格（可点全屏预览）
+     * 两者放进同一个「附件列」，紧跟其后的才是正文气泡 —— 不论用户发的是
+     * 图片、文档还是视频，布局完全一致。
+     */
+    const allAttachments =
+      isUser && item.attachments && item.attachments.length > 0
+        ? item.attachments
+        : []
+    // 图片源：新鲜消息的本地 blob / file://，或服务端 url（消息落库后
+    // 本地来源已丢弃，只剩 url/fileRef）
+    const imageSourceOf = (a: any): string => a.uri || a.url || ''
+    /** 可预览源：本地 blob / file://（新鲜消息），或服务端引用（历史消息，含原生端） */
+    const canPreview = (a: any): boolean =>
+      !!onPreviewFile &&
+      (!!a.blob || !!a.uri || !!(a.url || a.fileRef || a.uploadFileRef))
+    const docAttachments = allAttachments.filter((a) => a.kind !== 'image')
+    const imageAttachments = allAttachments
+      .filter((a) => a.kind === 'image')
+      // 本地来源与服务端 url 都拿不到 → 渲染不出缩略图，直接不进列表
+      // （否则「预览索引」和「实际渲染出来的图」会对不上）
+      .filter((a) => imageSourceOf(a))
+    const hasAttachments = allAttachments.length > 0
+
+    const attachmentRows =
+      docAttachments.length > 0
+        ? docAttachments.map((a, idx) => {
+            const isVideo =
+              a.mime?.startsWith('video/') || (a as any).kind === 'video';
+            const fileName = a.name || '未命名文件';
+            const fileSize = formatFileSize(a.size) || '';
+            return (
+              <TouchableOpacity
+                key={`${a.name}-${idx}`}
+                activeOpacity={0.7}
+                disabled={!canPreview(a)}
+                onPress={() => onPreviewFile?.(a)}
+                style={[
+                  chatMessageStyles.attachmentCard,
+                  {
+                    backgroundColor: theme.bubbleUserBg,
+                    borderColor: theme.bubbleUserText + '15',
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    chatMessageStyles.attachmentIcon,
+                    { backgroundColor: theme.bubbleUserText + '12' },
+                  ]}
+                >
+                  <Feather
+                    name={isVideo ? 'film' : 'file-text'}
+                    size={16}
+                    color={theme.bubbleUserText}
+                  />
+                </View>
+                <View style={chatMessageStyles.attachmentInfo}>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      chatMessageStyles.attachmentName,
+                      { color: theme.bubbleUserText },
+                    ]}
+                  >
+                    {fileName}
+                  </Text>
+                  {fileSize ? (
+                    <Text
+                      style={[
+                        chatMessageStyles.attachmentMeta,
+                        { color: theme.bubbleUserText },
+                      ]}
+                    >
+                      {fileSize}
+                    </Text>
+                  ) : null}
+                </View>
+                <Feather
+                  name="chevron-right"
+                  size={15}
+                  color={theme.bubbleUserText}
+                  style={{ opacity: 0.6 }}
+                />
+              </TouchableOpacity>
+            );
+          })
+        : null;
+
+    /**
      * 最终渲染前的两件归一化：
      * 1. 剥掉末尾的空白/换行。模型结尾常带 \n：流式尾巴是纯文本，末尾换行不产生
      *    可见空行；但切到最终 Markdown 后，末尾 \n 会被解析成一个额外空行 →
@@ -74,12 +159,12 @@ const ChatMessageItem = memo(
 
     const bubbleStyle = useMemo(
       () => [
-        styles.bubble,
+        chatMessageStyles.bubble,
         { maxWidth: '100%' as const },
         isUser
-          ? [styles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
+          ? [chatMessageStyles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
           : [
-              styles.bubbleAi,
+              chatMessageStyles.bubbleAi,
               {
                 backgroundColor: theme.bubbleAiBg,
                 borderColor: theme.border
@@ -89,174 +174,15 @@ const ChatMessageItem = memo(
       [isUser, theme]
     )
 
-    const dynamicMarkdownStyles = useMemo(
-      () => ({
-        body: { fontSize: 15, lineHeight: 24, color: theme.textMain },
-        strong: { fontWeight: 'bold' as const, color: theme.textMain },
-        paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
-        heading1: {
-          fontSize: 20,
-          fontWeight: 'bold' as const,
-          color: theme.textMain,
-          marginTop: 14,
-          marginBottom: 6,
-          lineHeight: 28
-        },
-        heading2: {
-          fontSize: 18,
-          fontWeight: 'bold' as const,
-          color: theme.textMain,
-          marginTop: 12,
-          marginBottom: 6,
-          lineHeight: 24
-        },
-        heading3: {
-          fontSize: 16,
-          fontWeight: 'bold' as const,
-          color: theme.textMain,
-          marginTop: 10,
-          marginBottom: 4,
-          lineHeight: 22
-        },
-        code_inline: {
-          color: theme.textMain,
-          fontSize: 14,
-          fontFamily: MONO_FONT,
-          // 库默认 code_inline 是 { padding:10, borderWidth:1, backgroundColor:'#f5f5f5' }，
-          // mergeStyle 会把它们垫在我们的样式下面，未覆盖的属性会回退到这些默认值
-          // （padding:10 撑高、#f5f5f5 在深色主题下发白）。这里全部显式清掉。
-          padding: 3,
-          borderWidth: 0,
-          // Web 保留淡色圆角小块；原生去掉背景，只留等宽字体。
-          ...(Platform.OS === 'web'
-            ? {
-                backgroundColor: theme.isDark
-                  ? 'rgba(255,255,255,0.12)'
-                  : 'rgba(0,0,0,0.06)',
-                borderRadius: 4,
-                paddingHorizontal: 5
-              }
-            : { backgroundColor: 'transparent' as const })
-        },
-        fence: {
-          backgroundColor: theme.isDark ? '#000' : '#eee',
-          color: theme.isDark ? '#d4d4d4' : '#333333',
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          paddingVertical: 8, // 恢复垂直 padding
-          lineHeight: 20,
-          fontSize: 14,
-          fontFamily: MONO_FONT,
-          borderWidth: 0, // 去掉库默认的 1px 白边
-          // web 用默认规则时块级渲染，这里让它占满整行；原生沿用 inline-block 撑盒
-          display: (Platform.OS === 'web' ? 'block' : 'inline-block') as any,
-          ...(Platform.OS === 'web' ? { width: '100%' as const } : null),
-          verticalAlign: 'top' as any,
-          marginTop: 10, // ← 代替 '\n'，web 和原生都生效
-          marginBottom: 4
-        },
+    /**
+     * 图片缩略图的边框 + 阴影，必须加在 <Image> 自己身上：
+     * 外层 imageBubble 是透明无背景的，Android 的 elevation 拿不到轮廓，
+     * 会投出一个不跟随圆角的矩形黑影；加在 Image 上才贴着 borderRadius:12 走。
+     * 三端分别处理：iOS 用 shadow*，Android 用 elevation，Web 用 boxShadow。
+     */
 
-        code_block: {
-          backgroundColor: theme.isDark ? '#1e1e1e' : '#f5f5f5',
-          color: theme.isDark ? '#d4d4d4' : '#333333',
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          lineHeight: 22,
-          fontSize: 14,
-          fontFamily: MONO_FONT,
-          borderWidth: 0, // 去掉库默认的 1px 白边
-          display: (Platform.OS === 'web' ? 'block' : 'inline-block') as any,
-          ...(Platform.OS === 'web' ? { width: '100%' as const } : null),
-          verticalAlign: 'top' as any,
-          marginTop: 8,
-          marginBottom: 4
-        },
-        // —— 原生代码块：外层 View 盒子 + 内层等宽文本（web 走上方的 fence/code_block）——
-        codeBox: {
-          backgroundColor: theme.isDark ? '#000' : '#eee',
-          borderRadius: 8,
-          paddingHorizontal: 10,
-          paddingTop: 34,
-          paddingBottom: 8,
-          marginTop: 10,
-          marginBottom: 4
-          // 去掉 overflow:hidden，否则右上角绝对定位的复制按钮会被裁剪且点击无效
-        },
-        codeText: {
-          color: theme.isDark ? '#d4d4d4' : '#333333',
-          fontFamily: MONO_FONT,
-          fontSize: 14,
-          lineHeight: 20
-        },
-        // 代码块右上角复制按钮样式
-        codeCopyBtn: {
-          position: 'absolute' as const,
-          top: 6,
-          right: 6,
-          width: 28,
-          height: 28,
-          flexDirection: 'row' as const,
-          alignItems: 'center' as const,
-          justifyContent: 'center' as const,
-          borderRadius: 14,
-          backgroundColor: 'transparent',
-          zIndex: 10,
-          ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : null)
-        },
-        codeCopyBtnActive: {
-          backgroundColor: theme.isDark
-            ? 'rgba(255, 255, 255, 0.12)'
-            : 'rgba(0, 0, 0, 0.08)'
-        },
-        codeCopyIcon: {
-          color: theme.textMuted
-        },
-        codeCopyTooltip: {
-          position: 'absolute' as const,
-          right: 0,
-          bottom: 30,
-          width: 72,
-          paddingVertical: 5,
-          borderRadius: 5,
-          backgroundColor: theme.isDark ? '#333' : '#222',
-          alignItems: 'center' as const,
-          zIndex: 20
-        },
-        codeCopyTooltipText: {
-          color: '#fff',
-          fontSize: 11,
-          lineHeight: 14,
-          textAlign: 'center' as const,
-          ...(Platform.OS === 'web' ? ({ whiteSpace: 'nowrap' } as any) : null)
-        },
-        blockquote: {
-          backgroundColor: theme.isDark
-            ? 'rgba(255,255,255,0.06)'
-            : 'rgba(0,0,0,0.05)',
-          paddingHorizontal: 10,
-          lineHeight: 22,
-          color: theme.textMain,
-          display: (Platform.OS === 'web' ? 'block' : 'inline-block') as any,
-          verticalAlign: 'top' as any,
-          marginTop: 8,
-          marginBottom: 4
-        },
-        list_item: { color: theme.textMain, marginVertical: 2 },
-        table: {
-          marginVertical: 10,
-          borderWidth: 1,
-          borderColor: theme.border,
-          borderRadius: 6
-        },
-        // Web 用默认规则时列表容器是 View，补一点上下间距，避免紧贴上一段
-        ...(Platform.OS === 'web'
-          ? {
-              bullet_list: { marginTop: 2, marginBottom: 6 },
-              ordered_list: { marginTop: 2, marginBottom: 6 }
-            }
-          : null),
-        hr: { backgroundColor: theme.border, height: 1, marginVertical: 12 }
-      }),
+    const dynamicMarkdownStyles = useMemo(
+      () => createDynamicMarkdownStyles(theme),
       [theme]
     )
 
@@ -264,8 +190,8 @@ const ChatMessageItem = memo(
     if (item.systemNote) {
       return (
         <View style={INVERTED_CHAT_LIST ? CELL_INVERSION_STYLE : null}>
-          <View style={styles.systemNoteRow}>
-            <Text style={[styles.systemNoteText, { color: theme.textMuted }]}>
+          <View style={chatMessageStyles.systemNoteRow}>
+            <Text style={[chatMessageStyles.systemNoteText, { color: theme.textMuted }]}>
               {item.content}
             </Text>
           </View>
@@ -277,21 +203,36 @@ const ChatMessageItem = memo(
       <View style={INVERTED_CHAT_LIST ? CELL_INVERSION_STYLE : null}>
         <View
           style={[
-            styles.messageRow,
-            isUser ? styles.rowUser : styles.rowAi,
+            chatMessageStyles.messageRow,
+            isUser ? chatMessageStyles.rowUser : chatMessageStyles.rowAi,
             WEB_ROW_CONTAINMENT
           ]}
         >
-          {isUser && item.images && item.images.length > 0 ? (
-            <View style={styles.userImagesColumn}>
-              {/* 图片气泡（独占一行，位于文本上方） */}
-              <View style={[bubbleStyle, styles.imageBubble]}>
-                <View style={styles.userImagesContainer}>
-                  {item.images.map((imgUri, idx) => (
+          {/* 用户消息带附件：统一「附件列」——文档/视频行 + 图片缩略图 + 正文气泡 */}
+          {isUser && hasAttachments ? (
+            <View style={chatMessageStyles.userAttachmentsColumn}>
+              {attachmentRows}
+              {imageAttachments.length > 0 ? (
+                /* 图片卡片：无框样式 —— 不套正文气泡的 14px padding / 底色 / 描边，
+                   只让缩略图自己带圆角直接坐在聊天背景上（主流 IM 的纯图片消息样式）。
+                   ⚠️ 不能只把 padding 归零：缩略图 borderRadius 比气泡小，
+                     外层圆角会把子图内角切出「双环」。正确做法是整块不要底色。 */
+                <View
+                  style={[
+                    chatMessageStyles.imageBubble,
+                    { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+                  ]}
+                >
+                  {imageAttachments.map((a, idx) => (
                     <TouchableOpacity
-                      key={`${imgUri.slice(0, 32)}-${idx}`}
+                      key={`${a.name}-${idx}`}
                       activeOpacity={0.85}
-                      onPress={() => onPreviewImage?.(item.images || [], idx)}
+                      onPress={() =>
+                        onPreviewImage?.(
+                          imageAttachments.map(imageSourceOf),
+                          idx,
+                        )
+                      }
                       style={
                         Platform.OS === 'web'
                           ? ({ cursor: 'pointer' } as any)
@@ -299,32 +240,50 @@ const ChatMessageItem = memo(
                       }
                     >
                       <Image
-                        source={{ uri: imgUri }}
-                        style={styles.userImageThumb}
+                        source={{ uri: imageSourceOf(a) }}
+                        style={[
+                          chatMessageStyles.imageThumb,
+                          {
+                            borderWidth: StyleSheet.hairlineWidth,
+                            borderColor: theme.isDark
+                              ? 'rgba(255,255,255,0.18)'
+                              : 'rgba(0,0,0,0.12)',
+                            ...Platform.select({
+                              web: { boxShadow: '0 2px 10px rgba(0,0,0,0.18)' },
+                              default: {
+                                shadowColor: '#000',
+                                shadowOpacity: theme.isDark ? 0.45 : 0.18,
+                                shadowRadius: 8,
+                                shadowOffset: { width: 0, height: 2 },
+                                elevation: 3,
+                              },
+                            }),
+                          },
+                        ]}
                       />
                     </TouchableOpacity>
                   ))}
                 </View>
-              </View>
-              {/* 文本气泡 */}
-              <View style={[bubbleStyle, styles.textBubbleBelowImages]}>
-                {item.content ? (
+              ) : null}
+              {/* 正文气泡：无正文时渲染空壳会被 padding 撑出白块 → 直接不渲染 */}
+              {item.content ? (
+                <View style={[bubbleStyle, chatMessageStyles.textBubbleBelowAttachments]}>
                   <Text
                     selectable={textSelectable}
                     style={[
-                      styles.messageText,
+                      chatMessageStyles.messageText,
                       { color: theme.bubbleUserText }
                     ]}
                   >
                     {item.content}
                   </Text>
-                ) : null}
-              </View>
+                </View>
+              ) : null}
             </View>
           ) : (
             <View style={bubbleStyle}>
               {isThinking ? (
-                <View style={styles.thinkingContainer}>
+                <View style={chatMessageStyles.thinkingContainer}>
                   <ActivityIndicator
                     size="small"
                     color={theme.textMuted}
@@ -332,7 +291,7 @@ const ChatMessageItem = memo(
                   />
                   <Text
                     style={[
-                      styles.messageText,
+                      chatMessageStyles.messageText,
                       { color: theme.textMuted, fontStyle: 'italic' }
                     ]}
                   >
@@ -344,7 +303,7 @@ const ChatMessageItem = memo(
                   <Text
                     selectable={textSelectable}
                     style={[
-                      styles.messageText,
+                      chatMessageStyles.messageText,
                       { color: theme.bubbleUserText }
                     ]}
                   >
@@ -435,64 +394,14 @@ const ChatMessageItem = memo(
     prev.item.systemNote === next.item.systemNote &&
     prev.playingMsgId === next.playingMsgId &&
     prev.onPreviewImage === next.onPreviewImage &&
+    prev.onPreviewFile === next.onPreviewFile &&
     prev.textSelectable === next.textSelectable &&
     prev.outerOffsetSV === next.outerOffsetSV &&
     prev.outerMaxSV === next.outerMaxSV &&
     prev.scrollViewRef === next.scrollViewRef &&
-    JSON.stringify(prev.item.images) === JSON.stringify(next.item.images)
+    JSON.stringify(prev.item.images) === JSON.stringify(next.item.images) &&
+    JSON.stringify(prev.item.attachments ?? []) ===
+      JSON.stringify(next.item.attachments ?? [])
 )
-
-const styles = StyleSheet.create({
-  messageRow: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    alignItems: 'flex-start'
-  },
-  rowUser: { justifyContent: 'flex-end' },
-  rowAi: { justifyContent: 'flex-start' },
-  bubble: { padding: 14, borderRadius: 16 },
-  bubbleUser: { borderTopRightRadius: 4, alignSelf: 'flex-end' },
-  bubbleAi: { borderTopLeftRadius: 4, borderWidth: 1, alignSelf: 'flex-start' },
-  thinkingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 2
-  },
-  messageText: { fontSize: 15, lineHeight: 22 },
-  userImagesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 6
-  },
-  userImageThumb: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    resizeMode: 'cover'
-  },
-  imageBubble: {
-    marginBottom: 4,
-    alignSelf: 'flex-end'
-  },
-  userImagesColumn: {
-    flexDirection: 'column',
-    alignItems: 'flex-end'
-  },
-  textBubbleBelowImages: {
-    marginTop: 4
-  },
-  systemNoteRow: {
-    width: '100%',
-    alignItems: 'center',
-    marginVertical: 6
-  },
-  systemNoteText: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontStyle: 'italic',
-    opacity: 0.6
-  }
-})
 
 export default ChatMessageItem

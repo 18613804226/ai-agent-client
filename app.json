@@ -26,6 +26,11 @@
       },
       "predictiveBackGestureEnabled": false
     },
+    "splash": {
+      "image": "./assets/boot-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F0F4F9"
+    },
     "web": {
       "favicon": "./assets/logo-favicon.png"
     },
@@ -33,7 +38,10 @@
       "expo-router",
       "expo-status-bar",
       "expo-audio",
-      "expo-system-ui"
+      "expo-system-ui",
+      "expo-splash-screen",
+      "react-native-blob-util",
+      "@config-plugins/react-native-pdf"
     ]
   }
 }

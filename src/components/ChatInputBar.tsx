@@ -13,11 +13,24 @@ import {
   Animated,
   Easing,
   useWindowDimensions,
+  Alert,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import ImageViewer from './ImageViewer';
+import { FilePreviewer, extOf, classifyFile } from './FilePreviewer';
 import { HoverTouchable } from './HoverTouchable';
+import { api } from '../services/api';
+import {
+  formatFileSize,
+  forgetImageUpload,
+  uploadAttachment,
+  retryAttachmentUpload,
+  retryImageUpload,
+  type PickedAttachment,
+} from '../hooks/useImagePicker';
 
 if (Platform.OS === 'web') {
   const styleId = 'web-modern-scrollbar';
@@ -45,15 +58,23 @@ interface ChatInputBarProps {
   /**
    * 发送回调。
    * 传入 text 时直接发送该文本（用于语音识别等「即时发送」场景，
-   * 避免依赖 setInputText 的异步 state 更新）；不传则发送输入框当前内容。
+   * 避免依赖 setInputText 的异步state 更新）；不传则发送输入框当前内容。
    */
   onSend: (text?: string) => void;
   onStop: () => void;
   isGenerating: boolean;
   theme: any;
   isKeyboardUp?: boolean;
-  selectedImages?: string[];
-  setSelectedImages?: (images: string[]) => void;
+  /**
+   * 统一的附件列表（图片 / 文档 / 视频 都在这里，用 kind 字段区分）。
+   * 上传状态由条目的 uploading / uploadError / uploadId 字段承载：
+   * 图片走 /chat/upload-image（uploadId 存返回 URL），其余走 /chat/attachment。
+   */
+  attachments?: PickedAttachment[];
+  /** 需要函数式更新：上传成功/失败要按对象身份回填 uploadId / uploadError */
+  setAttachments?: React.Dispatch<
+    React.SetStateAction<PickedAttachment[]>>
+  ;
   onPickImage?: () => void;
 }
 
@@ -65,24 +86,36 @@ export default function ChatInputBar({
   isGenerating,
   theme,
   isKeyboardUp = false,
-  selectedImages = [],
-  setSelectedImages = () => {},
+  attachments = [],
+  setAttachments = () => {},
   onPickImage,
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音/键盘模式
-  /** 非 null = 当前正在预览第几张已选图片 */
+  /** 非 null = 当前正在预览第几张已选图片*/
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  /** 非 null = 正在应用内真预览的文件（弹层渲染，不再 window.open 变下载） */
+  const [previewFile, setPreviewFile] = useState<PickedAttachment | null>(null);
+  const closeFilePreview = useCallback(() => setPreviewFile(null), []);
 
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktopWeb = isWeb && width >= 768;
 
-  const hasText = Boolean(inputText.trim());
-  const hasImages = selectedImages.length > 0;
-  const canSubmit = (hasText || hasImages) && !isGenerating;
+  const hasAttachments = attachments.length > 0;
+  // 附件没就绪 → 禁发送：① 还在传（id 未拿到）② 上传失败（点发送也是白跑）
+  const uploadingAttachments = attachments.filter((f) => f.uploading);
+  const failedAttachments = attachments.filter((f) => f.uploadError);
+  const blockedByUpload =
+    uploadingAttachments.length > 0 ||
+    failedAttachments.length > 0;
+  // 图片/文档/视频附件随消息发送（先上传拿 URL / id，发送时随消息引用）
+  const canSubmit =
+    (Boolean(inputText.trim()) || hasAttachments) &&
+    !isGenerating &&
+    !blockedByUpload;
 
-  // ---- 发送按钮状态 ----
+  // ---- 发送按钮状态----
   const isStopMode = isGenerating;
   const isSendDisabled = !isStopMode && !canSubmit;
 
@@ -94,14 +127,78 @@ export default function ChatInputBar({
         ? (theme?.sendBtnHover ?? theme?.sendBtnActive ?? '#2563eb')
         : (theme?.sendBtnActive ?? '#3b82f6');
 
-  const handleRemoveImage = useCallback(
+  const handleRemoveAttachment = useCallback(
     (index: number) => {
-      setSelectedImages(selectedImages.filter((_, i) => i !== index));
+      const target = attachments[index];
+      if (!target) return;
+      // 图片：忘掉预传缓存（本地）；服务端 uploads 文件的删除需后端提供接口
+      if (target.kind === 'image') {
+        forgetImageUpload(target.uri);
+      }
+      // 文档/视频：已预传的顺手删服务端文件（DELETE /chat/attachments/:fileRef
+      // = uuid.ext；裸 uploadId 会被 400「非法文件名」拒绝）；还在传/失败的没有
+      // fileRef → 留给服务端 TTL / 30 天回收清
+      else if (target.uploadFileRef) {
+        api.deleteChatAttachment(target.uploadFileRef).catch(() => {});
+      }
+      setAttachments(attachments.filter((_, i) => i !== index));
     },
-    [selectedImages, setSelectedImages],
+    [attachments, setAttachments],
   );
 
-  // ---- 语音结果：识别完成后直接发送到聊天区（不回填输入框） ----
+  /**
+    * 点附件 → 按类型走同一套「应用内真预览」：
+    * 图片进全屏 ImageViewer（缩放手势 + 翻页）；表格与 PDF 进 FilePreviewer
+    * 应用内渲染（PDF 走 react-native-pdf，表格可调 /chat/excel/check 查错）；
+    * web 端任何类型都进预览器。只有音视频等仍无本地渲染器的，才交系统应用。
+    */
+  const handleOpenAttachment = useCallback(
+    (att: PickedAttachment) => {
+      // 选中即上传：失败的点一下就地重传（成功后 chip 状态自愈），先不进预览
+      if (att.uploadError) {
+        if (att.kind === 'image') {
+          retryImageUpload(att, setAttachments);
+        } else {
+          retryAttachmentUpload(att, setAttachments);
+        }
+        return;
+      }
+      const kind = classifyFile(att);
+      // 图片走全屏 ImageViewer（缩放手势 + 翻页）：索引要在「仅图片」列表里
+      if (kind === 'image') {
+        const idx = attachments
+          .filter((a) => a.kind === 'image')
+          .findIndex((a) => a === att);
+        if (idx >= 0) {
+          setPreviewIndex(idx);
+          return;
+        }
+      }
+      // 表格 / PDF / 文本进 FilePreviewer 应用内真预览（PDF 走 react-native-pdf，
+      // 文本走 expo-file-system 读文件，表格可调 /chat/excel/check 查错）；
+      // web 端任何类型都进预览器
+      if (
+        kind === 'sheet' ||
+        kind === 'pdf' ||
+        kind === 'text' ||
+        Platform.OS === 'web'
+      ) {
+        setPreviewFile(att);
+        return;
+      }
+      Linking.openURL(att.uri).catch(() => {
+        Alert.alert(
+          '无法预览',
+          att.name
+            ? `系统没有能打开「${att.name}」的应用`
+            : '系统没有能打开该文件的应用',
+        );
+      });
+    },
+    [setAttachments],
+  );
+
+  // ---- 语音结果：识别完成后直接发送到聊天区（不回填输入框）----
   const handleVoiceResult = useCallback(
     (text: string) => {
       const content = text?.trim();
@@ -138,11 +235,11 @@ export default function ChatInputBar({
     });
   }, []);
 
-  // ---- 按住说话：录音 + ASR（跨端逻辑统一收敛到 useVoiceRecorder） ----
+  // ---- 按住说话：录音 + ASR（跨端逻辑统一收敛到 useVoiceRecorder）----
   const { isRecording, isRecognizing, startRecord, stopRecord } =
     useVoiceRecorder(handleVoiceResult);
 
-  // ---- 录音科技感动画 ----
+  // ---- 录音科技感动画----
   const pulse = useRef(new Animated.Value(0)).current;
   const glow = useRef(new Animated.Value(0)).current;
   const useNative = Platform.OS !== 'web';
@@ -223,7 +320,12 @@ export default function ChatInputBar({
             reader.onload = (event) => {
               const base64String = event.target?.result as string;
               if (base64String) {
-                setSelectedImages([...selectedImages, base64String]);
+                // 粘贴的图片同样并入统一附件列表（kind: 'image'）；
+                // uploading: true 让遮罩+转圈从第一帧就盖上（effect 会发起预传）
+                setAttachments((prev) => [
+                  ...prev,
+                  { uri: base64String, kind: 'image' as const, uploading: true },
+                ]);
               }
             };
             reader.readAsDataURL(blob);
@@ -238,48 +340,174 @@ export default function ChatInputBar({
         'paste',
         handleDOMPaste as EventListener,
       );
-  }, [isDesktopWeb, selectedImages, setSelectedImages]);
+  }, [isDesktopWeb, setAttachments]);
 
   return (
     <View style={styles.inputAreaWrapper}>
-      {/* 图片预览 */}
-      {hasImages && (
+      {/* 附件预览：图片/文档/视频统一走同一条渲染逻辑 */}
+      {hasAttachments && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={styles.previewContainer}
-          contentContainerStyle={styles.previewContentContainer}
+          style={styles.previewContainer}          contentContainerStyle={styles.previewContentContainer}
         >
-          {selectedImages.map((imgUri, index) => (
-            <View key={index} style={styles.previewItem}>
-              <HoverTouchable
-                activeOpacity={0.85}
-                rippleColor="rgba(255, 255, 255, 0.35)"
-                onPress={() => setPreviewIndex(index)}
-                style={styles.previewImageTap}
+          {attachments.map((att, index) =>
+            att.kind === 'image' ? (
+              /* 图片：缩略图（与原图片逻辑一致） */
+              <View
+                key={`img-${index}`}
+                style={[
+                  styles.previewItem,
+                  { backgroundColor: theme.btnBg, borderColor: theme.border },
+                ]}
               >
-                <Image source={{ uri: imgUri }} style={styles.previewImage} />
-              </HoverTouchable>
-              <HoverTouchable
-                style={styles.deleteBadge}
-                rippleColor="rgba(255, 255, 255, 0.35)"
-                onPress={() => handleRemoveImage(index)}
-                hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+                <HoverTouchable
+                  activeOpacity={0.85}
+                  rippleColor="rgba(255, 255, 255, 0.35)"
+                  onPress={() => handleOpenAttachment(att)}
+                  style={styles.previewImageTap}
+                >
+                  <Image source={{ uri: att.uri }} style={styles.previewImage} />
+                </HoverTouchable>
+                {/* 传输状态：遮罩 + 转圈直接盖在预览小图上 */}
+                {att.uploading ? (
+                  <View
+                    style={[styles.uploadMask, { backgroundColor: theme.btnBg }]}
+                    pointerEvents="none"
+                  >
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.textMuted}
+                    />
+                  </View>
+                ) : att.uploadError ? (
+                  <View
+                    style={[styles.uploadMaskError, { backgroundColor: theme.btnBg }]}
+                    pointerEvents="none"
+                  >
+                    <Feather name="alert-circle" size={20} color="#ef4444" />
+                  </View>
+                ) : null}
+                <HoverTouchable
+                  style={styles.deleteBadge}
+                  rippleColor="rgba(255, 255, 255, 0.35)"
+                  onPress={() => handleRemoveAttachment(index)}
+                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+                >
+                  <Text style={styles.deleteBadgeText}>✕</Text>
+                </HoverTouchable>
+              </View>
+            ) : (
+              /* 文档/视频：文件 chip（图标 + 名称 + 大小），点击进应用内真预览 */
+              <View
+                key={`${att.name ?? 'file'}-${index}`}
+                style={[
+                  styles.fileChip,
+                  // 底色/描边跟随主题：写死的浅灰在暗色主题下就是一块白
+                  { backgroundColor: theme.btnBg, borderColor: theme.border },
+                ]}
               >
-                <Text style={styles.deleteBadgeText}>✕</Text>
-              </HoverTouchable>
-            </View>
-          ))}
+                <HoverTouchable
+                  activeOpacity={0.85}
+                  rippleColor="rgba(255, 255, 255, 0.35)"
+                  onPress={() => handleOpenAttachment(att)}
+                  disabled={att.uploading}
+                  style={styles.fileChipTap}
+                >
+                  <View style={[styles.fileExtBox, { borderColor: theme.border }]}>
+                    <Text style={[styles.fileExtText, { color: theme.textMain }]}>
+                      {extOf(att.name, att.mime)}
+                    </Text>
+                  </View>
+                  <View style={styles.fileChipMeta}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.fileChipName, { color: theme.textMain }]}
+                    >
+                      {att.name || '未命名文件'}
+                    </Text>
+                    {/* 就绪后才显示大小；上传中/失败由遮罩 + 转圈表达，不堆文字 */}
+                    {!att.uploading && !att.uploadError ? (
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.fileChipSize, { color: theme.textMuted }]}
+                      >
+                        {formatFileSize(att.size) || '文档'}
+                      </Text>
+                    ) : null}
+                  </View>
+                </HoverTouchable>
+                {/* 传输状态：遮罩 + 转圈盖住整块 chip */}
+                {att.uploading ? (
+                  <View
+                    style={[styles.uploadMask, { backgroundColor: theme.btnBg }]}
+                    pointerEvents="none"
+                  >
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.textMuted}
+                    />
+                  </View>
+                ) : att.uploadError ? (
+                  <View
+                    style={[styles.uploadMaskError, { backgroundColor: theme.btnBg }]}
+                    pointerEvents="none"
+                  >
+                    <Feather name="alert-circle" size={20} color="#ef4444" />
+                    <Text style={styles.uploadMaskErrorText}>重试</Text>
+                  </View>
+                ) : null}
+                <HoverTouchable
+                  style={styles.deleteBadge}
+                  rippleColor="rgba(255, 255, 255, 0.35)"
+                  onPress={() => handleRemoveAttachment(index)}
+                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+                >
+                  <Text style={styles.deleteBadgeText}>✕</Text>
+                </HoverTouchable>
+              </View>
+            ),
+          )}
         </ScrollView>
+      )}
+
+      {/* 失败才有这行：可点的重试入口（上传状态一律不回文字，靠 chip 上的遮罩+转圈） */}
+      {failedAttachments.length > 0 && (
+        <View style={styles.fileHintRow}>
+          <HoverTouchable
+            activeOpacity={0.7}
+            onPress={() => {
+              // 图片与非图片附件分别走各自的重传入口
+              attachments.forEach((f) => {
+                if (!f.uploadError) return;
+                if (f.kind === 'image') retryImageUpload(f, setAttachments);
+                else retryAttachmentUpload(f, setAttachments);
+              });
+            }}
+            style={styles.hintRetryBtn}
+          >
+            <Feather name="alert-circle" size={12} color="#ef4444" />
+            <Text style={[styles.fileHintText, { color: '#ef4444' }]}>
+              附件上传失败，点此重试
+            </Text>
+          </HoverTouchable>
+        </View>
       )}
 
       {/* 点选中的缩略图 → 全屏预览大图 */}
       <ImageViewer
         visible={previewIndex !== null}
-        images={selectedImages}
+        images={attachments.filter((a) => a.kind === 'image').map((a) => a.uri)}
         index={previewIndex ?? 0}
         onClose={() => setPreviewIndex(null)}
         onIndexChange={setPreviewIndex}
+      />
+
+      {/* 点附件 → 应用内真预览弹层（深色遮罩+ 主题色卡片，不再跳浏览器白底页） */}
+      <FilePreviewer
+        att={previewFile}
+        theme={theme}
+        onClose={closeFilePreview}
       />
 
       <View
@@ -288,7 +516,7 @@ export default function ChatInputBar({
           { backgroundColor: theme.inputBg, borderColor: theme.border },
         ]}
       >
-        {/* 附件按钮（语音模式下隐藏） */}
+        {/* 附件按钮（语音模式下隐藏）*/}
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
           <HoverTouchable
             style={styles.attachButton}
@@ -478,9 +706,49 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: '#f3f4f6',
+    // 底色/描边由调用处按主题注入（写死浅色会在暗色主题下发白）
     overflow: 'hidden',
+  },
+  /** 文档预览 chip：宽条形（文件名长），高度与图片缩略图一致*/
+  fileChip: {
+    position: 'relative',
+    width: 158,
+    height: 60,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  fileChipTap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  fileExtBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fileExtText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 0.3,
+  },
+  fileChipMeta: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  fileChipName: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  fileChipSize: {
+    fontSize: 10,
+    marginTop: 1,
   },
   previewImageTap: {
     width: '100%',
@@ -631,5 +899,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     opacity: 0.6,
+  },
+  fileHintRow: {
+    marginBottom: 4,
+  },
+  /** 传输中遮罩：铺满缩略图 / chip，中间放转圈 */
+  uploadMask: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // 半透明：既能看出「底下是啥」，又明确表示「还没就绪」
+    opacity: 0.78,
+  },
+  /** 失败遮罩：图标 + 「重试」提示，点 chip 即重传 */
+  uploadMaskError: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    opacity: 0.9,
+  },
+  uploadMaskErrorText: {
+    color: '#ef4444',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  hintRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  fileHintText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

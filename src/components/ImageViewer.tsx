@@ -82,6 +82,15 @@ const ViewerPage = memo(function ViewerPage({
   const savedTy = useSharedValue(0);
   const [loading, setLoading] = useState(false);
 
+  // ⚠️ 这两个回调必须用 useCallback 固定身份，不能写成内联箭头。
+  // react-native-web 的 Image 把 onLoad* 放进了 effect 依赖数组：
+  //   node_modules/react-native-web/dist/exports/Image/index.js:262
+  //   }, [uri, requestRef, updateState, onError, onLoad, onLoadEnd, onLoadStart]);
+  // 回调身份每次渲染都变 → effect 每次渲染都重跑 → onLoadStart() → setLoading → 再渲染
+  // → 新回调身份 → …… 无限循环，最终 React 抛 Maximum update depth exceeded。
+  const handleLoadStart = useCallback(() => setLoading(true), []);
+  const handleLoadEnd = useCallback(() => setLoading(false), []);
+
   // 手势回调跑在 UI 线程：本地能调的函数必须带 'worklet'，
   // 碰到 JS 侧回调要经过 scheduleOnRN
   const resetZoom = (page: number) => {
@@ -188,8 +197,8 @@ const ViewerPage = memo(function ViewerPage({
           source={{ uri }}
           style={[styles.image, imageStyle]}
           resizeMode="contain"
-          onLoadStart={() => setLoading(true)}
-          onLoadEnd={() => setLoading(false)}
+          onLoadStart={handleLoadStart}
+          onLoadEnd={handleLoadEnd}
         />
         {loading ? (
           <View style={[styles.pageLoading, { pointerEvents: 'none' }]}>

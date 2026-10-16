@@ -1,0 +1,26 @@
+diff --git a/node_modules/react-native/index.js b/node_modules/react-native/index.js
+index a4b7d5e..4d3c7f2 100644
+--- a/node_modules/react-native/index.js
++++ b/node_modules/react-native/index.js
+@@ -261,12 +261,15 @@ module.exports = {
+    * @deprecated
+    */
+   get InteractionManager() {
+-    warnOnce(
+-      'interaction-manager-deprecated',
+-      'InteractionManager has been deprecated and will be removed in a ' +
+-        'future release. Please refactor long tasks into smaller ones, and ' +
+-        " use 'requestIdleCallback' instead.",
+-    );
++    // patched by patch-package
++    // RN 0.86 moved warnOnce into this getter, so merely READING the property logs a
++    // deprecation warning. Several deps still read it, and some of them (e.g. expo-router's
++    // Stack Card, react-native-drawer-layout) read it without optional chaining, so the
++    // warning fires on every app start and on every stack gesture -- it is noise from
++    // third-party code, not from this project.
++    // The deprecated module itself contains no runtime warning, so the getter still
++    // returns it unchanged; only the nag is suppressed. Remove this patch once those
++    // packages stop touching InteractionManager.
+     return require('./Libraries/Interaction/InteractionManager').default;
+   },
+   get Keyboard() {

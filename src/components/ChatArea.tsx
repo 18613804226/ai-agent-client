@@ -2,12 +2,16 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { StyleSheet, Text, View, ScrollView, Platform } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
 import ImageViewer from './ImageViewer'
+import FilePreviewer, { classifyFile } from './FilePreviewer'
 import { HoverTouchable } from './HoverTouchable'
 import { useChat } from '../context/appContexts'
 import { INVERTED_CHAT_LIST } from '../utils/chatScroll'
 import { useChatScroll } from '../hooks/useChatScroll'
 import ChatMessageItem from './ChatMessageItem'
+import { api, httpClient } from '../services/api'
+import { MyToast } from './GlobalToast'
 import type { ChatAreaProps } from '../types/chat'
+import type { PickedAttachment } from '../hooks/useImagePicker'
 
 // ===================== ChatArea 根组件 =====================
 export default function ChatArea({
@@ -46,6 +50,51 @@ export default function ChatArea({
     (index: number) => setPreview((prev) => (prev ? { ...prev, index } : prev)),
     []
   )
+
+  // ==================== 文件附件预览（与图片同款交互：点气泡行 → 应用内真预览）====================
+  const [filePreview, setFilePreview] = useState<PickedAttachment | null>(null)
+  const closeFilePreview = useCallback(() => setFilePreview(null), [])
+
+  const openFilePreview = useCallback(async (a: PickedAttachment) => {
+    // ① 新鲜消息：本地 File 引用（Web）/ file://（原生）直接开
+    if (a.blob || a.uri) {
+      setFilePreview(a)
+      return
+    }
+    // ② 历史消息（刷新/重载后只剩服务端引用）：服务端接口需要 token
+    const serverPath =
+      a.url ?? (a.fileRef ? `/chat/attachments/${a.fileRef}` : undefined)
+    if (!serverPath) return
+    if (Platform.OS === 'web') {
+      // 该接口白名单 content-type 内联防 XSS，fetch 进 blob 不走导航
+      httpClient
+        .get(serverPath, { responseType: 'blob' })
+        .then((blob: any) => setFilePreview({ ...a, blob, uri: '' }))
+        .catch(() => MyToast.show('附件加载失败，可能已过期或被删除'))
+      return
+    }
+    // 原生：docx/sheet 走后端 /html 纯文本渲染；其余（PDF/图片/音视频）下载到
+    // 本地缓存后再用原生渲染器打开（react-native-pdf / Image 只认本地文件）
+    const kind = classifyFile(a)
+    if (kind === 'docx' || kind === 'sheet') {
+      setFilePreview(a)
+      return
+    }
+    const fileRef =
+      a.fileRef ||
+      a.uploadFileRef ||
+      (serverPath.split('/').pop()?.split('?')[0] ?? '')
+    if (!fileRef) {
+      MyToast.show('附件加载失败，可能已过期或被删除')
+      return
+    }
+    try {
+      const localUri = await api.downloadAttachment(fileRef, a.name)
+      setFilePreview({ ...a, uri: localUri })
+    } catch {
+      MyToast.show('附件加载失败，可能已过期或被删除')
+    }
+  }, [])
 
   // 💡 自动朗读相关引用
   const lastAutoReadKeyRef = useRef<string | null>(null)
@@ -123,6 +172,7 @@ export default function ChatArea({
               playingMsgId={playingMsgId}
               setPlayingMsgId={setPlayingMsgId}
               onPreviewImage={openPreview}
+              onPreviewFile={openFilePreview}
               textSelectable={!isDrawerOpen}
               outerOffsetSV={outerOffsetSV}
               outerMaxSV={outerMaxSV}
@@ -169,6 +219,13 @@ export default function ChatArea({
         index={preview?.index ?? 0}
         onClose={closePreview}
         onIndexChange={changePreviewIndex}
+      />
+
+      {/* 点气泡里的附件行 → 文件真预览（PDF / 文本 / Office / 音视频） */}
+      <FilePreviewer
+        att={filePreview}
+        theme={theme}
+        onClose={closeFilePreview}
       />
     </View>
   )

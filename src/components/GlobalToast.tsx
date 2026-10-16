@@ -33,26 +33,24 @@ export default function GlobalToastContainer() {
       if (v) {
         setMessage(m);
         setVisible(true);
-        // 渐显动画
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 250,
           useNativeDriver: true,
         }).start();
       } else {
-        // 渐隐动画
         Animated.timing(fadeAnim, {
           toValue: 0,
           duration: 200,
           useNativeDriver: true,
         }).start(() => {
-          setVisible(false); // 动画结束后彻底隐藏
+          setVisible(false);
+          setMessage('');
         });
       }
     };
     return () => {
       globalSetToast = null;
-      if (timer) clearTimeout(timer);
     };
   }, [fadeAnim]);
 

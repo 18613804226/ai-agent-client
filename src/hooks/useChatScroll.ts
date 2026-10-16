@@ -336,6 +336,7 @@ export function useChatScroll({
     onScrollBeginDrag: handleScrollBeginDrag,
     scrollEventThrottle: 32,
     onContentSizeChange: handleContentSizeChange,
+    showsVerticalScrollIndicator: !INVERTED_CHAT_LIST,
     // 原生端吐字时用不到贴底，但滚动手感保持原样
     ...(INVERTED_CHAT_LIST ? { decelerationRate: 'fast' } : null),
     // Android 翻转布局：长按选中文本时系统会走 requestChildRectangleOnScreen 把选区

@@ -1,3 +1,5 @@
+import type { PickedAttachment } from '../hooks/useImagePicker'
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -7,6 +9,12 @@ export interface Message {
   /** 系统类标记行（如「用户中止对话」），渲染为居中哥倩文本，不走气泡 */
   systemNote?: boolean;
   images?: string[];
+  /**
+   * 随消息发送的附件（文档/视频），存完整 PickedAttachment：
+   * Web 靠 File 引用（blob）预览、原生靠 file:// uri —— 气泡行点击进 FilePreviewer。
+   * 历史会话重载后端不返回该字段，行自然消失（本地会话期内有效）。
+   */
+  attachments?: PickedAttachment[];
 }
 
 export interface ThemeType {

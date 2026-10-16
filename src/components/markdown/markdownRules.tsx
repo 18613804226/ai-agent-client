@@ -102,15 +102,19 @@ const CodeCopyButton = ({
 export const createMarkdownRules = (selectable: boolean): RenderRules => ({
   ...renderRules,
   // 根容器：把「连续的文本块」合并进同一个可选文本树（原生保证跨段选择）；
-  // 代码块单独抽成 View 盒子 —— 原生 Text 内不能嵌 View，抽出来后代码块才有
-  // web 同款的圆角/内边距/背景块样式（见 codeBox / codeText）。
+  // 代码块与水平线单独抽成 View 盒子 —— 原生 Text 内不能嵌 View，抽出来后
+  // 代码块才有 web 同款的圆角/内边距/背景块样式（见 codeBox / codeText），
+  // 分割线也才是真 1px 线而不是用全角字符硬凑。
   body: (node, children, _parent, styles) => {
-    const isCode = (t: string) => t === 'fence' || t === 'code_block';
+    // hr 与代码块一样是「View 块」：必须从文本 run 里切出来当兄弟节点，
+    // 否则出现「Text 里嵌 View」—— Fabric / 安卓上布局直接坏。
+    const isViewBlock = (t: string) =>
+      t === 'fence' || t === 'code_block' || t === 'hr';
     const blocks: React.ReactNode[] = [];
     let run: React.ReactNode[] = [];
     let runKey = 0;
     (node.children || []).forEach((child: any, i: number) => {
-      if (isCode(child.type)) {
+      if (isViewBlock(child.type)) {
         if (run.length) {
           blocks.push(
             <Text
@@ -212,11 +216,13 @@ export const createMarkdownRules = (selectable: boolean): RenderRules => ({
       {children}
     </Text>
   ),
-  // 水平线：用文本代替（View 无法进入可选文本树）
+  // 水平线：真 View 分割线（与 Web 端库默认规则同款）。
+  // 曾经用固定个数的全角字符 ― 硬凑：字符宽度随平台字体变，安卓上会超出
+  // 气泡宽度折成两行；且给的是 View 样式（height:1）却套在 Text 上。
+  // 现在由上面的 body 规则把 hr 从文本 run 里切出来当兄弟节点，
+  // 不会出现「Text 里嵌 View」，可以安全地用 View。
   hr: (node, _children, _parent, styles) => (
-    <Text key={node.key} selectable={selectable} style={styles.hr}>
-      {'\n'}――――――――――――――――――――{'\n'}
-    </Text>
+    <View key={node.key} style={[styles.hr, { width: '100%' }]} />
   ),
   // 表格：转为文本
   table: (node, children, _parent, _styles) => (
