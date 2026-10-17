@@ -529,9 +529,13 @@ export default function ChatInputBar({
                 ? 'rgba(30,31,32,0.72)'
                 : 'rgba(240,244,249,0.72)'
               : theme.isDark
-                ? 'rgba(30,31,32,0.68)'
-                : 'rgba(240,244,249,0.68)',
-            borderColor: theme.border,
+                ? 'rgba(30,31,32,0.65)'
+                : 'rgba(240,244,249,0.65)',
+            borderColor: theme.isDark
+              ? 'rgba(255,255,255,0.14)'
+              : 'rgba(0,0,0,0.12)',
+            // elevation 已拿掉（长白条）：浮起感改用“亮边框”顶回来。
+            // 顶边 1px 高光 + 其他边描边，输入框从底上“立”起来，不靠投影。
             ...(isWeb ? { backdropFilterBlur: 24 } : { overflow: 'hidden' }),
           } as any,
         ]}
@@ -543,8 +547,8 @@ export default function ChatInputBar({
               StyleSheet.absoluteFill,
               {
                 backgroundColor: theme.isDark
-                  ? 'rgba(30,31,32,0.68)'
-                  : 'rgba(240,244,249,0.68)',
+                  ? 'rgba(30,31,32,0.65)'
+                  : 'rgba(240,244,249,0.65)',
               },
             ]}
             {...blurProps}
@@ -819,7 +823,7 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
     paddingRight: 8,
     boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.15)',
-    elevation: 3,
+    // elevation 永久拿掉：安卓上它生成额外原生层，半透明底下透出白条（已实锤）
   },
   attachButton: {
     width: 40,
