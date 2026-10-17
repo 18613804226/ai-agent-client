@@ -91,7 +91,6 @@ export default function ChatInputBar({
   setAttachments = () => {},
   onPickImage,
 }: ChatInputBarProps) {
-  const BlurContainer = Platform.OS === 'web' ? View : BlurView;
   const [isHovered, setIsHovered] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音/键盘模式
   /** 非 null = 当前正在预览第几张已选图片*/
@@ -521,7 +520,7 @@ export default function ChatInputBar({
         onClose={closeFilePreview}
       />
 
-      <BlurContainer
+      <View
         style={[
           styles.inputBar,
           {
@@ -529,13 +528,28 @@ export default function ChatInputBar({
               ? theme.isDark
                 ? 'rgba(30,31,32,0.72)'
                 : 'rgba(240,244,249,0.72)'
-              : undefined,
+              : theme.isDark
+                ? 'rgba(30,31,32,0.75)'
+                : 'rgba(240,244,249,0.88)',
             borderColor: theme.border,
             ...(isWeb ? { backdropFilterBlur: 24 } : { overflow: 'hidden' }),
           } as any,
         ]}
-        {...blurProps}
       >
+        {/* 原生端：BlurView 正好填满父容器，backgroundColor 和外层 inputBar 一致，避免边缘颜色差产生的 5~6px 条 */}
+        {!isWeb && (
+          <BlurView
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: theme.isDark
+                  ? 'rgba(30,31,32,0.75)'
+                  : 'rgba(240,244,249,0.88)',
+              },
+            ]}
+            {...blurProps}
+          />
+        )}
         {/* 附件按钮（语音模式下隐藏）*/}
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
           <HoverTouchable
@@ -693,7 +707,7 @@ export default function ChatInputBar({
             />
           </TouchableOpacity>
         )}
-      </BlurContainer>
+      </View>
 
       {!isKeyboardUp ? (
         <Text style={[styles.footerTip, { color: theme.textMuted }]}>
@@ -798,7 +812,7 @@ const styles = StyleSheet.create({
   inputBar: {
     minHeight: 56,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     borderWidth: 1,
     borderRadius: 24,
     paddingVertical: 8,
