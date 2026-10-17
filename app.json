@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "dietai-ai",
+    "name": "DieTai Ai",
     "slug": "ai-agent-client",
     "scheme": "ai-agent-client-toto",
     "version": "1.0.0",
@@ -19,17 +19,10 @@
       "softwareKeyboardLayoutMode": "resize",
       "package": "com.yourname.toto",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/icon-1024-padded.png"
       },
       "predictiveBackGestureEnabled": false
-    },
-    "splash": {
-      "image": "./assets/boot-logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F0F4F9"
     },
     "web": {
       "favicon": "./assets/logo-favicon.png"
@@ -39,7 +32,6 @@
       "expo-status-bar",
       "expo-audio",
       "expo-system-ui",
-      "expo-splash-screen",
       "react-native-blob-util",
       "@config-plugins/react-native-pdf"
     ]

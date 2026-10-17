@@ -1,5 +1,5 @@
 {
-  "name": "dietai-ai-agent-client",
+  "name": "DieTai-Ai-agent-client",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
@@ -22,7 +22,6 @@
     "expo-linking": "~57.0.13",
     "expo-router": "~57.0.28",
     "expo-speech": "~57.0.3",
-    "expo-splash-screen": "~57.0.10",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
     "nest": "^0.1.6",

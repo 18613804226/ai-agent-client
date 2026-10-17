@@ -41,6 +41,9 @@ yarn-error.*
 /ios
 /android
 
+# local icon backups (regeneration source, not for commit)
+assets/*.original.png
+
 
 .kilo
 .expo

@@ -14,7 +14,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, useColorScheme } from 'react-native';
 import { darkTheme, lightTheme } from '../src/constants/theme';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import * as SplashScreen from 'expo-splash-screen';
 
 import { useChatManager } from '../src/hooks/useChatManager';
 import {
@@ -29,12 +28,6 @@ import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/context/appContexts';
 import BootSplash, { BOOT_EXIT_MS } from '../src/components/BootSplash';
-
-// 启动屏两段式：原生启动屏先固定住不自动消失，等 JS 层 BootSplash 铺满同色同图后
-// 再由它调 hideAsync() 交接（见 BootSplash 的 onLayout）。这样冷启动期间不会闪白，
-// 也避免原生屏一直挂到 JS 就绪、显得启动很慢。
-// ⚠️ 必须在全局作用域调用且不要 await：放进组件/hook 会太晚，那时它已经自己消失了。
-SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const THEME_MODE_KEY = 'theme-mode';
 
@@ -113,9 +106,9 @@ export default function RootLayout() {
         <AuthGate>
           <ChatHost>
             <SafeAreaProvider>
-              <GestureHandlerRootView
-                style={{ flex: 1, backgroundColor: theme.bgApp }}
-              >
+                <GestureHandlerRootView
+                 style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+               >
                 <StatusBar style={isDarkMode ? 'light' : 'dark'} />
                 {/* 👇 根 Stack：聊天主界面（内嵌 Drawer）+ admin 页面。
                     admin 页面通过 push/back 进出，侧滑转场中内容全程保持挂载 */}
@@ -172,13 +165,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const id = setTimeout(() => setSplashMounted(false), BOOT_EXIT_MS + 20);
     return () => clearTimeout(id);
   }, [canExit]);
-
-  // 兜底：BootSplash 未挂载时也要关掉原生启动屏，
-  // 否则 preventAutoHideAsync 会让它永远停在那儿 → 界面卡死。
-  // 正常路径上 BootSplash 的 onLayout 已提前关过，这里重复调用是无害的空操作。
-  React.useEffect(() => {
-    if (!splashMounted) SplashScreen.hideAsync().catch(() => {});
-  }, [splashMounted]);
 
   return (
     <>

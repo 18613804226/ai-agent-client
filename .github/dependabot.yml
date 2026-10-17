@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # JS/Expo 依赖
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # 次要/补丁更新合并成一个 PR，减少刷屏
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions 版本更新
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -1,0 +1,61 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate GitHub Secrets
+        run: |
+          if [ -z "${{ secrets.ALIYUN_HOST }}" ]; then
+            echo "::error::ALIYUN_HOST secret is not set." && exit 1
+          fi
+          if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            echo "::error::SSH_PRIVATE_KEY secret is not set." && exit 1
+          fi
+          if [ -z "${{ secrets.ALIYUN_USER }}" ]; then
+            echo "::error::ALIYUN_USER secret is not set." && exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create production .env
+        run: echo "EXPO_PUBLIC_API_URL=${{ vars.API_URL }}" > .env
+
+      - name: Build web
+        run: npx expo export --platform web
+
+      - name: Prepare server directory
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          username: ${{ secrets.ALIYUN_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.ALIYUN_PORT || 22 }}
+          script: mkdir -p /home/deploy/ai-agent-web
+
+      - name: Upload web build
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          username: ${{ secrets.ALIYUN_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.ALIYUN_PORT || 22 }}
+          source: 'dist/'
+          target: '/home/deploy/ai-agent-web'
+          strip_components: 1

@@ -6,10 +6,9 @@ import Animated, {
   useSharedValue,
   withTiming
 } from 'react-native-reanimated'
-import * as SplashScreen from 'expo-splash-screen'
 
 /** 与 app.json 的 splash.backgroundColor 保持同色：原生启动屏交给 JS 动效时无缝衔接 */
-export const BRAND_SPLASH_BG = '#F0F4F9'
+export const BRAND_SPLASH_BG = '#FFFFFF'
 
 /** 入场动画时长（ms）：外层的退场等待要跟它对齐，别提前淡出 */
 export const BOOT_ENTER_MS = 460
@@ -55,16 +54,13 @@ const BootSplash = memo(function BootSplash({
   // ⚠️ 同样必须固定身份：react-native-web 的 Image 把 onLoad/onError 放进了 effect
   // 依赖（dist/exports/Image/index.js:262），内联箭头会让 effect 每次渲染重跑，
   // 触发 abortPendingRequest() + 重新 ImageLoader.load()，图片被反复重载。
-  const handleImgLoad = useCallback(() => setImgReady(true), []);
-  const handleImgError = useCallback(() => setImgReady(true), []);
+  const handleImgLoad = useCallback(() => setImgReady(true), [])
+  const handleImgError = useCallback(() => setImgReady(true), [])
 
   // 布局完成 + 图片解码完成，两个都满足才交接：关原生启动屏 + 开播入场动画
   useEffect(() => {
     if (!laidOut || !imgReady || handedOff.current) return
     handedOff.current = true
-    // 原生启动屏画的是同一张图 + 同一个底色，此刻关掉它不会露白
-    SplashScreen.hideAsync().catch(() => {})
-    // 图片就绪后才开播：logo 必然从「无」淡入，不会迟到弹出
     enter.value = withTiming(1, {
       duration: BOOT_ENTER_MS,
       easing: Easing.out(Easing.cubic)
@@ -117,7 +113,9 @@ const BootSplash = memo(function BootSplash({
           onError={handleImgError}
         />
       </Animated.View>
-      <Animated.Text style={[styles.brand, brandStyle]}>dietai-ai</Animated.Text>
+      {/* <Animated.Text style={[styles.brand, brandStyle]}>
+        DieTai-Ai
+      </Animated.Text> */}
     </Animated.View>
   )
 })
