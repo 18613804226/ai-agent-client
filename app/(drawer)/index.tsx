@@ -20,6 +20,7 @@ import Sidebar from '../../src/components/Sidebar';
 import ChatArea from '../../src/components/ChatArea';
 import ChatGlowBackground from '../../src/components/ChatGlowBackground';
 import ChatInputBar from '../../src/components/ChatInputBar';
+import { BlurTargetView } from 'expo-blur';
 import { MobileHeader } from '../../src/components/MobileHeader';
 
 import { useKeyboardAnimation } from '../../src/hooks/useKeyboardAnimation';
@@ -114,6 +115,10 @@ export default function ChatScreen() {
   const { keyboardHeightAnim, isKeyboardUp } = useKeyboardAnimation();
   const drawerStatus = useDrawerStatus();
   const isDrawerOpen = drawerStatus === 'open';
+
+  // Android（SDK 55+）BlurView 真模糊的目标层：把输入栏背后的光晕背景包成
+  // BlurTargetView，再把这个 ref 透传给 ChatInputBar 的 BlurView.blurTarget。
+  const inputBarBlurTargetRef = useRef<View | null>(null);
 
   const handleSendWithImages = async (overrideText?: string) => {
     // 只发送后端真实存在、已完成索引的文件 ID：
@@ -242,8 +247,25 @@ export default function ChatScreen() {
               },
             ]}
           >
-            {/* 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面 */}
-            <ChatGlowBackground isDark={isDarkMode} />
+            {/* 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面。
+                Android 上包一层 BlurTargetView 作为输入栏 BlurView 的模糊目标，
+                否则 blurMethod='dimezisBlurView' 会回退为 none（只显示半透明色块）。 */}
+            <BlurTargetView
+              ref={inputBarBlurTargetRef}
+              style={styles.chatBlurTarget}
+              pointerEvents="none"
+            >
+              {/* 模糊目标必须有【不透明】底色：expo-blur 会把 BlurTargetView
+                  子树裁成位图再模糊，且以 window 背景（浅色）填补透明区。
+                  光晕本身背景透明 → 暗色主题下输入栏会被"透"成白色。
+                  垫一层主题底色（与 container 的 bgApp 同色，视觉无变化）后，
+                  模糊拿到的就是不透明深色底，暗色主题不再发白。 */}
+              <View
+                style={[StyleSheet.absoluteFill, { backgroundColor: theme.bgApp }]}
+                pointerEvents="none"
+              />
+              <ChatGlowBackground isDark={isDarkMode} />
+            </BlurTargetView>
             <View style={styles.chatCenterContainer}>
               {/* 🌐 全局知识库上传进度条：抽屉关闭时也能看到 */}
               {isUploadingKnowledge && (
@@ -299,6 +321,7 @@ export default function ChatScreen() {
                 attachments={selectedAttachments} // 👈 统一附件列表（图片/文档/视频）
                 setAttachments={setSelectedAttachments} // 👈 传入修改方法
                 onPickImage={handlePickImage} // 👈 绑定在这里
+                blurTarget={inputBarBlurTargetRef} // 👈 Android 真模糊目标（BlurTargetView）
               />
               <CustomActionSheet
                 visible={isSheetVisible} // 传显隐状态
@@ -344,6 +367,11 @@ const styles = StyleSheet.create({
   chatMainWrapper: {
     flex: 1,
     backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  // 输入栏 BlurView 的模糊目标层：铺满聊天 wrapper，垫在消息区/输入栏之下
+  chatBlurTarget: {
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
   },
   chatCenterContainer: {

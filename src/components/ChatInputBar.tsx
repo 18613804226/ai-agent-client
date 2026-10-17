@@ -77,6 +77,11 @@ interface ChatInputBarProps {
     React.SetStateAction<PickedAttachment[]>>
   ;
   onPickImage?: () => void;
+  /**
+   * Android（SDK 55+）专用：指向 BlurTargetView 的 ref。
+   * 不传则 blurMethod 回退为 'none'（只渲染半透明色块，不报错）。
+   */
+  blurTarget?: React.RefObject<View | null>;
 }
 
 export default function ChatInputBar({
@@ -90,6 +95,7 @@ export default function ChatInputBar({
   attachments = [],
   setAttachments = () => {},
   onPickImage,
+  blurTarget,
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音/键盘模式
@@ -102,14 +108,28 @@ export default function ChatInputBar({
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktopWeb = isWeb && width >= 768;
-  // Expo SDK 55+：原生端必须显式指定 intensity + tint + blurMethod，
-  // 否则 Android 默认 blurMethod='none' 只渲染半透明色块（白色方块）。
+  // Expo SDK 55+：Android 真模糊必须同时给 blurMethod='dimezisBlurView' 和
+  // blurTarget（指向 BlurTargetView 的 ref）；缺 blurTarget 时 expo-blur 会告警
+  // 并回退 'none'（只渲染半透明色块）。iOS/Web 走 legacy 路径，无需这些。
+  // Android 真模糊的"实/透"由 tint 叠加层决定：不透明度 ≈ (intensity/100)*系数
+  // （dark 系数 0.69）。想更实就把 intensity 调高；用 blurReductionFactor 等比放大，
+  // 让 实际模糊半径 = intensity/blurReductionFactor 保持不变，只加深叠加层。
+  const isAndroid = Platform.OS === 'android';
+  // Android：在 blur 之上再盖一层主题色 scrim，直接控制输入栏的"实/透"。
+  // 这层没有 0.69 上限 —— 调大 alpha 更实，调到 1 就完全不透明。
+  const inputBarScrimAlpha = 0.6;
+  const inputBarScrim = theme.isDark
+    ? `rgba(30,31,32,${inputBarScrimAlpha})`
+    : `rgba(240,244,249,${inputBarScrimAlpha})`;
   const blurProps = isWeb
     ? {}
     : {
-        intensity: 60,
+        intensity: isAndroid ? 95 : 60,
         tint: theme.isDark ? 'dark' : 'light',
-        blurMethod: 'dimezisBlurView',
+        ...(isAndroid ? { blurReductionFactor: 6.3 } : {}),
+        ...(blurTarget
+          ? { blurMethod: 'dimezisBlurView' as const, blurTarget }
+          : {}),
       } as any;
 
   const hasAttachments = attachments.length > 0;
@@ -552,6 +572,14 @@ export default function ChatInputBar({
               },
             ]}
             {...blurProps}
+          />
+        )}
+        {/* Android：blur 之上的不透明 scrim，压住透出的光晕/背景（无 0.69 上限）。
+            位于按钮/输入框之下，pointerEvents=none，不影响交互。 */}
+        {isAndroid && (
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { backgroundColor: inputBarScrim }]}
           />
         )}
         {/* 附件按钮（语音模式下隐藏）*/}
