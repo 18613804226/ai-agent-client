@@ -529,8 +529,8 @@ export default function ChatInputBar({
                 ? 'rgba(30,31,32,0.72)'
                 : 'rgba(240,244,249,0.72)'
               : theme.isDark
-                ? 'rgba(30,31,32,0.75)'
-                : 'rgba(240,244,249,0.88)',
+                ? 'rgba(30,31,32,0.68)'
+                : 'rgba(240,244,249,0.68)',
             borderColor: theme.border,
             ...(isWeb ? { backdropFilterBlur: 24 } : { overflow: 'hidden' }),
           } as any,
@@ -543,8 +543,8 @@ export default function ChatInputBar({
               StyleSheet.absoluteFill,
               {
                 backgroundColor: theme.isDark
-                  ? 'rgba(30,31,32,0.75)'
-                  : 'rgba(240,244,249,0.88)',
+                  ? 'rgba(30,31,32,0.68)'
+                  : 'rgba(240,244,249,0.68)',
               },
             ]}
             {...blurProps}

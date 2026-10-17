@@ -6,14 +6,26 @@ const path = require('path');
 const AND = 'D:/personal/ai-agent-client/android';
 const RES = AND + '/app/src/main/res';
 
-const STYLES = `<resources xmlns:tools="http://schemas.android.com/tools">
+const STYLES_LIGHT = `<resources xmlns:tools="http://schemas.android.com/tools">
   <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
     <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     <item name="colorPrimary">@color/colorPrimary</item>
     <item name="android:statusBarColor">@android:color/transparent</item>
     <item name="android:navigationBarColor">@android:color/transparent</item>
     <item name="android:windowBackground">@drawable/window_background</item>
-    <item name="android:colorBackground">@android:color/white</item>
+    <item name="android:colorBackground">#F0F4F9</item>
+  </style>
+</resources>
+`;
+
+const STYLES_NIGHT = `<resources xmlns:tools="http://schemas.android.com/tools">
+  <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+    <item name="colorPrimary">@color/colorPrimary</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+    <item name="android:windowBackground">@drawable/window_background</item>
+    <item name="android:colorBackground">#000000</item>
   </style>
 </resources>
 `;
@@ -29,8 +41,8 @@ const LOCAL_PROPS = 'sdk.dir=C:/Users/User/AppData/Local/Android/Sdk\n';
 function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
 function write(p, s) { ensureDir(path.dirname(p)); fs.writeFileSync(p, s); console.log('wrote', p.replace(AND, 'android')); }
 
-write(RES + '/values/styles.xml', STYLES);
-write(RES + '/values-night/styles.xml', STYLES);
+write(RES + '/values/styles.xml', STYLES_LIGHT);
+write(RES + '/values-night/styles.xml', STYLES_NIGHT);
 write(RES + '/drawable/window_background.xml', WINDOW_BG);
 write(AND + '/local.properties', LOCAL_PROPS);
 
