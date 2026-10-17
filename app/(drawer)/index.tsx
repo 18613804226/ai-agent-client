@@ -18,6 +18,7 @@ import { useDrawerStatus } from 'expo-router/drawer';
 
 import Sidebar from '../../src/components/Sidebar';
 import ChatArea from '../../src/components/ChatArea';
+import ChatGlowBackground from '../../src/components/ChatGlowBackground';
 import ChatInputBar from '../../src/components/ChatInputBar';
 import { MobileHeader } from '../../src/components/MobileHeader';
 
@@ -241,6 +242,8 @@ export default function ChatScreen() {
               },
             ]}
           >
+            {/* 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面 */}
+            <ChatGlowBackground isDark={isDarkMode} />
             <View style={styles.chatCenterContainer}>
               {/* 🌐 全局知识库上传进度条：抽屉关闭时也能看到 */}
               {isUploadingKnowledge && (

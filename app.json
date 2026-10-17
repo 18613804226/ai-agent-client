@@ -8,7 +8,6 @@
     "icon": "./assets/icon-1024.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "jsEngine": "hermes",
     "runtimeVersion": "sdkVersion",
     "experiments": {
       "reactCompiler": true

@@ -22,6 +22,7 @@ import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import ImageViewer from './ImageViewer';
 import { FilePreviewer, extOf, classifyFile } from './FilePreviewer';
 import { HoverTouchable } from './HoverTouchable';
+import { BlurView } from 'expo-blur';
 import { api } from '../services/api';
 import {
   formatFileSize,
@@ -90,6 +91,7 @@ export default function ChatInputBar({
   setAttachments = () => {},
   onPickImage,
 }: ChatInputBarProps) {
+  const BlurContainer = Platform.OS === 'web' ? View : BlurView;
   const [isHovered, setIsHovered] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音/键盘模式
   /** 非 null = 当前正在预览第几张已选图片*/
@@ -101,6 +103,15 @@ export default function ChatInputBar({
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktopWeb = isWeb && width >= 768;
+  // Expo SDK 55+：原生端必须显式指定 intensity + tint + blurMethod，
+  // 否则 Android 默认 blurMethod='none' 只渲染半透明色块（白色方块）。
+  const blurProps = isWeb
+    ? {}
+    : {
+        intensity: 60,
+        tint: theme.isDark ? 'dark' : 'light',
+        blurMethod: 'dimezisBlurView',
+      } as any;
 
   const hasAttachments = attachments.length > 0;
   // 附件没就绪 → 禁发送：① 还在传（id 未拿到）② 上传失败（点发送也是白跑）
@@ -510,11 +521,20 @@ export default function ChatInputBar({
         onClose={closeFilePreview}
       />
 
-      <View
+      <BlurContainer
         style={[
           styles.inputBar,
-          { backgroundColor: theme.inputBg, borderColor: theme.border },
+          {
+            backgroundColor: isWeb
+              ? theme.isDark
+                ? 'rgba(30,31,32,0.72)'
+                : 'rgba(240,244,249,0.72)'
+              : undefined,
+            borderColor: theme.border,
+            ...(isWeb ? { backdropFilterBlur: 24 } : { overflow: 'hidden' }),
+          } as any,
         ]}
+        {...blurProps}
       >
         {/* 附件按钮（语音模式下隐藏）*/}
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
@@ -673,7 +693,7 @@ export default function ChatInputBar({
             />
           </TouchableOpacity>
         )}
-      </View>
+      </BlurContainer>
 
       {!isKeyboardUp ? (
         <Text style={[styles.footerTip, { color: theme.textMuted }]}>
