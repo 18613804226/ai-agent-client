@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react'
 import {
   StyleSheet,
   View,
@@ -8,34 +8,34 @@ import {
   PanResponder,
   Animated,
   useWindowDimensions,
-  Dimensions,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RootSiblingParent } from 'react-native-root-siblings';
-import { DrawerActions } from 'expo-router/react-navigation';
-import { useNavigation } from 'expo-router';
-import { useDrawerStatus } from 'expo-router/drawer';
+  Dimensions
+} from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { RootSiblingParent } from 'react-native-root-siblings'
+import { DrawerActions } from 'expo-router/react-navigation'
+import { useNavigation } from 'expo-router'
+import { useDrawerStatus } from 'expo-router/drawer'
 
-import Sidebar from '../../src/components/Sidebar';
-import ChatArea from '../../src/components/ChatArea';
-import ChatGlowBackground from '../../src/components/ChatGlowBackground';
-import ChatInputBar from '../../src/components/ChatInputBar';
-import { BlurTargetView } from 'expo-blur';
-import { MobileHeader } from '../../src/components/MobileHeader';
+import Sidebar from '../../src/components/Sidebar'
+import ChatArea from '../../src/components/ChatArea'
+import ChatGlowBackground from '../../src/components/ChatGlowBackground'
+import ChatInputBar from '../../src/components/ChatInputBar'
+import { BlurTargetView } from 'expo-blur'
+import { MobileHeader } from '../../src/components/MobileHeader'
 
-import { useKeyboardAnimation } from '../../src/hooks/useKeyboardAnimation';
-import GlobalToastContainer from '../../src/components/GlobalToast';
-import { useImagePicker } from '../../src/hooks/useImagePicker';
-import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts'; // 💡 全局 Context（与 app/_layout 共用）
-import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme';
-import CustomActionSheet from '../../src/components/CustomActionSheet';
+import { useKeyboardAnimation } from '../../src/hooks/useKeyboardAnimation'
+import GlobalToastContainer from '../../src/components/GlobalToast'
+import { useImagePicker } from '../../src/hooks/useImagePicker'
+import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts' // 💡 全局 Context（与 app/_layout 共用）
+import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme'
+import CustomActionSheet from '../../src/components/CustomActionSheet'
 export default function ChatScreen() {
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets()
+  const navigation = useNavigation()
+  const { width } = useWindowDimensions()
 
   // 从 Context 获取全局主题
-  const { isDarkMode, themeMode, setThemeMode, theme } = useTheme();
+  const { isDarkMode, themeMode, setThemeMode, theme } = useTheme()
 
   // 💡 2. 核心修改：直接从全局共享的 Context 获取聊天状态，不再私自调用 useChatManager()！
   const {
@@ -55,8 +55,8 @@ export default function ChatScreen() {
     isAtBottomRef,
     scrollViewRef,
     handleScroll,
-    streamingRenderMsg,
-  } = useChat();
+    streamingRenderMsg
+  } = useChat()
 
   const {
     selectedAttachments, // 👈 统一的附件列表（图片/文档/视频）
@@ -67,8 +67,8 @@ export default function ChatScreen() {
     setIsSheetVisible, // 👈 必须返回这个
     handlePickDocument, // 👈 使用新名字
     openCamera,
-    openImageLibrary,
-  } = useImagePicker();
+    openImageLibrary
+  } = useImagePicker()
   // 定义你的菜单列表（和截图里的风格一致）
   const menuItems = [
     ...(Platform.OS !== 'web'
@@ -77,48 +77,48 @@ export default function ChatScreen() {
             id: 'camera',
             icon: '📸',
             label: '拍照',
-            onPress: openCamera,
-          },
+            onPress: openCamera
+          }
         ]
       : []),
     {
       id: 'library',
       icon: '🖼️',
       label: '从相册选择',
-      onPress: openImageLibrary, // 👈 均打开图片库
+      onPress: openImageLibrary // 👈 均打开图片库
     },
     {
       id: 'file',
       icon: '📎',
       label: '上传文件',
-      onPress: handlePickDocument,
-    },
+      onPress: handlePickDocument
+    }
     // { id: 'canvas', icon: '🎨', label: 'Canvas', onPress: () => {} }
-  ];
+  ]
   const {
     uploadedFiles,
     handleUploadFile,
     handleDeleteFile,
-    toggleKnowledgeFileEnabled,
-  } = useKnowledge();
+    toggleKnowledgeFileEnabled
+  } = useKnowledge()
 
   // 知识库上传进度（用于全局悬浮进度条）
-  const uploadingFiles = uploadedFiles.filter((f) => f.uploading);
-  const isUploadingKnowledge = uploadingFiles.length > 0;
+  const uploadingFiles = uploadedFiles.filter((f) => f.uploading)
+  const isUploadingKnowledge = uploadingFiles.length > 0
   const knowledgeUploadPercent = isUploadingKnowledge
     ? Math.round(
         uploadingFiles.reduce((sum, f) => sum + (f.progress ?? 0), 0) /
-          uploadingFiles.length,
+          uploadingFiles.length
       )
-    : 0;
+    : 0
 
-  const { keyboardHeightAnim, isKeyboardUp } = useKeyboardAnimation();
-  const drawerStatus = useDrawerStatus();
-  const isDrawerOpen = drawerStatus === 'open';
+  const { keyboardHeightAnim, isKeyboardUp } = useKeyboardAnimation()
+  const drawerStatus = useDrawerStatus()
+  const isDrawerOpen = drawerStatus === 'open'
 
   // Android（SDK 55+）BlurView 真模糊的目标层：把输入栏背后的光晕背景包成
   // BlurTargetView，再把这个 ref 透传给 ChatInputBar 的 BlurView.blurTarget。
-  const inputBarBlurTargetRef = useRef<View | null>(null);
+  const inputBarBlurTargetRef = useRef<View | null>(null)
 
   const handleSendWithImages = async (overrideText?: string) => {
     // 只发送后端真实存在、已完成索引的文件 ID：
@@ -132,9 +132,9 @@ export default function ChatScreen() {
           !f.error &&
           f.status !== 'failed' &&
           f.status !== 'processing' &&
-          f.enabled,
+          f.enabled
       )
-      .map((f) => f.id);
+      .map((f) => f.id)
     // 附件上传失败时 handleSend 返回 false：chips 留在输入栏、输入已还原，可直接重试。
     // 第 5 参 onComposerClear：前置校验 + 附件上传一通过就清 chips，
     // 不等流式吐字结束（清空时机由 handleSend 内部控制，失败不会调用）。
@@ -143,46 +143,46 @@ export default function ChatScreen() {
       [],
       knowledgeFileIds,
       selectedAttachments,
-      clearImages,
-    );
-  };
+      clearImages
+    )
+  }
 
   // 💡 三端精准判断
-  const screenWidth = Dimensions.get('window').width;
-  const isPCWeb = Platform.OS === 'web' && isPCWebWidth(screenWidth); // 电脑端网页
-  const isMobileWeb = Platform.OS === 'web' && isMobileWebWidth(screenWidth); // 手机 H5 网页
+  const screenWidth = Dimensions.get('window').width
+  const isPCWeb = Platform.OS === 'web' && isPCWebWidth(screenWidth) // 电脑端网页
+  const isMobileWeb = Platform.OS === 'web' && isMobileWebWidth(screenWidth) // 手机 H5 网页
 
   // 💡 针对三端各自配置不同的悬浮菜单坐标样式
   const sheetPositionStyle = isPCWeb
     ? { bottom: 94, left: 'calc(50% - 270px)' } // 🖥️ PC 网页端：依据居中输入框进行精确定位
     : isMobileWeb
       ? { bottom: 94, left: 16 } // 📱 手机 H5 端：依据移动网页的 + 号定位
-      : { bottom: 94, left: 20 };
+      : { bottom: 94, left: 20 }
 
   const openDrawer = () => {
     if (!isPCWeb) {
-      navigation.dispatch(DrawerActions.openDrawer());
+      navigation.dispatch(DrawerActions.openDrawer())
     }
-  };
+  }
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        if (isPCWeb) return false;
+        if (isPCWeb) return false
         return (
           gestureState.dx > 3 &&
           Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 0.6
-        );
+        )
       },
       onPanResponderRelease: (_, gestureState) => {
         if (!isPCWeb && gestureState.dx > 14) {
-          openDrawer();
+          openDrawer()
         }
-      },
-    }),
-  ).current;
+      }
+    })
+  ).current
 
   return (
     <RootSiblingParent>
@@ -210,8 +210,8 @@ export default function ChatScreen() {
                 styles.sidebarDesktop,
                 {
                   borderColor: theme.border,
-                  backgroundColor: theme.bgSidebar,
-                },
+                  backgroundColor: theme.bgSidebar
+                }
               ]}
             >
               <Sidebar
@@ -241,10 +241,10 @@ export default function ChatScreen() {
                     translateY:
                       Platform.OS === 'android'
                         ? Animated.multiply(keyboardHeightAnim, -1)
-                        : 0,
-                  },
-                ],
-              },
+                        : 0
+                  }
+                ]
+              }
             ]}
           >
             {/* 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面。
@@ -253,7 +253,6 @@ export default function ChatScreen() {
             <BlurTargetView
               ref={inputBarBlurTargetRef}
               style={styles.chatBlurTarget}
-              pointerEvents="none"
             >
               {/* 模糊目标必须有【不透明】底色：expo-blur 会把 BlurTargetView
                   子树裁成位图再模糊，且以 window 背景（浅色）填补透明区。
@@ -261,8 +260,10 @@ export default function ChatScreen() {
                   垫一层主题底色（与 container 的 bgApp 同色，视觉无变化）后，
                   模糊拿到的就是不透明深色底，暗色主题不再发白。 */}
               <View
-                style={[StyleSheet.absoluteFill, { backgroundColor: theme.bgApp }]}
-                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: theme.bgApp, pointerEvents: 'none' }
+                ]}
               />
               <ChatGlowBackground isDark={isDarkMode} />
             </BlurTargetView>
@@ -276,8 +277,8 @@ export default function ChatScreen() {
                       backgroundColor: isDarkMode
                         ? 'rgba(40,40,40,0.95)'
                         : 'rgba(255,255,255,0.97)',
-                      borderColor: theme.border,
-                    },
+                      borderColor: theme.border
+                    }
                   ]}
                 >
                   <Text
@@ -291,8 +292,8 @@ export default function ChatScreen() {
                         styles.uploadBannerFill,
                         {
                           width: `${knowledgeUploadPercent}%`,
-                          backgroundColor: theme.sendBtnActive || '#3b82f6',
-                        },
+                          backgroundColor: theme.sendBtnActive || '#3b82f6'
+                        }
                       ]}
                     />
                   </View>
@@ -337,7 +338,7 @@ export default function ChatScreen() {
       </View>
       <GlobalToastContainer />
     </RootSiblingParent>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
@@ -354,32 +355,33 @@ const styles = StyleSheet.create({
           width: '100%',
           height: '100%',
           overflow: 'hidden',
-          overscrollBehavior: 'none' as any, // 禁止 iOS 浏览器回弹露白
+          overscrollBehavior: 'none' as any // 禁止 iOS 浏览器回弹露白
         }
-      : {}),
+      : {})
   },
   mainLayout: { flex: 1, flexDirection: 'row' },
   sidebarDesktop: {
     width: 280,
     height: '100%',
-    borderRightWidth: 0,
+    borderRightWidth: 0
   },
   chatMainWrapper: {
     flex: 1,
     backgroundColor: 'transparent',
-    overflow: 'hidden',
+    overflow: 'hidden'
   },
   // 输入栏 BlurView 的模糊目标层：铺满聊天 wrapper，垫在消息区/输入栏之下
   chatBlurTarget: {
     ...StyleSheet.absoluteFill,
     overflow: 'hidden',
+    pointerEvents: 'none'
   },
   chatCenterContainer: {
     flex: 1,
     maxWidth: 850,
     width: '100%',
     alignSelf: 'center',
-    flexDirection: 'column',
+    flexDirection: 'column'
   },
   uploadBanner: {
     position: 'absolute',
@@ -393,21 +395,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.15)',
-    elevation: 5,
+    elevation: 5
   },
   uploadBannerText: {
     fontSize: 12,
     marginBottom: 6,
-    textAlign: 'center',
+    textAlign: 'center'
   },
   uploadBannerTrack: {
     height: 5,
     borderRadius: 3,
     backgroundColor: 'rgba(150,150,150,0.25)',
-    overflow: 'hidden',
+    overflow: 'hidden'
   },
   uploadBannerFill: {
     height: '100%',
-    borderRadius: 3,
-  },
-});
+    borderRadius: 3
+  }
+})

@@ -775,9 +775,9 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
                 {
                   borderColor: theme.border,
                   backgroundColor: theme.isDark ? '#1E1F20' : '#F0F4F9',
+                  pointerEvents: 'none',
                 },
               ]}
-              pointerEvents="none"
             >
               <Text style={{ fontSize: 11, color: theme.textMuted }}>
                 仅预览每个工作表前 1000 行

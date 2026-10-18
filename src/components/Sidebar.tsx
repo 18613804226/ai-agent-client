@@ -98,7 +98,8 @@ function FileEnabledSwitch({
         <Animated.View
           style={[
             styles.fileSwitchThumb,
-            { shadowColor: theme.bgApp },
+            // boxShadow 三端通用（原生新架构亦支持），替代已废弃的 shadow*
+            { boxShadow: theme.isDark ? '0px 1px 3px 0px rgba(0,0,0,0.8)' : '0px 1px 3px 0px rgba(255,255,255,0.8)' },
             { transform: [{ translateX: thumbPosition }] }
           ]}
         />
@@ -539,7 +540,13 @@ export default function Sidebar({
         style={[
           styles.sidebarInner,
           {
-            paddingTop: Platform.OS === 'web' ? 40 : insets.top + 10
+            // Web：PC 端留 40；H5 无状态栏，只留设计里的 +10 基础留白（原 40 离顶太远）
+            paddingTop:
+              Platform.OS === 'web'
+                ? isPCWeb
+                  ? 40
+                  : 10
+                : insets.top + 10
           }
         ]}
       >
@@ -1173,11 +1180,7 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#ffffff',
-    shadowOpacity: 0.8,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3
+    backgroundColor: '#ffffff'
   },
   progressTrack: {
     flex: 1,

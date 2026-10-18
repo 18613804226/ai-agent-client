@@ -169,7 +169,7 @@ export default function PdfView({ src, title, theme }: PdfViewProps) {
         onChange={onChange}
       />
       {state === 'loading' && (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.center]}>
+        <View style={[StyleSheet.absoluteFill, styles.center, { pointerEvents: 'none' }]}>
           <ActivityIndicator color={theme.textMuted} />
           <Text style={[styles.hint, { color: theme.textMuted }]}>解析中…</Text>
         </View>

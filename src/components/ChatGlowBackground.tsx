@@ -20,7 +20,7 @@ import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
  *   动画跑在 Reanimated UI 线程。
  * - 渐变本体是静态 SVG（react-native-svg RadialGradient），只有外层 View 做
  *   transform / opacity 动画 —— 合成器层面执行。
- * - 整层 pointerEvents="none"，不拦截输入框 / 发送按钮的任何点击。
+ * - 整层 style.pointerEvents='none'，不拦截输入框 / 发送按钮的任何点击。
  */
 
 type GlowSpec = {
@@ -196,7 +196,6 @@ export default function ChatGlowBackground({ isDark }: ChatGlowBackgroundProps) 
       onLayout={(e) =>
         setLayout({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })
       }
-      pointerEvents="none"
       accessibilityIgnoresInvertColors
     >
       {layout.width > 0 &&
@@ -218,6 +217,7 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFill,
     overflow: 'hidden',
+    pointerEvents: 'none',
   },
 });
 

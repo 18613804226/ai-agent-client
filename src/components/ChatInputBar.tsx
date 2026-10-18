@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useCallback,
+} from 'react';
 import {
   StyleSheet,
   Text,
@@ -22,7 +28,7 @@ import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
 import ImageViewer from './ImageViewer';
 import { FilePreviewer, extOf, classifyFile } from './FilePreviewer';
 import { HoverTouchable } from './HoverTouchable';
-import { BlurView } from 'expo-blur';
+import GlassSurface from './GlassSurface';
 import { api } from '../services/api';
 import {
   formatFileSize,
@@ -52,6 +58,14 @@ if (Platform.OS === 'web') {
     document.head.appendChild(style);
   }
 }
+
+// field-sizing: content（textarea 按内容自适应高度）仅 Chrome 123+/2024.3+ 支持。
+// OPPO/ColorOS 等旧 Chromium 内核不认 → 用 scrollHeight 的 JS 兜底（见组件内 effect）。
+const FIELD_SIZING_SUPPORTED =
+  Platform.OS === 'web' &&
+  typeof CSS !== 'undefined' &&
+  typeof CSS.supports === 'function' &&
+  CSS.supports('field-sizing', 'content');
 
 interface ChatInputBarProps {
   inputText: string;
@@ -108,30 +122,6 @@ export default function ChatInputBar({
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktopWeb = isWeb && width >= 768;
-  // Expo SDK 55+：Android 真模糊必须同时给 blurMethod='dimezisBlurView' 和
-  // blurTarget（指向 BlurTargetView 的 ref）；缺 blurTarget 时 expo-blur 会告警
-  // 并回退 'none'（只渲染半透明色块）。iOS/Web 走 legacy 路径，无需这些。
-  // Android 真模糊的"实/透"由 tint 叠加层决定：不透明度 ≈ (intensity/100)*系数
-  // （dark 系数 0.69）。想更实就把 intensity 调高；用 blurReductionFactor 等比放大，
-  // 让 实际模糊半径 = intensity/blurReductionFactor 保持不变，只加深叠加层。
-  const isAndroid = Platform.OS === 'android';
-  // Android：在 blur 之上再盖一层主题色 scrim，直接控制输入栏的"实/透"。
-  // 这层没有 0.69 上限 —— 调大 alpha 更实，调到 1 就完全不透明。
-  const inputBarScrimAlpha = 0.6;
-  const inputBarScrim = theme.isDark
-    ? `rgba(30,31,32,${inputBarScrimAlpha})`
-    : `rgba(240,244,249,${inputBarScrimAlpha})`;
-  const blurProps = isWeb
-    ? {}
-    : {
-        intensity: isAndroid ? 95 : 60,
-        tint: theme.isDark ? 'dark' : 'light',
-        ...(isAndroid ? { blurReductionFactor: 6.3 } : {}),
-        ...(blurTarget
-          ? { blurMethod: 'dimezisBlurView' as const, blurTarget }
-          : {}),
-      } as any;
-
   const hasAttachments = attachments.length > 0;
   // 附件没就绪 → 禁发送：① 还在传（id 未拿到）② 上传失败（点发送也是白跑）
   const uploadingAttachments = attachments.filter((f) => f.uploading);
@@ -372,6 +362,20 @@ export default function ChatInputBar({
       );
   }, [isDesktopWeb, setAttachments]);
 
+  /* ---------- Web 旧内核（如 OPPO/ColorOS Chromium <123）textarea 高度兜底 ----------
+   * 这些内核不支持 `field-sizing: content`，textarea 不会按内容撑高。
+   * 这里在渲染后用 scrollHeight 手动撑高（与 styles.input 的 maxHeight=280 对齐），
+   * 现代内核走 CSS、本 effect 提前 return，互不干扰。 */
+  useLayoutEffect(() => {
+    if (FIELD_SIZING_SUPPORTED) return;
+    if (Platform.OS !== 'web') return;
+    const el = inputRef.current as HTMLTextAreaElement | null;
+    if (!el) return;
+    el.style.height = 'auto'; // 先重置才能拿到真实 scrollHeight
+    const next = Math.min(el.scrollHeight, 280);
+    el.style.height = `${next}px`;
+  }, [inputText, width, isVoiceMode]);
+
   return (
     <View style={styles.inputAreaWrapper}>
       {/* 附件预览：图片/文档/视频统一走同一条渲染逻辑 */}
@@ -402,8 +406,10 @@ export default function ChatInputBar({
                 {/* 传输状态：遮罩 + 转圈直接盖在预览小图上 */}
                 {att.uploading ? (
                   <View
-                    style={[styles.uploadMask, { backgroundColor: theme.btnBg }]}
-                    pointerEvents="none"
+                    style={[
+                      styles.uploadMask,
+                      { backgroundColor: theme.btnBg, pointerEvents: 'none' },
+                    ]}
                   >
                     <ActivityIndicator
                       size="small"
@@ -412,8 +418,10 @@ export default function ChatInputBar({
                   </View>
                 ) : att.uploadError ? (
                   <View
-                    style={[styles.uploadMaskError, { backgroundColor: theme.btnBg }]}
-                    pointerEvents="none"
+                    style={[
+                      styles.uploadMaskError,
+                      { backgroundColor: theme.btnBg, pointerEvents: 'none' },
+                    ]}
                   >
                     <Feather name="alert-circle" size={20} color="#ef4444" />
                   </View>
@@ -470,8 +478,10 @@ export default function ChatInputBar({
                 {/* 传输状态：遮罩 + 转圈盖住整块 chip */}
                 {att.uploading ? (
                   <View
-                    style={[styles.uploadMask, { backgroundColor: theme.btnBg }]}
-                    pointerEvents="none"
+                    style={[
+                      styles.uploadMask,
+                      { backgroundColor: theme.btnBg, pointerEvents: 'none' },
+                    ]}
                   >
                     <ActivityIndicator
                       size="small"
@@ -480,8 +490,10 @@ export default function ChatInputBar({
                   </View>
                 ) : att.uploadError ? (
                   <View
-                    style={[styles.uploadMaskError, { backgroundColor: theme.btnBg }]}
-                    pointerEvents="none"
+                    style={[
+                      styles.uploadMaskError,
+                      { backgroundColor: theme.btnBg, pointerEvents: 'none' },
+                    ]}
                   >
                     <Feather name="alert-circle" size={20} color="#ef4444" />
                     <Text style={styles.uploadMaskErrorText}>重试</Text>
@@ -540,48 +552,20 @@ export default function ChatInputBar({
         onClose={closeFilePreview}
       />
 
-      <View
+      {/* 玻璃底由 GlassSurface 负责：Web=backdrop-filter，原生=BlurView(+Android scrim)。
+            这里只保留输入栏本体的布局与描边（浮起感靠亮边框，不靠 elevation）。 */}
+      <GlassSurface
+        theme={theme}
+        blurTarget={blurTarget}
         style={[
           styles.inputBar,
           {
-            backgroundColor: isWeb
-              ? theme.isDark
-                ? 'rgba(30,31,32,0.72)'
-                : 'rgba(240,244,249,0.72)'
-              : theme.isDark
-                ? 'rgba(30,31,32,0.65)'
-                : 'rgba(240,244,249,0.65)',
             borderColor: theme.isDark
               ? 'rgba(255,255,255,0.14)'
               : 'rgba(0,0,0,0.12)',
-            // elevation 已拿掉（长白条）：浮起感改用“亮边框”顶回来。
-            // 顶边 1px 高光 + 其他边描边，输入框从底上“立”起来，不靠投影。
-            ...(isWeb ? { backdropFilterBlur: 24 } : { overflow: 'hidden' }),
-          } as any,
+          },
         ]}
       >
-        {/* 原生端：BlurView 正好填满父容器，backgroundColor 和外层 inputBar 一致，避免边缘颜色差产生的 5~6px 条 */}
-        {!isWeb && (
-          <BlurView
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                backgroundColor: theme.isDark
-                  ? 'rgba(30,31,32,0.65)'
-                  : 'rgba(240,244,249,0.65)',
-              },
-            ]}
-            {...blurProps}
-          />
-        )}
-        {/* Android：blur 之上的不透明 scrim，压住透出的光晕/背景（无 0.69 上限）。
-            位于按钮/输入框之下，pointerEvents=none，不影响交互。 */}
-        {isAndroid && (
-          <View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { backgroundColor: inputBarScrim }]}
-          />
-        )}
         {/* 附件按钮（语音模式下隐藏）*/}
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
           <HoverTouchable
@@ -739,7 +723,7 @@ export default function ChatInputBar({
             />
           </TouchableOpacity>
         )}
-      </View>
+      </GlassSurface>
 
       {!isKeyboardUp ? (
         <Text style={[styles.footerTip, { color: theme.textMuted }]}>

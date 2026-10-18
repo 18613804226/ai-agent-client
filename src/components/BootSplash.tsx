@@ -100,9 +100,8 @@ const BootSplash = memo(function BootSplash({
 
   return (
     <Animated.View
-      style={[styles.root, rootStyle]}
+      style={[styles.root, rootStyle, { pointerEvents: 'none' }]}
       onLayout={() => setLaidOut(true)}
-      pointerEvents="none"
     >
       <Animated.View style={logoStyle}>
         <Image

@@ -28,6 +28,14 @@ export function MobileHeader({
   autoRead, // 💡 接收全局的自动朗读状态
   onToggleAutoRead, // 💡 接收切换开关的回调
 }: MobileHeaderProps) {
+  // 顶部留白：iOS 用安全区 insetsTop；Android 用状态栏近似高度 34；
+  // Web/H5 无状态栏，留 0（原 34 让 H5 头部离顶太远）。
+  const topInset =
+    Platform.OS === 'ios'
+      ? insetsTop
+      : Platform.OS === 'web'
+        ? 0
+        : 34;
   return (
     <View
       style={[
@@ -35,8 +43,8 @@ export function MobileHeader({
         {
           backgroundColor: theme.bgSidebar,
           borderColor: theme.border,
-          paddingTop: Platform.OS === 'ios' ? insetsTop : 34,
-          height: 48 + (Platform.OS === 'ios' ? insetsTop : 34),
+          paddingTop: topInset,
+          height: 48 + topInset,
         },
       ]}
     >
