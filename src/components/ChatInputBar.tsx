@@ -371,6 +371,9 @@ export default function ChatInputBar({
     if (Platform.OS !== 'web') return;
     const el = inputRef.current as HTMLTextAreaElement | null;
     if (!el) return;
+    // RNW 不设 rows → textarea 默认 rows=2，空态会比 Chrome（field-sizing 塌成 1 行）高一截，
+    // 且单行光标顶在上沿。兜底分支里压成 1 再量（box-sizing 已是 border-box，稳定）。
+    el.rows = 1;
     el.style.height = 'auto'; // 先重置才能拿到真实 scrollHeight
     const next = Math.min(el.scrollHeight, 280);
     el.style.height = `${next}px`;
