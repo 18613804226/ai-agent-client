@@ -12,7 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, useColorScheme } from 'react-native';
+import { Platform, useColorScheme, Text, View } from 'react-native';
 import { darkTheme, lightTheme } from '../src/constants/theme';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 
@@ -31,6 +31,9 @@ import { useAuth } from '../src/context/appContexts';
 import BootSplash, { BOOT_EXIT_MS } from '../src/components/BootSplash';
 
 const THEME_MODE_KEY = 'theme-mode';
+
+// TEMP DIAG（定位后删除）：记录 RootLayout 挂载次数
+let __diagBootCount = 0;
 
 export default function RootLayout() {
   const systemColorScheme = useColorScheme();
@@ -127,6 +130,16 @@ export default function RootLayout() {
     }
   }, [pathname]);
 
+  // TEMP DIAG（定位后删除）：挂载序号 + role/adminPreview 变更计数
+  const [diagBootId] = useState(() => {
+    __diagBootCount += 1;
+    return __diagBootCount;
+  });
+  const diagChangeRef = useRef(0);
+  useEffect(() => {
+    diagChangeRef.current += 1;
+  }, [role, isAdminPreview]);
+
   // ✅ 稳定的 Context 值，避免主题下游组件不必要地重渲染
   const themeContextValue = useMemo(
     () => ({ isDarkMode, themeMode, setThemeMode, theme }),
@@ -163,6 +176,25 @@ export default function RootLayout() {
                   <Stack.Screen name="admin-login" />
                   <Stack.Screen name="admin" />
                 </Stack>
+                {/* TEMP DIAG（定位后删除）：显示 role / adminPreview / 路由 / 启动次数 / 变更次数 */}
+                {Platform.OS === 'web' && (
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      zIndex: 99999,
+                      paddingHorizontal: 6,
+                      paddingVertical: 2,
+                      backgroundColor: 'rgba(0,0,0,0.8)',
+                    }}
+                  >
+                    <Text style={{ color: '#0f0', fontSize: 11 }}>
+                      {`role=${role} prev=${isAdminPreview ? 1 : 0} path=${pathname} boot=${diagBootId} chg=${diagChangeRef.current}`}
+                    </Text>
+                  </View>
+                )}
               </GestureHandlerRootView>
             </SafeAreaProvider>
           </ChatHost>
