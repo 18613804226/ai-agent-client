@@ -9,6 +9,7 @@ import {
   getDevice
 } from '../services/authStore'
 import { MyToast } from '../components/GlobalToast'
+import { stopSpeech } from '../services/speechPlayer'
 import { resolveImageUpload, type PickedAttachment } from './useImagePicker'
 import { chatDistanceFromBottom, scrollChatToBottom } from '../utils/chatScroll'
 
@@ -316,6 +317,10 @@ export function useChatManager() {
     abortActiveStream()
     resetTypewriter()
     autoFollowRef.current = true
+    // 切换会话时关闭头部「自动朗读」，并中止正在播放的音频
+    // （否则新会话会被 autoRead 的 effect 自动接着念）
+    setAutoRead(false)
+    stopSpeech()
     setActiveId(id)
 
     try {
