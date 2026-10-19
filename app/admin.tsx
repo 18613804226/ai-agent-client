@@ -22,6 +22,7 @@ import { api, type DeviceInfo, type AdminStats } from '../src/services/api'
 import GlobalToastContainer, { MyToast } from '../src/components/GlobalToast'
 import HoverTouchable from '../src/components/HoverTouchable'
 import type { DeviceUsageRecord } from '../src/types/admin'
+import { diag } from '../src/devDiag'
 
 const formatNumber = (value: number) => value.toLocaleString('en-US')
 
@@ -161,6 +162,7 @@ export default function AdminDashboardScreen() {
       await logoutToDevice()
     } catch {}
     // 侧栏角色分段器的高亮跟着切回 User（role 的真源是 RoleContext）
+    diag.lastSet = 'adminLogout'
     setRole('user')
     // 侧滑退回聊天页（Stack pop）
     goBackToChat()

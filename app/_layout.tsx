@@ -29,6 +29,7 @@ import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/context/appContexts';
 import BootSplash, { BOOT_EXIT_MS } from '../src/components/BootSplash';
+import { diag } from '../src/devDiag';
 
 const THEME_MODE_KEY = 'theme-mode';
 
@@ -125,6 +126,7 @@ export default function RootLayout() {
     const prev = prevPathRef.current;
     prevPathRef.current = pathname;
     if (prev?.startsWith('/admin-login') && !pathname.startsWith('/admin')) {
+      diag.lastSet = 'layoutPathReset';
       setAdminPreview(false);
       setRole('user');
     }
@@ -191,7 +193,7 @@ export default function RootLayout() {
                     }}
                   >
                     <Text style={{ color: '#0f0', fontSize: 11 }}>
-                      {`role=${role} prev=${isAdminPreview ? 1 : 0} path=${pathname} boot=${diagBootId} chg=${diagChangeRef.current}`}
+                      {`role=${role} prev=${isAdminPreview ? 1 : 0} path=${pathname} boot=${diagBootId} chg=${diagChangeRef.current} src=${diag.lastSet}`}
                     </Text>
                   </View>
                 )}

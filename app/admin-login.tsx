@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons'
 import { useAdminPreview, useAuth, useRole, useTheme } from '../src/context/appContexts'
 import { MyToast } from '../src/components/GlobalToast'
+import { diag } from '../src/devDiag'
 
 export default function AdminLoginScreen() {
   const router = useRouter()
@@ -36,6 +37,7 @@ export default function AdminLoginScreen() {
   useEffect(() => {
     return () => {
       if (enteringAdminRef.current) return
+      diag.lastSet = 'adminLoginExit'
       setAdminPreview(false)
       setRole('user')
     }
