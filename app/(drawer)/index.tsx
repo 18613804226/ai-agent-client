@@ -7,6 +7,8 @@ import {
   ScrollView,
   PanResponder,
   Animated,
+  AppState,
+  BackHandler,
   useWindowDimensions,
   Dimensions
 } from 'react-native'
@@ -164,6 +166,28 @@ export default function ChatScreen() {
       navigation.dispatch(DrawerActions.openDrawer())
     }
   }
+
+  // 偶发问题（原生 APP 为主）：从后台恢复时抽屉手势失效，表现为「侧栏展开、划不动、
+  // 关不掉，安卓返回直接退出」，只有杀进程才好。回到前台时若抽屉还开着，主动关一次复位。
+  useEffect(() => {
+    if (isPCWeb) return
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && drawerStatus === 'open') {
+        navigation.dispatch(DrawerActions.closeDrawer())
+      }
+    })
+    return () => sub.remove()
+  }, [isPCWeb, navigation, drawerStatus])
+
+  // 安卓返回：抽屉开着时优先关抽屉，而不是让 JS Stack 的返回把手势返回直接吞成「退出 app」。
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !isDrawerOpen) return
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      navigation.dispatch(DrawerActions.closeDrawer())
+      return true // 消费掉，别退出 app
+    })
+    return () => sub.remove()
+  }, [isDrawerOpen, navigation])
 
   const panResponder = useRef(
     PanResponder.create({
