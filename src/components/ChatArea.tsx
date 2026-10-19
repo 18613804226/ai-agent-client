@@ -4,11 +4,14 @@ import Svg, { Path } from 'react-native-svg'
 import ImageViewer from './ImageViewer'
 import FilePreviewer, { classifyFile } from './FilePreviewer'
 import { HoverTouchable } from './HoverTouchable'
+import { PopAnim, POP_CSS_FALLBACK } from './PopAnim'
+import Animated from 'react-native-reanimated'
 import { useChat } from '../context/appContexts'
 import { INVERTED_CHAT_LIST } from '../utils/chatScroll'
 import { useChatScroll } from '../hooks/useChatScroll'
 import ChatMessageItem from './ChatMessageItem'
 import { api, httpClient } from '../services/api'
+import { playText, stopSpeech } from '../services/speechPlayer'
 import { MyToast } from './GlobalToast'
 import type { ChatAreaProps } from '../types/chat'
 import type { PickedAttachment } from '../hooks/useImagePicker'
@@ -26,6 +29,13 @@ export default function ChatArea({
 }: ChatAreaProps) {
   const { scrollViewRef } = useChat()
   const [playingMsgId, setPlayingMsgId] = useState<string | null>(null)
+
+  // 💡 播放归属包装：playingMsgId 被手动喇叭接管（变成非自动播的 id / 清空）时，
+  // 自动朗读要让位，避免旧 effect 误判还在自动播、后续乱停别人的音
+  const handlePlayingChange = useCallback((id: string | null) => {
+    if (id !== autoMsgIdRef.current) autoPlayingRef.current = false
+    setPlayingMsgId(id)
+  }, [])
 
   // 🧹 抽屉打开时清掉 Web 端已选中的蓝色文本选择框
   // （App 端靠 textSelectable=false 让原生选择自动收起）
@@ -99,6 +109,7 @@ export default function ChatArea({
   // 💡 自动朗读相关引用
   const lastAutoReadKeyRef = useRef<string | null>(null)
   const autoPlayingRef = useRef(false)
+  const autoMsgIdRef = useRef<string | null>(null)
 
   // 合并流式临时内容
   const displayMessages = useMemo(() => {
@@ -120,6 +131,84 @@ export default function ChatArea({
     // 所以原生端需要反转 data（最新在 index 0）。Web 端保持自然顺序。
     return INVERTED_CHAT_LIST ? [...merged].reverse() : merged
   }, [messages, streamingRenderMsg])
+
+  // 💡 自动朗读：开即读 + 后续跟读
+  //  - 打开开关立刻读当前最后一条已完成 AI 气泡；之后每条新 AI 气泡完成都跟读
+  //  - 只在「吐字结束、内容落盘」后触发（streamingRenderMsg 为空且目标无 isStreaming），
+  //    避免边吐边读频繁切分 TTS
+  //  - 关闭开关 / 切会话 / 卸载时若是自动播的就停掉；手动点的喇叭不受开关影响
+  useEffect(() => {
+    if (!autoRead) {
+      if (autoPlayingRef.current) {
+        autoPlayingRef.current = false
+        autoMsgIdRef.current = null
+        stopSpeech()
+        setPlayingMsgId(null)
+      }
+      return
+    }
+    // 吐字中不读：等流式结束、内容落盘后再跟读
+    if (streamingRenderMsg) return
+    const list = displayMessages ?? []
+    let target: { id: string; content: string } | null = null
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i]
+      if (
+        m.role === 'assistant' &&
+        !m.systemNote &&
+        !m.isStreaming &&
+        m.content?.trim()
+      ) {
+        target = m
+        break
+      }
+    }
+    if (!target) return
+    const key = `${activeId}:${target.id}`
+    if (lastAutoReadKeyRef.current === key) return
+    lastAutoReadKeyRef.current = key
+    // 新播放顶掉旧的（与手动喇叭语义一致），并接管 playingMsgId 让气泡显示中止态
+    stopSpeech()
+    const id = target.id
+    const text = target.content
+    setPlayingMsgId(id)
+    autoPlayingRef.current = true
+    autoMsgIdRef.current = id
+    playText(text, {
+      fetchUrl: async (sentence) => {
+        const data = await api.textToSpeech(sentence, 'Nini')
+        return data.url
+      },
+      onEnd: () => {
+        if (autoMsgIdRef.current !== id) return // 已被手动喇叭接管：别动别人的状态
+        autoPlayingRef.current = false
+        autoMsgIdRef.current = null
+        setPlayingMsgId((prev: string | null) => (prev === id ? null : prev))
+      }
+    }).catch((e) => {
+      console.error('[自动朗读] 播放失败:', e)
+      if (autoMsgIdRef.current !== id) return
+      autoPlayingRef.current = false
+      autoMsgIdRef.current = null
+      setPlayingMsgId((prev: string | null) => (prev === id ? null : prev))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRead, displayMessages, streamingRenderMsg, activeId])
+
+  // 切会话重置跟读记忆（key={activeId} 本就会重挂，这里兜底同实例切会话的情况）
+  useEffect(() => {
+    lastAutoReadKeyRef.current = null
+  }, [activeId])
+
+  // 卸载时若是自动播的就停掉，避免切走后还在后台念
+  useEffect(() => {
+    return () => {
+      if (autoPlayingRef.current) {
+        autoPlayingRef.current = false
+        stopSpeech()
+      }
+    }
+  }, [])
 
   const showWelcome =
     (!displayMessages || displayMessages.length === 0) && !isKeyboardUp
@@ -170,7 +259,7 @@ export default function ChatArea({
               isMobile={isMobile}
               isStreaming={!!msg.isStreaming}
               playingMsgId={playingMsgId}
-              setPlayingMsgId={setPlayingMsgId}
+              setPlayingMsgId={handlePlayingChange}
               onPreviewImage={openPreview}
               onPreviewFile={openFilePreview}
               textSelectable={!isDrawerOpen}
@@ -182,34 +271,44 @@ export default function ChatArea({
         </ScrollView>
       )}
 
-      {/* ✅ 悬浮「回到底部」按钮：上滑超过一定距离才显示 */}
+      {/* ✅ 悬浮「回到底部」按钮：上滑超过一定距离才显示，淡入 + 上滑出现 */}
       {!showWelcome && showScrollToBottom && (
-        <HoverTouchable
-          onPress={handleScrollToBottom}
-          activeOpacity={0.8}
-          rippleColor={
-            theme.isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.15)'
-          }
-          style={[
-            styles.scrollToBottomBtn,
-            {
-              backgroundColor: theme.isDark
-                ? 'rgba(40,40,40,0.92)'
-                : 'rgba(255,255,255,0.95)',
-              borderColor: theme.border
-            }
-          ]}
-        >
-          <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M12 5v14M19 12l-7 7-7-7"
-              stroke={theme.textMain}
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </Svg>
-        </HoverTouchable>
+        <PopAnim kind="fab">
+          {(animStyle) => (
+            <Animated.View
+              style={[styles.scrollToBottomBtnWrap, POP_CSS_FALLBACK, animStyle]}
+            >
+              <HoverTouchable
+                onPress={handleScrollToBottom}
+                activeOpacity={0.8}
+                rippleColor={
+                  theme.isDark
+                    ? 'rgba(255, 255, 255, 0.3)'
+                    : 'rgba(0, 0, 0, 0.15)'
+                }
+                style={[
+                  styles.scrollToBottomBtn,
+                  {
+                    backgroundColor: theme.isDark
+                      ? 'rgba(40,40,40,0.92)'
+                      : 'rgba(255,255,255,0.95)',
+                    borderColor: theme.border
+                  }
+                ]}
+              >
+                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M12 5v14M19 12l-7 7-7-7"
+                    stroke={theme.textMain}
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </HoverTouchable>
+            </Animated.View>
+          )}
+        </PopAnim>
       )}
 
       {/* 点气泡里的图片 → 全屏预览 */}
@@ -267,6 +366,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20
   },
+  scrollToBottomBtnWrap: {
+    position: 'absolute',
+    bottom: 24,
+    alignSelf: 'center'
+  },
   scrollToBottomBtn: {
     width: 40,
     height: 40,
@@ -275,9 +379,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.15)',
-    elevation: 4,
-    position: 'absolute',
-    bottom: 24,
-    alignSelf: 'center'
+    elevation: 4
   }
 })

@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import { useSuppressBrowserCallout } from '../hooks/useSuppressBrowserCallout';
 import ImageViewer from './ImageViewer';
 import { FilePreviewer, extOf, classifyFile } from './FilePreviewer';
 import { HoverTouchable } from './HoverTouchable';
@@ -113,6 +114,10 @@ export default function ChatInputBar({
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false); // 语音/键盘模式
+  /** 🖥️ Web：「按住说话」按钮悬停态 */
+  const [isVoiceHover, setIsVoiceHover] = useState(false);
+  /** 🖥️ Web：附件缩略图悬停态（图片盖满了缩略图，底色 hover 看不见，改用放大+投影） */
+  const [hoveredThumb, setHoveredThumb] = useState<number | null>(null);
   /** 非 null = 当前正在预览第几张已选图片*/
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   /** 非 null = 正在应用内真预览的文件（弹层渲染，不再 window.open 变下载） */
@@ -122,6 +127,14 @@ export default function ChatInputBar({
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktopWeb = isWeb && width >= 768;
+  // 🖥️ Web 悬停底色：输入条是深色玻璃面，HoverTouchable 默认的黑色 6% 在深色主题下
+  // 约等于没有反馈，这里按主题给两档可见的提亮/加深。
+  const webHoverBg = theme.isDark
+    ? 'rgba(255, 255, 255, 0.08)'
+    : 'rgba(0, 0, 0, 0.05)';
+  const webHoverBgStrong = theme.isDark
+    ? 'rgba(255, 255, 255, 0.14)'
+    : 'rgba(0, 0, 0, 0.08)';
   const hasAttachments = attachments.length > 0;
   // 附件没就绪 → 禁发送：① 还在传（id 未拿到）② 上传失败（点发送也是白跑）
   const uploadingAttachments = attachments.filter((f) => f.uploading);
@@ -259,6 +272,15 @@ export default function ChatInputBar({
   const { isRecording, isRecognizing, startRecord, stopRecord } =
     useVoiceRecorder(handleVoiceResult);
 
+  // 🖥️ 桌面 Web（≥768px）不提供语音入口：按住说话对鼠标不友好。
+  // 若窗口拉宽进入桌面尺寸时还停在语音模式，自动切回键盘并释放麦克风。
+  useEffect(() => {
+    if (isDesktopWeb && isVoiceMode) {
+      setIsVoiceMode(false);
+      if (isRecording) stopRecord();
+    }
+  }, [isDesktopWeb, isVoiceMode, isRecording, stopRecord]);
+
   // ---- 录音科技感动画----
   const pulse = useRef(new Animated.Value(0)).current;
   const glow = useRef(new Animated.Value(0)).current;
@@ -321,6 +343,10 @@ export default function ChatInputBar({
   const handlePressOut = useCallback(() => {
     stopRecord();
   }, [stopRecord]);
+
+  // ⚠️ OPPO/ColorOS 等国产浏览器长按会弹系统菜单抢按压事件（见 hook 注释），
+  // 语音按钮不需要系统复制，直接整套压住。气泡正文千万别用这个。
+  const voiceCallout = useSuppressBrowserCallout(isVoiceMode);
 
   /* ---------- Web 粘贴图片 ---------- */
   const inputRef = useRef<any>(null);
@@ -396,6 +422,19 @@ export default function ChatInputBar({
                 style={[
                   styles.previewItem,
                   { backgroundColor: theme.btnBg, borderColor: theme.border },
+                  // 🖥️ Web：悬停时整块缩略图轻微放大 + 投影
+                  isWeb && {
+                    transitionProperty: 'transform, box-shadow',
+                    transitionDuration: '0.15s',
+                    transitionTimingFunction: 'ease',
+                  } as any,
+                  isWeb && hoveredThumb === index
+                    ? {
+                        transform: [{ scale: 1.05 }],
+                        zIndex: 2,
+                        boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.45)',
+                      }
+                    : null,
                 ]}
               >
                 <HoverTouchable
@@ -403,6 +442,10 @@ export default function ChatInputBar({
                   rippleColor="rgba(255, 255, 255, 0.35)"
                   onPress={() => handleOpenAttachment(att)}
                   style={styles.previewImageTap}
+                  onMouseEnter={() => setHoveredThumb(index)}
+                  onMouseLeave={() =>
+                    setHoveredThumb((v) => (v === index ? null : v))
+                  }
                 >
                   <Image source={{ uri: att.uri }} style={styles.previewImage} />
                 </HoverTouchable>
@@ -431,6 +474,7 @@ export default function ChatInputBar({
                 ) : null}
                 <HoverTouchable
                   style={styles.deleteBadge}
+                  hoverBg="rgba(255, 255, 255, 0.22)"
                   rippleColor="rgba(255, 255, 255, 0.35)"
                   onPress={() => handleRemoveAttachment(index)}
                   hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
@@ -453,6 +497,7 @@ export default function ChatInputBar({
                   rippleColor="rgba(255, 255, 255, 0.35)"
                   onPress={() => handleOpenAttachment(att)}
                   disabled={att.uploading}
+                  hoverBg={webHoverBgStrong}
                   style={styles.fileChipTap}
                 >
                   <View style={[styles.fileExtBox, { borderColor: theme.border }]}>
@@ -504,6 +549,7 @@ export default function ChatInputBar({
                 ) : null}
                 <HoverTouchable
                   style={styles.deleteBadge}
+                  hoverBg="rgba(255, 255, 255, 0.22)"
                   rippleColor="rgba(255, 255, 255, 0.35)"
                   onPress={() => handleRemoveAttachment(index)}
                   hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
@@ -521,6 +567,7 @@ export default function ChatInputBar({
         <View style={styles.fileHintRow}>
           <HoverTouchable
             activeOpacity={0.7}
+            hoverBg="rgba(239, 68, 68, 0.12)"
             onPress={() => {
               // 图片与非图片附件分别走各自的重传入口
               attachments.forEach((f) => {
@@ -573,6 +620,7 @@ export default function ChatInputBar({
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
           <HoverTouchable
             style={styles.attachButton}
+            hoverBg={webHoverBgStrong}
             onPress={onPickImage}
             disabled={isGenerating}
             activeOpacity={0.6}
@@ -599,14 +647,39 @@ export default function ChatInputBar({
             )}
 
             <Pressable
+              ref={voiceCallout.ref}
               style={[
                 styles.voiceHoldBtn,
+                voiceCallout.suppressStyle,
                 isRecording && styles.voiceHoldBtnActive,
                 { backgroundColor: theme.historyActiveBg },
+                // 🖥️ Web：悬停青色提亮（与按钮青色描边同色系）
+                isWeb && {
+                  transitionProperty: 'background-color, border-color',
+                  transitionDuration: '0.15s',
+                  transitionTimingFunction: 'ease',
+                  cursor: 'pointer',
+                } as any,
+                isWeb && isVoiceHover && !isRecording
+                  ? {
+                      backgroundColor: theme.isDark
+                        ? 'rgba(0, 229, 255, 0.12)'
+                        : 'rgba(0, 120, 150, 0.08)',
+                      borderColor: 'rgba(0, 229, 255, 0.5)',
+                    }
+                  : null,
               ]}
               onPressIn={handlePressIn}
               onPressOut={handlePressOut}
               disabled={isGenerating || isRecognizing}
+              // @ts-ignore
+              onMouseEnter={() => setIsVoiceHover(true)}
+              // @ts-ignore
+              onMouseLeave={() => setIsVoiceHover(false)}
+              // ⚠️ OPPO/ColorOS 等国产浏览器：长按会弹系统「复制/全选」菜单并抢走
+              // 按压事件，导致按住说话被打断。这里直接禁掉该按钮的上下文菜单。
+              // @ts-ignore RNW 透传到 DOM 的 onContextMenu
+              onContextMenu={voiceCallout.contextMenuGuard}
             >
               {isRecording && (
                 <Animated.View style={[styles.recDot, { opacity: glow }]} />
@@ -658,9 +731,11 @@ export default function ChatInputBar({
         )}
 
         {/* 语音/键盘 切换按钮 */}
-        {!isGenerating && (
+        {/* 🖥️ 桌面 Web（≥768px）隐藏语音入口；移动端 / H5 / Native 保留 */}
+        {!isGenerating && !isDesktopWeb && (
           <HoverTouchable
             style={styles.modeToggleBtn}
+            hoverBg={webHoverBgStrong}
             onPress={toggleVoiceMode}
             activeOpacity={0.6}
           >
@@ -891,6 +966,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.2)',
     // backgroundColor: 'rgba(0, 229, 255, 0.04)',
+    // 长按压制样式已由 useSuppressBrowserCallout.suppressStyle 统一提供，这里不重复写
   },
   voiceHoldBtnActive: {
     backgroundColor: 'rgba(0, 229, 255, 0.15)',

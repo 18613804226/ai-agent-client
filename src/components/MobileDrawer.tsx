@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
+import { useDrawerStatus } from 'expo-router/drawer';
 import Sidebar from './Sidebar';
 import { useKnowledge } from '../context/appContexts';
 import type { ThemeMode } from '../context/appContexts';
@@ -41,6 +42,10 @@ export function MobileDrawer({
     toggleKnowledgeFileEnabled,
   } = useKnowledge();
 
+  // ⚠️ 抽屉开合状态直传 Sidebar：关闭时它内部把长按菜单/二次确认一起收掉，
+  // 否则 Drawer 只滑走不卸载，下次打开弹窗还飘在那。
+  const drawerOpen = useDrawerStatus() === 'open';
+
   return (
     <View
       style={[
@@ -51,6 +56,7 @@ export function MobileDrawer({
       <Sidebar
         conversations={conversations}
         activeId={activeId}
+        drawerOpen={drawerOpen}
         onNewChat={() => {
           onNewChat();
           onClose?.(); // 💡 点击新建聊天后自动收起抽屉

@@ -21,6 +21,31 @@ import type { ThemeMode, RoleMode } from '../context/appContexts'
 import { useAuth, useRole } from '../context/appContexts'
 import { MyToast } from './GlobalToast'
 import HoverTouchable from './HoverTouchable'
+import { useSuppressBrowserCallout } from '../hooks/useSuppressBrowserCallout'
+import Reanimated from 'react-native-reanimated'
+import { PopAnim, POP_CSS_FALLBACK } from './PopAnim'
+
+/**
+ * 长按菜单卡片统一动画外壳（文件 / 对话共用）：
+ * 淡入 + 轻微放大 + 微上移，spring 回弹；定位/颜色调用方照常传。
+ */
+function SheetCardAnim({
+  style,
+  children
+}: {
+  style?: any
+  children: React.ReactNode
+}) {
+  return (
+    <PopAnim kind="dialog">
+      {(animStyle) => (
+        <Reanimated.View style={[style, POP_CSS_FALLBACK, animStyle]}>
+          {children}
+        </Reanimated.View>
+      )}
+    </PopAnim>
+  )
+}
 
 interface SidebarProps {
   conversations: any[]
@@ -36,6 +61,11 @@ interface SidebarProps {
   onUploadFile: () => void
   onDeleteFile: (id: string) => void
   onToggleFileEnabled: (id: string, enabled: boolean) => void
+  /**
+   * ⚠️ 抽屉开合状态（移动端抽屉场景由 MobileDrawer 传入，桌面常驻侧边栏不传）：
+   * 抽屉关闭时把长按菜单/二次确认一起收掉，否则下次打开弹窗还飘在那。
+   */
+  drawerOpen?: boolean
 }
 
 // 💡 统一的 Hover 组件：全部采用“新建对话按钮”同款的悬停变色逻辑（悬停时叠加统一的半透明遮罩/高亮层）
@@ -112,6 +142,62 @@ function FileEnabledSwitch({
 const CTX_CARD_W = 168
 const CTX_CARD_H = 150 // 估算：标题 + 两个选项
 
+/**
+ * 侧边栏长按项统一按压外壳（文件 / 对话共用）：
+ *  - 长按 350ms 弹自家删除菜单（与原来 onLongPress + delayLongPress 语义一致）
+ *  - web 端挂 useSuppressBrowserCallout：压住 OPPO 等浏览器长按弹系统菜单，
+ *    否则系统菜单会盖住自家菜单、还抢长按事件
+ *  - onPress 照常透传（点选不受影响）
+ */
+function SidebarLongPressItem({
+  itemKey,
+  measureRefs,
+  style,
+  hoverBg,
+  activeOpacity = 1,
+  onPress,
+  onLongPressAt,
+  children
+}: {
+  itemKey: string
+  measureRefs: React.MutableRefObject<Record<string, any>>
+  style?: any
+  hoverBg?: string
+  activeOpacity?: number
+  onPress?: () => void
+  /** 长按触发：offsetX/offsetY 为触摸点相对项左上角的偏移 */
+  onLongPressAt?: (offsetX: number, offsetY: number) => void
+  children: React.ReactNode
+}) {
+  const callout = useSuppressBrowserCallout(itemKey)
+  return (
+    <HoverTouchable
+      ref={(el: any) => {
+        measureRefs.current[itemKey] = el
+        ;(callout.ref as any).current = el
+      }}
+      style={[style, callout.suppressStyle]}
+      hoverBg={hoverBg}
+      activeOpacity={activeOpacity}
+      onPress={onPress}
+      onLongPress={
+        onLongPressAt
+          ? (e: any) =>
+              onLongPressAt(
+                e.nativeEvent?.locationX ?? 0,
+                e.nativeEvent?.locationY ?? 0
+              )
+          : undefined
+      }
+      delayLongPress={350}
+      // @ts-ignore RNW 透传到 DOM 的 onContextMenu
+      onContextMenu={callout.contextMenuGuard}
+    >
+      {children}
+    </HoverTouchable>
+  )
+}
+
 // 获取组件在「窗口/视口」中的位置。
 // 原生优先 measureInWindow；Web 端 DOM 节点回退到 getBoundingClientRect，
 // 保证与容器坐标系一致，避免滚动偏移导致菜单位置偏下。
@@ -178,7 +264,7 @@ function FileActionSheet({
   return (
     <View style={styles.sheetOverlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-      <Pressable
+      <SheetCardAnim
         style={[
           styles.sheetCard,
           {
@@ -188,23 +274,26 @@ function FileActionSheet({
             borderColor: theme.border
           }
         ]}
-        onPress={(e) => e.stopPropagation()}
       >
-        <Text
-          style={[styles.sheetTitle, { color: theme.textMuted }]}
-          numberOfLines={1}
-        >
-          {fileName}
-        </Text>
-        <TouchableOpacity style={styles.sheetItem} onPress={onDelete}>
-          <Text style={[styles.sheetItemText, { color: '#ef4444' }]}>删除</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.sheetItem} onPress={onCancel}>
-          <Text style={[styles.sheetItemText, { color: theme.textMain }]}>
-            取消
+        <Pressable onPress={(e) => e.stopPropagation()}>
+          <Text
+            style={[styles.sheetTitle, { color: theme.textMuted }]}
+            numberOfLines={1}
+          >
+            {fileName}
           </Text>
-        </TouchableOpacity>
-      </Pressable>
+          <TouchableOpacity style={styles.sheetItem} onPress={onDelete}>
+            <Text style={[styles.sheetItemText, { color: '#ef4444' }]}>
+              删除
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.sheetItem} onPress={onCancel}>
+            <Text style={[styles.sheetItemText, { color: theme.textMain }]}>
+              取消
+            </Text>
+          </TouchableOpacity>
+        </Pressable>
+      </SheetCardAnim>
     </View>
   )
 }
@@ -240,7 +329,7 @@ function ConversationActionSheet({
   return (
     <View style={styles.sheetOverlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
-      <Pressable
+      <SheetCardAnim
         style={[
           styles.sheetCard,
           {
@@ -250,23 +339,26 @@ function ConversationActionSheet({
             borderColor: theme.border
           }
         ]}
-        onPress={(e) => e.stopPropagation()}
       >
-        <Text
-          style={[styles.sheetTitle, { color: theme.textMuted }]}
-          numberOfLines={1}
-        >
-          {conversationTitle}
-        </Text>
-        <TouchableOpacity style={styles.sheetItem} onPress={onDelete}>
-          <Text style={[styles.sheetItemText, { color: '#ef4444' }]}>删除</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.sheetItem} onPress={onCancel}>
-          <Text style={[styles.sheetItemText, { color: theme.textMain }]}>
-            取消
+        <Pressable onPress={(e) => e.stopPropagation()}>
+          <Text
+            style={[styles.sheetTitle, { color: theme.textMuted }]}
+            numberOfLines={1}
+          >
+            {conversationTitle}
           </Text>
-        </TouchableOpacity>
-      </Pressable>
+          <TouchableOpacity style={styles.sheetItem} onPress={onDelete}>
+            <Text style={[styles.sheetItemText, { color: '#ef4444' }]}>
+              删除
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.sheetItem} onPress={onCancel}>
+            <Text style={[styles.sheetItemText, { color: theme.textMain }]}>
+              取消
+            </Text>
+          </TouchableOpacity>
+        </Pressable>
+      </SheetCardAnim>
     </View>
   )
 }
@@ -295,12 +387,12 @@ function ConfirmDeleteDialog({
     <Modal
       transparent
       visible={visible}
-      animationType="fade"
+      animationType="none"
       onRequestClose={onCancel}
     >
       <View style={styles.confirmOverlay}>
         <Pressable style={styles.confirmBackdrop} onPress={onCancel} />
-        <View
+        <SheetCardAnim
           style={[
             styles.confirmCard,
             {
@@ -333,7 +425,7 @@ function ConfirmDeleteDialog({
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </SheetCardAnim>
       </View>
     </Modal>
   )
@@ -363,12 +455,12 @@ function ConfirmDeleteConversationDialog({
     <Modal
       transparent
       visible={visible}
-      animationType="fade"
+      animationType="none"
       onRequestClose={onCancel}
     >
       <View style={styles.confirmOverlay}>
         <Pressable style={styles.confirmBackdrop} onPress={onCancel} />
-        <View
+        <SheetCardAnim
           style={[
             styles.confirmCard,
             {
@@ -401,7 +493,7 @@ function ConfirmDeleteConversationDialog({
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </SheetCardAnim>
       </View>
     </Modal>
   )
@@ -420,7 +512,8 @@ export default function Sidebar({
   uploadedFiles,
   onUploadFile,
   onDeleteFile,
-  onToggleFileEnabled
+  onToggleFileEnabled,
+  drawerOpen
 }: SidebarProps) {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
@@ -460,6 +553,18 @@ export default function Sidebar({
     id: string
     title: string
   } | null>(null)
+
+  // ⚠️ 抽屉关闭时把长按菜单/二次确认一起收掉：
+  // Drawer 关闭不会卸载 Sidebar（状态全留在内存），不清理的话下次打开弹窗还飘在那。
+  // 桌面常驻侧边栏不传 drawerOpen（undefined），这里直接跳过不影响。
+  useEffect(() => {
+    if (drawerOpen === false) {
+      setMenu(null)
+      setConvMenu(null)
+      setConfirmFile(null)
+      setConfirmConv(null)
+    }
+  }, [drawerOpen])
 
   // 统一的删除入口：先关掉菜单，再弹二次确认
   const requestDeleteFile = (file: UploadedFile) => {
@@ -591,11 +696,10 @@ export default function Sidebar({
               showsVerticalScrollIndicator={false}
             >
               {uploadedFiles.map((file) => (
-                <HoverTouchable
+                <SidebarLongPressItem
                   key={file.id}
-                  ref={(el: any) => {
-                    fileItemRefs.current[file.id] = el
-                  }}
+                  itemKey={file.id}
+                  measureRefs={fileItemRefs}
                   style={[
                     styles.fileItem,
                     {
@@ -610,22 +714,17 @@ export default function Sidebar({
                   activeOpacity={1}
                   // 📱 移动端 / H5：长按在手指当前位置弹出“删除文件”操作菜单
                   // 处理中/结果展示时不响应长按（与电脑端 X 按钮的隐藏逻辑一致）
-                  onLongPress={
+                  onLongPressAt={
                     !isPCWeb &&
                     !(
                       file.status === 'processing' ||
                       file.uploading ||
                       file.showResult
                     )
-                      ? (e: any) =>
-                          openMenuAtFile(
-                            file,
-                            e.nativeEvent?.locationX ?? 0,
-                            e.nativeEvent?.locationY ?? 0
-                          )
+                      ? (offsetX, offsetY) =>
+                          openMenuAtFile(file, offsetX, offsetY)
                       : undefined
                   }
-                  delayLongPress={350}
                 >
                   <View style={styles.fileInfo}>
                     <Text
@@ -764,7 +863,7 @@ export default function Sidebar({
                         </Svg>
                       </HoverTouchable>
                     )}
-                </HoverTouchable>
+                </SidebarLongPressItem>
               ))}
             </ScrollView>
           </View>
@@ -782,11 +881,10 @@ export default function Sidebar({
             {conversations.map((conv) => {
               const isActive = conv.id === activeId
               return (
-                <HoverTouchable
+                <SidebarLongPressItem
                   key={conv.id}
-                  ref={(el: any) => {
-                    convItemRefs.current[conv.id] = el
-                  }}
+                  itemKey={conv.id}
+                  measureRefs={convItemRefs}
                   style={[
                     styles.historyItem,
                     isActive && { backgroundColor: theme.historyActiveBg },
@@ -798,17 +896,16 @@ export default function Sidebar({
                   hoverBg={theme.historyActiveBg}
                   onPress={() => onSelectChat(conv.id)}
                   // 📱 移动端 / H5：长按在手指当前位置弹出“删除对话”操作菜单
-                  onLongPress={
+                  onLongPressAt={
                     !isPCWeb
-                      ? (e: any) =>
+                      ? (offsetX, offsetY) =>
                           openMenuAtConversation(
                             { id: conv.id, title: conv.title },
-                            e.nativeEvent?.locationX ?? 0,
-                            e.nativeEvent?.locationY ?? 0
+                            offsetX,
+                            offsetY
                           )
                       : undefined
                   }
-                  delayLongPress={350}
                 >
                   <Text
                     style={[
@@ -859,7 +956,7 @@ export default function Sidebar({
                       </Svg>
                     </HoverTouchable>
                   )}
-                </HoverTouchable>
+                </SidebarLongPressItem>
               )
             })}
           </ScrollView>

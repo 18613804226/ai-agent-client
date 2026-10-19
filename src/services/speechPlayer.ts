@@ -315,29 +315,58 @@ function playTrackWeb(
   }
 
   return new Promise<HTMLAudioElement | null>((resolve) => {
-    const done = (result: HTMLAudioElement | null) => {
-      audio!.onended = null;
+    // ⚠️ 跨端修复（web 中止按钮不出）：
+    // 以前这里 resolve 的时机是 audio.onended（整句播完），导致外层的
+    // markStarted()/onStart 要等第一段播完才触发 —— 出声期间 UI 一直转圈，
+    // 中止按钮出不来。native 端是 play() 之后立刻 markStarted，所以 app 正常。
+    // 现在改成「play() 成功 / playing 事件」即 resolve（= 真的开播），
+    // 整句播完改由 waitForWebEndOrCancel 等待 onended。
+    if (isStale(session)) return resolve(null);
+
+    let settled = false;
+    const onPlaying = () => {
+      if (settled) return;
+      settled = true;
+      audio!.removeEventListener?.('playing', onPlaying);
+      resolve(audio);
+    };
+    const onFail = () => {
+      if (settled) return;
+      settled = true;
+      audio!.removeEventListener?.('playing', onPlaying);
       audio!.onerror = null;
-      resolve(result);
+      resolve(null);
     };
 
-    // 只有「正常播完」才算这一句结束
-    audio!.onended = () => done(audio);
-    audio!.onerror = () => done(null);
+    audio!.onerror = onFail;
+    try {
+      audio!.addEventListener?.('playing', onPlaying);
+    } catch {}
 
     try {
       audio!.src = uri;
       audio!.load();
-      audio!.play().catch(() => {
-        if (isStale(session)) return; // 被打断导致的 AbortError，不算失败
-        done(null);
-      });
+      audio!.play().then(
+        () => onPlaying(),
+        ( ) => {
+          // play() 被打断（stopSpeech 触发的 AbortError）不算失败：直接返回 null
+          if (isStale(session)) {
+            if (!settled) {
+              settled = true;
+              try {
+                audio!.removeEventListener?.('playing', onPlaying);
+              } catch {}
+              audio!.onerror = null;
+              resolve(null);
+            }
+            return;
+          }
+          onFail();
+        },
+      );
     } catch {
-      done(null);
+      onFail();
     }
-
-    // 被打断时也要立即返回，不能等一句念完（修复 web 端停止延迟）
-    if (isStale(session)) done(null);
   });
 }
 
@@ -363,9 +392,17 @@ function waitForWebEndOrCancel(
 
     session.trackWaiter = wake;
     const prevEnded = audio.onended;
+    const prevError = audio.onerror;
     audio.onended = () => {
       try {
-        prevEnded?.call(audio, new Event('ended'));
+        (prevEnded as any)?.call(audio, new Event('ended'));
+      } catch {}
+      wake();
+    };
+    // ⚠️ 播到一半出错（404/解码失败）也要唤醒主循环切下一句，不能干等 ended
+    audio.onerror = (...args: any[]) => {
+      try {
+        (prevError as any)?.call?.(audio, ...args);
       } catch {}
       wake();
     };
