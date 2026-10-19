@@ -535,9 +535,13 @@ export default function Sidebar({
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const router = useRouter()
-  // 💡 全局角色：紧凑分段器切换，admin 才显示「管理后台」入口。
+// 💡 全局角色：紧凑分段器切换，admin 才显示「管理后台」入口。
   const { role } = useRole()
   const { device, logoutToDevice, activateAdmin } = useAuth()
+  // 乐观反馈：点 Admin/User 立刻高亮该段，网络（verifyAdminToken）+ AsyncStorage 返回后
+  // 再确认；失败则清空 pending 回滚到真实 role。避免移动端那一下「顿」。
+  const [pendingRole, setPendingRole] = useState<RoleMode | null>(null)
+  const effectiveRole = pendingRole ?? role
   // 📱 记录每个文件项的 ref，用于长按时测量实际屏幕坐标
   const fileItemRefs = useRef<Record<string, any>>({})
   // 📱 记录每个对话项的 ref
@@ -1054,7 +1058,7 @@ export default function Sidebar({
                   { value: 'admin', label: 'Admin' }
                 ] as { value: RoleMode; label: string }[]
               ).map(({ value, label }) => {
-                const selected = role === value
+const selected = effectiveRole === value
                 return (
                   <HoverTouchable
                     key={value}
@@ -1069,23 +1073,32 @@ export default function Sidebar({
                     ]}
                     hoverBg={theme.historyActiveBg}
                     onPress={async () => {
+                      if (pendingRole) return; // 切换中，忽略重复点击
                       if (value === 'admin') {
                         if (role === 'admin') return;
-                        // 免密激活缓存的 admin 会话；没有缓存（首次/已过期）才去密码页
-                        const ok = await activateAdmin();
-                        if (ok) {
-                          MyToast.show('已切换为管理员');
-                        } else {
-                          router.push('/admin-login');
+                        // 乐观反馈：先高亮 Admin，再去免密激活；失败/无缓存再回滚
+                        setPendingRole('admin');
+                        try {
+                          const ok = await activateAdmin();
+                          if (ok) {
+                            MyToast.show('已切换为管理员');
+                          } else {
+                            router.push('/admin-login');
+                          }
+                        } finally {
+                          setPendingRole(null);
                         }
                         return;
                       }
                       if (role === 'admin') {
+                        setPendingRole('user');
                         try {
                           await logoutToDevice();
                           MyToast.show('已切换为普通用户');
                         } catch {
                           MyToast.show('切换失败，请检查网络');
+                        } finally {
+                          setPendingRole(null);
                         }
                       }
                     }}
