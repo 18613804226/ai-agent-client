@@ -85,13 +85,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const info = getDeviceInfo();
     const data = await api.adminLogin(password, deviceId, info);
     if (epoch !== sessionEpochRef.current) return; // 迟到响应丢弃
+    // 内存缓存先置位（setToken/saveAdminSession/setDevice 均同步写 cache），
+    // UI 立即切 admin；AsyncStorage 落盘不 await，别拖住切页/高亮。
     if (data.token) {
-      await setToken(data.token);
+      void setToken(data.token);
       // 缓存 admin 会话：切回普通用户后，下次切 Admin 免密秒切
-      await saveAdminSession(data.token, data.device ?? null);
+      void saveAdminSession(data.token, data.device ?? null);
     }
     if (data.device) {
-      await setDevice(data.device);
+      void setDevice(data.device);
       setDeviceState(data.device);
     }
     setAuthed(!!data.token);
@@ -109,17 +111,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const epoch = ++sessionEpochRef.current;
     const adminToken = await getAdminToken();
     if (!adminToken) return false;
-    const alive = await api.verifyAdminToken(adminToken);
+    // 设备缓存读 + 网络探活并行：别让 AsyncStorage 的读再串到网络耗时后面
+    const [alive, adminDevice] = await Promise.all([
+      api.verifyAdminToken(adminToken),
+      getAdminDevice(),
+    ]);
     if (epoch !== sessionEpochRef.current) return false; // 等待期间又被切换接管
     if (!alive) {
       // 缓存的 admin token 已失效：丢弃，走密码页重新登录
       await clearAdminSession();
       return false;
     }
-    const adminDevice = await getAdminDevice();
-    await setToken(adminToken);
+    // setToken/setDevice 会【同步】写内存缓存，UI 状态可立即切换；
+    // AsyncStorage 落盘放最后且不 await，别让原生写盘拖住切换高亮。
+    void setToken(adminToken);
     if (adminDevice) {
-      await setDevice(adminDevice);
+      void setDevice(adminDevice);
       setDeviceState(adminDevice);
     }
     setAuthed(true);
@@ -195,6 +202,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           getToken(),
           getDevice(),
           getAdminToken(),
+          // 一并预热 user token/device 内存缓存：切回 User 时不必再等 AsyncStorage 读
+          getSavedUserToken(),
+          getSavedUserDevice(),
         ]);
         if (mounted && savedDevice) setDeviceState(savedDevice);
         if (token) {
