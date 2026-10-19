@@ -7,6 +7,7 @@ import 'react-native-gesture-handler';
 //    与 iOS 原生 push/pop 手感一致；且基于 gesture-handler，边缘侧滑返回在
 //    Android / iOS 都可用。本项目 headerShown:false、页面轻量，性能完全够用。
 import { Stack } from 'expo-router/js-stack';
+import { usePathname } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -110,6 +111,21 @@ export default function RootLayout() {
       'html, body { height: 100% !important; overflow: hidden !important; margin: 0 !important; }';
     if (!el.parentElement) document.head.appendChild(el);
   }, []);
+
+  // ✅ 离开 admin 登录页（页面内按钮 / 侧滑 / Android 系统返回手势都算）→ 复位 admin 选中态。
+  //    H5 上「系统返回手势」是浏览器级 back，常常不会卸载 admin-login 这个 screen，
+  //    只靠组件卸载清理会漏（页面内按钮能跑、手势跑不到）。
+  //    这里改用「路由变化」判断：从 /admin-login 切到非 /admin 路由 = 返回聊天 → 复位。
+  const pathname = usePathname();
+  const prevPathRef = useRef(pathname);
+  useEffect(() => {
+    const prev = prevPathRef.current;
+    prevPathRef.current = pathname;
+    if (prev?.startsWith('/admin-login') && !pathname.startsWith('/admin')) {
+      setAdminPreview(false);
+      setRole('user');
+    }
+  }, [pathname]);
 
   // ✅ 稳定的 Context 值，避免主题下游组件不必要地重渲染
   const themeContextValue = useMemo(
