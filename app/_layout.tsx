@@ -90,24 +90,25 @@ export default function RootLayout() {
     document.documentElement.style.backgroundColor = theme.bgApp;
   }, [theme.bgApp]);
 
-  // ✅ Web：修复 react-navigation stack 的 viewport-fix 导致 body height 被钉死的问题
-  //    CardContent (node_modules/expo-router/.../Stack/CardContent.js) 会注入
-  //    __react-navigation-stack-mobile-chrome-viewport-fix <style>，
-  //    把 body height 钉死在 calc(var(--vh) * 100)（--vh = window.innerHeight * 0.01）。
-  //    drawer 打开/关闭或 goBack 后窗口尺寸变化时，--vh 没及时重算，
-  //    导致 body height 错误（如 1688px），布局视口被撑大、出现滚动条。
-  //    这里给 html/body 设 inline height:100%（优先级高于该 <style> 标签，且该标签未写 !important），
-  //    并监听 resize 持续兜底。
+  // ✅ Web：锁死视口，禁止整页滚动（含切到 admin 再切回后 body 被撑高的情况）。
+  //    expo-router 的 Stack（CardContent）在触屏 H5 会注入 viewport-fix <style>：
+  //    body { height: calc(var(--vh, 1vh) * 100) }。--vh 在地址栏伸缩 / goBack 后
+  //    可能没及时重算 → body 偏高，<html> 随之冒出滚动条（chat 虽 position:fixed，
+  //    但 html/body 的滚动条仍会出现）。
+  //    这里注入一条 !important 样式，把 html 与 body 的高度=100%、overflow=hidden 钉死：
+  //    - 优先级高于上面那条 <style>（其未写 !important），也压过任何临时 inline
+  //      overflow:auto；html 的 overflow 一并 hidden，消除 <html> 滚动条。
+  //    admin / chat 页都用内部 ScrollView，不依赖 body 滚动，故安全。
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    const fix = () => {
-      document.documentElement.style.height = '100%';
-      document.body.style.height = '100%';
-      document.body.style.overflow = 'hidden';
-    };
-    fix();
-    window.addEventListener('resize', fix);
-    return () => window.removeEventListener('resize', fix);
+    const id = 'app-viewport-lock';
+    const el =
+      (document.getElementById(id) as HTMLStyleElement | null) ??
+      document.createElement('style');
+    el.id = id;
+    el.textContent =
+      'html, body { height: 100% !important; overflow: hidden !important; margin: 0 !important; }';
+    if (!el.parentElement) document.head.appendChild(el);
   }, []);
 
   // ✅ 稳定的 Context 值，避免主题下游组件不必要地重渲染
