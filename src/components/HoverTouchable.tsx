@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
 import { Platform, Pressable, TouchableOpacity } from 'react-native';
 
+// Web 端「悬停变色」只在真正有悬停能力的设备（鼠标 / 触控板）上启用。
+// 手机 H5 触屏点按会合成一个 mouseenter 却没有对应的 mouseleave，
+// isHovered 会一直卡在 true，hover 底色就「粘」在按钮上（看着像被选中），
+// 直到点别处触发 mouseleave 才消失。用 (hover: hover) 媒体查询直接挡掉触屏。
+const CAN_HOVER =
+  Platform.OS === 'web' &&
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(hover: hover)').matches;
+
 export interface HoverTouchableProps {
   style?: any;
   /** Web 端悬停背景色 */
@@ -70,13 +80,13 @@ export const HoverTouchable = React.forwardRef<any, HoverTouchableProps>(
             transitionTimingFunction: 'ease',
             cursor: 'pointer',
           },
-          Platform.OS === 'web' && isHovered && { backgroundColor: hoverBg },
+          CAN_HOVER && isHovered && { backgroundColor: hoverBg },
         ]}
         onPress={onPress}
         activeOpacity={activeOpacity}
         // @ts-ignore
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseEnter={CAN_HOVER ? () => setIsHovered(true) : undefined}
+        onMouseLeave={CAN_HOVER ? () => setIsHovered(false) : undefined}
         {...props}
       >
         {children}

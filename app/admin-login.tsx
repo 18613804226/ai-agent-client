@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useRef, useState } from 'react'
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,9 +12,8 @@ import {
 import { Redirect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons'
-import { useAdminPreview, useAuth, useRole, useTheme } from '../src/context/appContexts'
+import { useAdminPreview, useAuth, useTheme } from '../src/context/appContexts'
 import { MyToast } from '../src/components/GlobalToast'
-import { diag } from '../src/devDiag'
 
 export default function AdminLoginScreen() {
   const router = useRouter()
@@ -22,7 +21,6 @@ export default function AdminLoginScreen() {
   const { isAdminPreview, setAdminPreview } = useAdminPreview()
   const { loginAsAdmin } = useAuth()
   const { theme } = useTheme()
-  const { setRole } = useRole()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -30,23 +28,7 @@ export default function AdminLoginScreen() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const passwordInputRef = useRef<TextInput>(null)
 
-  // 离开本页时复位 admin 选中态（典型：Android 硬件返回后，侧栏角色段仍高亮 Admin）。
-  // 只有「正向进入 /admin」（登录成功 / 已有 admin 会话自动重定向）才保留，
-  // 否则返回后 role 会一直停在 admin。
-  const enteringAdminRef = useRef(false)
-  useEffect(() => {
-    return () => {
-      if (enteringAdminRef.current) return
-      diag.lastSet = 'adminLoginExit'
-      setAdminPreview(false)
-      setRole('user')
-    }
-  }, [setAdminPreview, setRole])
-
-  if (isAdminPreview && !isRedirecting) {
-    enteringAdminRef.current = true
-    return <Redirect href="/admin" />
-  }
+  if (isAdminPreview && !isRedirecting) return <Redirect href="/admin" />
 
   /** 侧滑返回上一屏（聊天页）；无上级栈时兜底 replace 回首页 */
   const goBackToChat = () => {
@@ -69,8 +51,6 @@ export default function AdminLoginScreen() {
       // 后端 admin-login：deviceId 会把当前设备升级为 admin
       // loginAsAdmin 内部已同步 setRole('admin') + 缓存 admin 会话（下次免密）
       await loginAsAdmin(password.trim())
-      // 登录成功 = 正向进入 /admin：离开本页时保留 admin 态
-      enteringAdminRef.current = true
       // 顺序很重要：先标记"跳转中"锁住本屏内容，避免 <Redirect/> 守卫
       // 在转场动画前把登录页内容清空
       setIsRedirecting(true)

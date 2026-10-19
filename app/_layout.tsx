@@ -7,12 +7,11 @@ import 'react-native-gesture-handler';
 //    与 iOS 原生 push/pop 手感一致；且基于 gesture-handler，边缘侧滑返回在
 //    Android / iOS 都可用。本项目 headerShown:false、页面轻量，性能完全够用。
 import { Stack } from 'expo-router/js-stack';
-import { usePathname } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, useColorScheme, Text, View } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 import { darkTheme, lightTheme } from '../src/constants/theme';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 
@@ -29,12 +28,8 @@ import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/context/appContexts';
 import BootSplash, { BOOT_EXIT_MS } from '../src/components/BootSplash';
-import { diag } from '../src/devDiag';
 
 const THEME_MODE_KEY = 'theme-mode';
-
-// TEMP DIAG（定位后删除）：记录 RootLayout 挂载次数
-let __diagBootCount = 0;
 
 export default function RootLayout() {
   const systemColorScheme = useColorScheme();
@@ -116,32 +111,6 @@ export default function RootLayout() {
     if (!el.parentElement) document.head.appendChild(el);
   }, []);
 
-  // ✅ 离开 admin 登录页（页面内按钮 / 侧滑 / Android 系统返回手势都算）→ 复位 admin 选中态。
-  //    H5 上「系统返回手势」是浏览器级 back，常常不会卸载 admin-login 这个 screen，
-  //    只靠组件卸载清理会漏（页面内按钮能跑、手势跑不到）。
-  //    这里改用「路由变化」判断：从 /admin-login 切到非 /admin 路由 = 返回聊天 → 复位。
-  const pathname = usePathname();
-  const prevPathRef = useRef(pathname);
-  useEffect(() => {
-    const prev = prevPathRef.current;
-    prevPathRef.current = pathname;
-    if (prev?.startsWith('/admin-login') && !pathname.startsWith('/admin')) {
-      diag.lastSet = 'layoutPathReset';
-      setAdminPreview(false);
-      setRole('user');
-    }
-  }, [pathname]);
-
-  // TEMP DIAG（定位后删除）：挂载序号 + role/adminPreview 变更计数
-  const [diagBootId] = useState(() => {
-    __diagBootCount += 1;
-    return __diagBootCount;
-  });
-  const diagChangeRef = useRef(0);
-  useEffect(() => {
-    diagChangeRef.current += 1;
-  }, [role, isAdminPreview]);
-
   // ✅ 稳定的 Context 值，避免主题下游组件不必要地重渲染
   const themeContextValue = useMemo(
     () => ({ isDarkMode, themeMode, setThemeMode, theme }),
@@ -178,25 +147,6 @@ export default function RootLayout() {
                   <Stack.Screen name="admin-login" />
                   <Stack.Screen name="admin" />
                 </Stack>
-                {/* TEMP DIAG（定位后删除）：显示 role / adminPreview / 路由 / 启动次数 / 变更次数 */}
-                {Platform.OS === 'web' && (
-                  <View
-                    pointerEvents="none"
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      zIndex: 99999,
-                      paddingHorizontal: 6,
-                      paddingVertical: 2,
-                      backgroundColor: 'rgba(0,0,0,0.8)',
-                    }}
-                  >
-                    <Text style={{ color: '#0f0', fontSize: 11 }}>
-                      {`role=${role} prev=${isAdminPreview ? 1 : 0} path=${pathname} boot=${diagBootId} chg=${diagChangeRef.current} src=${diag.lastSet}`}
-                    </Text>
-                  </View>
-                )}
               </GestureHandlerRootView>
             </SafeAreaProvider>
           </ChatHost>

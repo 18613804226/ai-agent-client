@@ -9,7 +9,6 @@ import React, {
   type ReactNode,
 } from 'react';
 import { api } from '../services/api';
-import { diag } from '../devDiag';
 import { getDeviceInfo } from '../utils/deviceInfo';
 import {
   clearAuth,
@@ -96,7 +95,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setDeviceState(data.device);
     }
     setAuthed(!!data.token);
-    diag.lastSet = 'loginAsAdmin';
     setRole('admin');
     setAdminPreview(true);
   }, [setAdminPreview, setRole]);
@@ -125,7 +123,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setDeviceState(adminDevice);
     }
     setAuthed(true);
-    diag.lastSet = 'activateAdmin';
     setRole('admin');
     setAdminPreview(true);
     return true;
@@ -151,7 +148,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setDeviceState(null);
       }
       setAuthed(true);
-      diag.lastSet = 'logoutToDevice(cached)';
       setRole('user');
       setAdminPreview(false);
       return;
@@ -160,7 +156,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await clearAuth();
     setDeviceState(null);
     setAuthed(false);
-    diag.lastSet = 'logoutToDevice(fallback)';
     setRole('user');
     setAdminPreview(false);
     await loginAsDevice();
@@ -208,7 +203,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setReady(true);
             // 上次退出时正处于 admin 身份（当前 token 就是缓存的 admin token）
             if (adminToken && token === adminToken) {
-              diag.lastSet = 'startup';
               setRole('admin');
               setAdminPreview(true);
             }
@@ -249,7 +243,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setReady(true);
         // UI 复位到 user：admin token 失效时避免分段器卡在 Admin；
         // user token 失效时本来就是 user，重复设置无副作用
-        diag.lastSet = '401-selfheal';
         setRole('user');
         setAdminPreview(false);
         await loginAsDevice();
