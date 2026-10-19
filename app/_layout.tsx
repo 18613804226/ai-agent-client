@@ -90,6 +90,26 @@ export default function RootLayout() {
     document.documentElement.style.backgroundColor = theme.bgApp;
   }, [theme.bgApp]);
 
+  // ✅ Web：修复 react-navigation stack 的 viewport-fix 导致 body height 被钉死的问题
+  //    CardContent (node_modules/expo-router/.../Stack/CardContent.js) 会注入
+  //    __react-navigation-stack-mobile-chrome-viewport-fix <style>，
+  //    把 body height 钉死在 calc(var(--vh) * 100)（--vh = window.innerHeight * 0.01）。
+  //    drawer 打开/关闭或 goBack 后窗口尺寸变化时，--vh 没及时重算，
+  //    导致 body height 错误（如 1688px），布局视口被撑大、出现滚动条。
+  //    这里给 html/body 设 inline height:100%（优先级高于该 <style> 标签，且该标签未写 !important），
+  //    并监听 resize 持续兜底。
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const fix = () => {
+      document.documentElement.style.height = '100%';
+      document.body.style.height = '100%';
+      document.body.style.overflow = 'hidden';
+    };
+    fix();
+    window.addEventListener('resize', fix);
+    return () => window.removeEventListener('resize', fix);
+  }, []);
+
   // ✅ 稳定的 Context 值，避免主题下游组件不必要地重渲染
   const themeContextValue = useMemo(
     () => ({ isDarkMode, themeMode, setThemeMode, theme }),

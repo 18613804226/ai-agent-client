@@ -15,8 +15,12 @@ import { Platform } from 'react-native';
  * 注意：只用在「不需要系统复制」的按压位（语音按钮、侧边栏长按删除项）。
  * 气泡正文要保留系统复制，千万别挂这个。
  */
-export function useSuppressBrowserCallout(dep: unknown = null) {
+export function useSuppressBrowserCallout(
+  dep: unknown = null,
+  opts?: { blockTouch?: boolean },
+) {
   const ref = useRef<any>(null);
+  const blockTouch = opts?.blockTouch === true;
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -36,15 +40,32 @@ export function useSuppressBrowserCallout(dep: unknown = null) {
     el.addEventListener('contextmenu', kill, { capture: true });
     el.addEventListener('selectstart', kill, { capture: true });
     el.addEventListener('dragstart', kill, { capture: true });
+    // 📱 输入层压制（可选）：touchstart 直接 preventDefault，浏览器收不到这次
+    // 触摸序列，长按识别/选中/系统菜单在手势源头就被掐掉 —— OPPO/ColorOS 等
+    // 国产浏览器不认 contextmenu 拦截，这是唯一有效的一层。
+    // 不影响 RNW 按压/长按：responder 走合成事件，preventDefault 不阻断传播。
+    let killTouch: ((e: Event) => void) | undefined;
+    if (blockTouch) {
+      killTouch = (e: Event) => e.preventDefault();
+      el.addEventListener('touchstart', killTouch, {
+        capture: true,
+        passive: false,
+      } as any);
+    }
     // iOS Safari 长按还要 touchstart 里 preventDefault，但那会杀掉 click；
     // 这里只防菜单，touch 事件交给 Pressable 本身。
     return () => {
       el.removeEventListener('contextmenu', kill, { capture: true } as any);
       el.removeEventListener('selectstart', kill, { capture: true } as any);
       el.removeEventListener('dragstart', kill, { capture: true } as any);
+      if (killTouch) {
+        el.removeEventListener('touchstart', killTouch, {
+          capture: true,
+        } as any);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dep]);
+  }, [dep, blockTouch]);
 
   // RN 合成层也拦一道（部分 Chromium 内核这层就够了）
   const contextMenuGuard = useCallback((e: any) => {
@@ -87,9 +108,20 @@ export function attachCalloutSuppress(
   el.addEventListener('contextmenu', kill, { capture: true });
   el.addEventListener('selectstart', kill, { capture: true });
   el.addEventListener('dragstart', kill, { capture: true });
+  // 兜底：部分浏览器的长按工具条是「选中驱动」的，不走 contextmenu。
+  // 监听 selectionchange，选区一落进区块内立刻清掉，工具条失去选区即收起。
+  const doc = el.ownerDocument;
+  const clearSelection = () => {
+    const sel = doc?.getSelection?.();
+    if (!sel || sel.rangeCount === 0) return;
+    const node = sel.anchorNode;
+    if (node && el.contains(node)) sel.removeAllRanges();
+  };
+  doc?.addEventListener('selectionchange', clearSelection);
   return () => {
     el.removeEventListener('contextmenu', kill, { capture: true } as any);
     el.removeEventListener('selectstart', kill, { capture: true } as any);
     el.removeEventListener('dragstart', kill, { capture: true } as any);
+    doc?.removeEventListener('selectionchange', clearSelection);
   };
 }

@@ -26,6 +26,20 @@ import Reanimated from 'react-native-reanimated'
 import { PopAnim, POP_CSS_FALLBACK } from './PopAnim'
 
 /**
+ * 📱 H5/OPPO：列表区块（已上传文件 / 最近记录）防长按样式——只禁选中与
+ * 系统 callout 菜单，不带 touchAction:none（保留区块内拖动滚动）。
+ * 覆盖区块内的标题/提示等裸文字（样式经继承作用到所有子孙）。
+ */
+const SECTION_NO_CALLOUT_STYLE = Platform.select({
+  web: {
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    WebkitTouchCallout: 'none',
+  } as any,
+  default: {},
+})
+
+/**
  * 长按菜单卡片统一动画外壳（文件 / 对话共用）：
  * 淡入 + 轻微放大 + 微上移，spring 回弹；定位/颜色调用方照常传。
  */
@@ -169,7 +183,10 @@ function SidebarLongPressItem({
   onLongPressAt?: (offsetX: number, offsetY: number) => void
   children: React.ReactNode
 }) {
-  const callout = useSuppressBrowserCallout(itemKey)
+  // 📱 H5/OPPO：条目上启用输入层压制（touchstart preventDefault），
+  // 国产浏览器不认 contextmenu 拦截，只有掐掉触摸序列才能压住长按系统菜单；
+  // 条目本身 touchAction 已是 none（拖动从条目发起不滚动列表），无额外代价。
+  const callout = useSuppressBrowserCallout(itemKey, { blockTouch: true })
   return (
     <HoverTouchable
       ref={(el: any) => {
@@ -700,7 +717,10 @@ export default function Sidebar({
 
         {/* 3. 已上传文件列表展示区 */}
         {uploadedFiles && uploadedFiles.length > 0 && (
-          <View ref={fileSectionRef} style={styles.fileListContainer}>
+          <View
+            ref={fileSectionRef}
+            style={[styles.fileListContainer, SECTION_NO_CALLOUT_STYLE]}
+          >
             <Text style={[styles.categoryTitle, { color: theme.textMuted }]}>
               已上传文件 ({uploadedFiles.length})
             </Text>
@@ -886,7 +906,10 @@ export default function Sidebar({
         )}
 
         {/* 4. 中部：历史记录列表 */}
-        <View ref={historySectionRef} style={styles.historyContainer}>
+        <View
+          ref={historySectionRef}
+          style={[styles.historyContainer, SECTION_NO_CALLOUT_STYLE]}
+        >
           <Text style={[styles.categoryTitle, { color: theme.textMuted }]}>
             最近记录
           </Text>
