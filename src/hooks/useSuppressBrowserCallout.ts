@@ -68,3 +68,28 @@ export const SUPPRESS_CALLOUT_STYLE = Platform.select({
   } as any,
   default: {},
 });
+
+/**
+ * 容器级压制：给区块容器（如侧边栏「最近记录」「已上传文件」）挂原生监听，
+ * 区块内所有子孙元素（标题 / 条目 / 空白处）的长按菜单事件冒泡到容器即被拦，
+ * 不用逐个子元素挂。只拦菜单、不改样式——不影响列表滚动。
+ * 仅 web 生效；返回清理函数（其他端返回 undefined，调用方可直接 ?.()）。
+ */
+export function attachCalloutSuppress(
+  el: HTMLElement | null | undefined,
+): (() => void) | undefined {
+  if (Platform.OS !== 'web') return;
+  if (!el || typeof el.addEventListener !== 'function') return;
+  const kill = (e: Event) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  el.addEventListener('contextmenu', kill, { capture: true });
+  el.addEventListener('selectstart', kill, { capture: true });
+  el.addEventListener('dragstart', kill, { capture: true });
+  return () => {
+    el.removeEventListener('contextmenu', kill, { capture: true } as any);
+    el.removeEventListener('selectstart', kill, { capture: true } as any);
+    el.removeEventListener('dragstart', kill, { capture: true } as any);
+  };
+}

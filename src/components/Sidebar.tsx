@@ -21,7 +21,7 @@ import type { ThemeMode, RoleMode } from '../context/appContexts'
 import { useAuth, useRole } from '../context/appContexts'
 import { MyToast } from './GlobalToast'
 import HoverTouchable from './HoverTouchable'
-import { useSuppressBrowserCallout } from '../hooks/useSuppressBrowserCallout'
+import { useSuppressBrowserCallout, attachCalloutSuppress } from '../hooks/useSuppressBrowserCallout'
 import Reanimated from 'react-native-reanimated'
 import { PopAnim, POP_CSS_FALLBACK } from './PopAnim'
 
@@ -527,9 +527,25 @@ export default function Sidebar({
   const convItemRefs = useRef<Record<string, any>>({})
   // 侧边栏根容器 ref，用于把菜单坐标换算到根容器坐标系
   const sidebarRef = useRef<any>(null)
+  // 📱 H5/OPPO：两个列表区块的容器级长按压制 ref（只拦浏览器菜单，不影响滚动）
+  const fileSectionRef = useRef<any>(null)
+  const historySectionRef = useRef<any>(null)
 
   // 🖥️ 与 app/index.tsx 保持一致的三端判断：仅电脑端网页保留 X 删除
   const isPCWeb = Platform.OS === 'web' && isPCWebWidth(width)
+
+  // 📱 H5/OPPO：给「已上传文件」「最近记录」区块挂容器级长按压制——区块内
+  // 长按（标题/条目/空白处）不再弹浏览器系统菜单；只拦菜单、不改样式，不影响滚动。
+  // uploadedFiles 是条件渲染：区块节点出现/清空时 ref 会挂/卸，故依赖带上它。
+  useEffect(() => {
+    if (Platform.OS !== 'web') return
+    const offFiles = attachCalloutSuppress(fileSectionRef.current)
+    const offHistory = attachCalloutSuppress(historySectionRef.current)
+    return () => {
+      offFiles?.()
+      offHistory?.()
+    }
+  }, [uploadedFiles])
 
   // 长按操作菜单（文件）
   const [menu, setMenu] = useState<{
@@ -684,7 +700,7 @@ export default function Sidebar({
 
         {/* 3. 已上传文件列表展示区 */}
         {uploadedFiles && uploadedFiles.length > 0 && (
-          <View style={styles.fileListContainer}>
+          <View ref={fileSectionRef} style={styles.fileListContainer}>
             <Text style={[styles.categoryTitle, { color: theme.textMuted }]}>
               已上传文件 ({uploadedFiles.length})
             </Text>
@@ -870,7 +886,7 @@ export default function Sidebar({
         )}
 
         {/* 4. 中部：历史记录列表 */}
-        <View style={styles.historyContainer}>
+        <View ref={historySectionRef} style={styles.historyContainer}>
           <Text style={[styles.categoryTitle, { color: theme.textMuted }]}>
             最近记录
           </Text>
