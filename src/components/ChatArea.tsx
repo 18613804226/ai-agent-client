@@ -132,6 +132,10 @@ export default function ChatArea({
     return INVERTED_CHAT_LIST ? [...merged].reverse() : merged
   }, [messages, streamingRenderMsg])
 
+  // 供自动朗读 effect 读取最新 displayMessages，避免把它放进 deps 导致每 token 重跑
+  const displayMessagesRef = useRef(displayMessages)
+  displayMessagesRef.current = displayMessages
+
   // 💡 自动朗读：开即读 + 后续跟读
   //  - 打开开关立刻读当前最后一条已完成 AI 气泡；之后每条新 AI 气泡完成都跟读
   //  - 只在「吐字结束、内容落盘」后触发（streamingRenderMsg 为空且目标无 isStreaming），
@@ -149,7 +153,7 @@ export default function ChatArea({
     }
     // 吐字中不读：等流式结束、内容落盘后再跟读
     if (streamingRenderMsg) return
-    const list = displayMessages ?? []
+    const list = displayMessagesRef.current ?? []
     let target: { id: string; content: string } | null = null
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i]
@@ -193,7 +197,7 @@ export default function ChatArea({
       setPlayingMsgId((prev: string | null) => (prev === id ? null : prev))
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRead, displayMessages, streamingRenderMsg, activeId])
+  }, [autoRead, streamingRenderMsg, activeId])
 
   // 切会话重置跟读记忆（key={activeId} 本就会重挂，这里兜底同实例切会话的情况）
   useEffect(() => {

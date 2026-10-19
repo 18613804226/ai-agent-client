@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useState } from 'react'
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import Markdown, { RenderRules } from 'react-native-markdown-display'
 import {
@@ -54,7 +54,7 @@ const InlineMoonPhase = memo(function InlineMoonPhase() {
   useEffect(() => {
     progress.value = withRepeat(
       withTiming(PHASES.length, {
-        duration: PHASES.length * 200,
+        duration: PHASES.length * 250,
         easing: Easing.linear
       }),
       -1
@@ -94,16 +94,38 @@ const TailText = memo(function TailText({
   selectable: boolean
   color: string
 }) {
+  // 吐字期每 token 都会传入新的 text；直接每次 splitInlineSegments 会 O(n²)。
+  // 这里节流：显示文本每 ~80ms 才更新一次，中间 token 只跑一次时间判断，
+  // 把内联强调切分的开销降到 1/5~1/10。
+  const [displayedText, setDisplayedText] = useState(text)
+  const lastUpdateRef = useRef(0)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const now = Date.now()
+    if (now - lastUpdateRef.current >= 80) {
+      lastUpdateRef.current = now
+      setDisplayedText(text)
+      return
+    }
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      lastUpdateRef.current = Date.now()
+      setDisplayedText(text)
+      timerRef.current = null
+    }, 80 - (now - lastUpdateRef.current))
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [text])
+
   const segs = useMemo(
-    () => (hasInlineMarkup(text) ? splitInlineSegments(text) : null),
-    [text]
+    () => (hasInlineMarkup(displayedText) ? splitInlineSegments(displayedText) : null),
+    [displayedText]
   )
 
   return (
     <Text selectable={selectable} style={[styles.tail, { color }]}>
-      {segs
-        ? segs.map((seg, i) => renderSeg(seg, `s${i}`))
-        : text}
+      {segs ? segs.map((seg, i) => renderSeg(seg, `s${i}`)) : displayedText}
       <InlineMoonPhase />
     </Text>
   )
