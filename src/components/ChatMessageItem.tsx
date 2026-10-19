@@ -21,7 +21,7 @@ const ChatMessageItem = memo(
     theme,
     isMobile,
     isStreaming,
-    playingMsgId,
+    isPlaying = false,
     setPlayingMsgId,
     onPreviewImage,
     onPreviewFile,
@@ -34,7 +34,8 @@ const ChatMessageItem = memo(
     theme: ThemeType
     isMobile: boolean
     isStreaming?: boolean
-    playingMsgId: string | null
+    /** 本条消息是否正在播放（由父组件根据 playingMsgId 计算） */
+    isPlaying?: boolean
     setPlayingMsgId: (id: string | null) => void
     onPreviewImage?: (images: string[], index: number) => void
     /** 点气泡附件行 → 应用内真预览（与图片 onPreviewImage 同款交互） */
@@ -374,7 +375,7 @@ const ChatMessageItem = memo(
                   content={item.content}
                   messageId={item.id}
                   theme={theme}
-                  playingMsgId={playingMsgId}
+                  isPlaying={isPlaying}
                   onPlayingChange={setPlayingMsgId}
                   ready={!isStreaming}
                 />
@@ -392,7 +393,7 @@ const ChatMessageItem = memo(
     prev.theme === next.theme &&
     prev.isStreaming === next.isStreaming &&
     prev.item.systemNote === next.item.systemNote &&
-    prev.playingMsgId === next.playingMsgId &&
+    prev.isPlaying === next.isPlaying &&
     prev.onPreviewImage === next.onPreviewImage &&
     prev.onPreviewFile === next.onPreviewFile &&
     prev.textSelectable === next.textSelectable &&

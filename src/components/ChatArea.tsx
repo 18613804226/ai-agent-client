@@ -258,7 +258,7 @@ export default function ChatArea({
               theme={theme}
               isMobile={isMobile}
               isStreaming={!!msg.isStreaming}
-              playingMsgId={playingMsgId}
+              isPlaying={msg.id === playingMsgId}
               setPlayingMsgId={handlePlayingChange}
               onPreviewImage={openPreview}
               onPreviewFile={openFilePreview}

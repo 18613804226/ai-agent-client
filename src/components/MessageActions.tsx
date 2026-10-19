@@ -27,7 +27,7 @@ interface MessageActionsProps {
   content: string;
   messageId: string;
   theme: MessageActionsTheme;
-  playingMsgId: string | null;
+  isPlaying?: boolean;
   onPlayingChange: (id: string | null) => void;
   /** 吐字未完成时为 false：只占位不响应点击，避免布局跳动 */
   ready?: boolean;
@@ -79,14 +79,13 @@ const MessageActions = memo(
     content,
     messageId,
     theme,
-    playingMsgId,
+    isPlaying = false,
     onPlayingChange,
     ready = true,
   }: MessageActionsProps) {
     // 三个视觉状态：
     //   喇叭（未读） → 点击后「转圈」（正在请求/合成，还没出声）→ 「停止」（第一个音频真的开播）。
     const [preparing, setPreparing] = useState(false);
-    const isPlaying = playingMsgId === messageId;
 
     // 别的消息接管了播放 / 播放结束等 → 本条的「转圈」要复位，避免卡在转圈不消失
     useEffect(() => {
@@ -206,7 +205,7 @@ const MessageActions = memo(
     prev.content === next.content &&
     prev.messageId === next.messageId &&
     prev.theme === next.theme &&
-    prev.playingMsgId === next.playingMsgId &&
+    prev.isPlaying === next.isPlaying &&
     prev.ready === next.ready,
 );
 
