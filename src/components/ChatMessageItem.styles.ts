@@ -116,7 +116,15 @@ export const createDynamicMarkdownStyles = (theme: {
   StyleSheet.create({
     body: { fontSize: 15, lineHeight: 24, color: theme.textMain },
     strong: { fontWeight: 'bold' as const, color: theme.textMain },
-    paragraph: { marginTop: 0, marginBottom: 8, color: theme.textMain },
+    paragraph: {
+      marginTop: 0,
+      marginBottom: 8,
+      color: theme.textMain,
+      // 列表/引用回退 View 盒子后，段落不再坐在 body 的 <Text> 里，
+      // 字号/行高必须自带，否则文字掉回默认 14px、与正文行高错位压行
+      fontSize: 15,
+      lineHeight: 24,
+    },
     heading1: {
       fontSize: 20,
       fontWeight: 'bold' as const,

@@ -6,7 +6,6 @@ import {
   Platform,
   ScrollView,
   PanResponder,
-  Animated,
   AppState,
   BackHandler,
   useWindowDimensions,
@@ -24,6 +23,7 @@ import ChatGlowBackground from '../../src/components/ChatGlowBackground'
 import ChatInputBar from '../../src/components/ChatInputBar'
 import { BlurTargetView } from 'expo-blur'
 import { MobileHeader } from '../../src/components/MobileHeader'
+import Reanimated from 'react-native-reanimated'
 
 import { useKeyboardAnimation } from '../../src/hooks/useKeyboardAnimation'
 import GlobalToastContainer from '../../src/components/GlobalToast'
@@ -114,7 +114,8 @@ export default function ChatScreen() {
       )
     : 0
 
-  const { keyboardHeightAnim, isKeyboardUp } = useKeyboardAnimation()
+  const { keyboardHeightStyle, isKeyboardUp, keyboardProgress } =
+    useKeyboardAnimation()
   const drawerStatus = useDrawerStatus()
   const isDrawerOpen = drawerStatus === 'open'
 
@@ -256,20 +257,11 @@ export default function ChatScreen() {
             </View>
           )}
 
-          <Animated.View
-            style={[
-              styles.chatMainWrapper,
-              {
-                transform: [
-                  {
-                    translateY:
-                      Platform.OS === 'android'
-                        ? Animated.multiply(keyboardHeightAnim, -1)
-                        : 0
-                  }
-                ]
-              }
-            ]}
+          {/* ✅ keyboard-controller：原生键盘高度逐帧跟手（UI 线程），
+              iOS / Android 都用，避免 iOS 上 JS 动画也卡。
+              Web 上 keyboardHeightStyle 为空对象，不影响布局。 */}
+          <Reanimated.View
+            style={[styles.chatMainWrapper, keyboardHeightStyle]}
           >
             {/* 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面。
                 Android 上包一层 BlurTargetView 作为输入栏 BlurView 的模糊目标，
@@ -343,6 +335,7 @@ export default function ChatScreen() {
                 onStop={handleStopGeneration}
                 isGenerating={isGenerating}
                 isKeyboardUp={isKeyboardUp}
+                keyboardProgress={keyboardProgress}
                 attachments={selectedAttachments} // 👈 统一附件列表（图片/文档/视频）
                 setAttachments={setSelectedAttachments} // 👈 传入修改方法
                 onPickImage={handlePickImage} // 👈 绑定在这里
@@ -357,7 +350,7 @@ export default function ChatScreen() {
                 positionStyle={sheetPositionStyle}
               />
             </View>
-          </Animated.View>
+            </Reanimated.View>
         </View>
       </View>
       <GlobalToastContainer />

@@ -21,6 +21,7 @@ const ChatMessageItem = memo(
     theme,
     isMobile,
     isStreaming,
+    isLast = false,
     isPlaying = false,
     setPlayingMsgId,
     onPreviewImage,
@@ -34,6 +35,8 @@ const ChatMessageItem = memo(
     theme: ThemeType
     isMobile: boolean
     isStreaming?: boolean
+    /** 是否视觉上的最后一条（贴输入框那条）：去掉 messageRow 的 marginBottom */
+    isLast?: boolean
     /** 本条消息是否正在播放（由父组件根据 playingMsgId 计算） */
     isPlaying?: boolean
     setPlayingMsgId: (id: string | null) => void
@@ -205,6 +208,7 @@ const ChatMessageItem = memo(
         <View
           style={[
             chatMessageStyles.messageRow,
+            isLast && { marginBottom: 0 },
             isUser ? chatMessageStyles.rowUser : chatMessageStyles.rowAi,
             WEB_ROW_CONTAINMENT
           ]}
@@ -392,6 +396,7 @@ const ChatMessageItem = memo(
     prev.item.thought === next.item.thought &&
     prev.theme === next.theme &&
     prev.isStreaming === next.isStreaming &&
+    prev.isLast === next.isLast &&
     prev.item.systemNote === next.item.systemNote &&
     prev.isPlaying === next.isPlaying &&
     prev.onPreviewImage === next.onPreviewImage &&

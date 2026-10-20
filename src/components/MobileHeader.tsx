@@ -1,21 +1,16 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Platform,
-} from 'react-native';
-import { IconPlus, IconSpeakerOn, IconSpeakerOff } from './Icons';
-import { HoverTouchable } from './HoverTouchable';
+import React from 'react'
+import { View, Text, StyleSheet, Platform } from 'react-native'
+import { IconPlus, IconSpeakerOn, IconSpeakerOff } from './Icons'
+import { HoverTouchable } from './HoverTouchable'
 interface MobileHeaderProps {
-  theme: any;
-  insetsTop: number;
-  title?: string;
-  isDrawerOpen: boolean;
-  onToggleDrawer: () => void;
-  onNewChat?: () => void; // 💡 1. 增加一个新建会话的回调属性
-  autoRead: boolean;
-  onToggleAutoRead: () => void;
+  theme: any
+  insetsTop: number
+  title?: string
+  isDrawerOpen: boolean
+  onToggleDrawer: () => void
+  onNewChat?: () => void // 💡 1. 增加一个新建会话的回调属性
+  autoRead: boolean
+  onToggleAutoRead: () => void
 }
 
 export function MobileHeader({
@@ -26,16 +21,12 @@ export function MobileHeader({
   onToggleDrawer,
   onNewChat,
   autoRead, // 💡 接收全局的自动朗读状态
-  onToggleAutoRead, // 💡 接收切换开关的回调
+  onToggleAutoRead // 💡 接收切换开关的回调
 }: MobileHeaderProps) {
-  // 顶部留白：iOS 用安全区 insetsTop；Android 用状态栏近似高度 34；
+  // 顶部留白：iOS 用安全区 insetsTop；Android 贴着状态栏留 8；
   // Web/H5 无状态栏，留 0（原 34 让 H5 头部离顶太远）。
   const topInset =
-    Platform.OS === 'ios'
-      ? insetsTop
-      : Platform.OS === 'web'
-        ? 0
-        : 34;
+    Platform.OS === 'ios' ? insetsTop : Platform.OS === 'web' ? 0 : 0
   return (
     <View
       style={[
@@ -44,8 +35,8 @@ export function MobileHeader({
           backgroundColor: theme.bgSidebar,
           borderColor: theme.border,
           paddingTop: topInset,
-          height: 48 + topInset,
-        },
+          height: 48 + topInset
+        }
       ]}
     >
       {/* 左侧：菜单切换按钮 (☰) */}
@@ -70,7 +61,7 @@ export function MobileHeader({
         <HoverTouchable
           style={{
             borderRadius: 8,
-            padding: 4,
+            padding: 4
           }}
           hoverBg={
             theme.isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
@@ -97,8 +88,8 @@ export function MobileHeader({
                 : 'transparent',
               borderRadius: 8,
               marginLeft: 20,
-              padding: 4,
-            },
+              padding: 4
+            }
           ]}
           hoverBg={
             autoRead
@@ -136,7 +127,7 @@ export function MobileHeader({
         </HoverTouchable>
       </View>
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
@@ -146,7 +137,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    zIndex: 10,
+    zIndex: 10
   },
   menuToggleBtn: {
     minWidth: 30,
@@ -155,13 +146,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
-    padding: 4,
+    padding: 4
   },
   mobileTopTitle: {
     fontSize: 15,
     fontWeight: '600',
     flex: 1,
     textAlign: 'center',
-    marginHorizontal: 8,
-  },
-});
+    marginHorizontal: 8
+  }
+})

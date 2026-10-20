@@ -255,13 +255,19 @@ export default function ChatArea({
           alwaysBounceVertical={false}
           nativeID="chat-scroll"
         >
-          {displayMessages.map((msg) => (
+          {displayMessages.map((msg, idx) => (
             <ChatMessageItem
               key={msg.id}
               item={msg}
               theme={theme}
               isMobile={isMobile}
               isStreaming={!!msg.isStreaming}
+              // 视觉最后一条（贴输入框）：原生倒序 → index 0；Web 自然序 → 末尾
+              isLast={
+                INVERTED_CHAT_LIST
+                  ? idx === 0
+                  : idx === displayMessages.length - 1
+              }
               isPlaying={msg.id === playingMsgId}
               setPlayingMsgId={handlePlayingChange}
               onPreviewImage={openPreview}
@@ -280,7 +286,11 @@ export default function ChatArea({
         <PopAnim kind="fab">
           {(animStyle) => (
             <Animated.View
-              style={[styles.scrollToBottomBtnWrap, POP_CSS_FALLBACK, animStyle]}
+              style={[
+                styles.scrollToBottomBtnWrap,
+                POP_CSS_FALLBACK,
+                animStyle
+              ]}
             >
               <HoverTouchable
                 onPress={handleScrollToBottom}

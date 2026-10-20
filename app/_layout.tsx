@@ -7,13 +7,16 @@ import 'react-native-gesture-handler';
 //    与 iOS 原生 push/pop 手感一致；且基于 gesture-handler，边缘侧滑返回在
 //    Android / iOS 都可用。本项目 headerShown:false、页面轻量，性能完全够用。
 import { Stack } from 'expo-router/js-stack';
+// ✅ 键盘跟手位移：react-native-keyboard-controller（原生逐帧键盘高度，替代 JS 定时器猜时长）。
+//    Expo Go 内置此库；bare workflow 与 dev-client 需要 `npx expo prebuild` 重编原生壳。
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform, useColorScheme } from 'react-native';
+import { Platform, useColorScheme, StatusBar } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
 import { darkTheme, lightTheme } from '../src/constants/theme';
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 
 import { useChatManager } from '../src/hooks/useChatManager';
 import {
@@ -82,6 +85,18 @@ export default function RootLayout() {
     [isDarkMode],
   );
 
+  // ✅ Android：状态栏底色 + 图标色跟随主题。
+  //    edge-to-edge（Android 15+）下状态栏透明、底色透出根视图，
+  //    用 SystemUI 把窗口底色设成主题色；老版本上再用 RN 的 imperative API 兜底。
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'android') return;
+    SystemUI.setBackgroundColorAsync(theme.bgApp).catch(() => {});
+    try {
+      StatusBar.setBackgroundColor(theme.bgApp, true);
+      StatusBar.setBarStyle(isDarkMode ? 'light-content' : 'dark-content', true);
+    } catch {}
+  }, [theme.bgApp, isDarkMode]);
+
   // ✅ Web 端同步浏览器底色（html/body 默认白色）：
   //    Stack 侧滑转场的缝隙、iOS 浏览器回弹时都不会再露出白底
   useEffect(() => {
@@ -126,29 +141,31 @@ export default function RootLayout() {
         <AuthProvider>
         <AuthGate>
           <ChatHost>
-            <SafeAreaProvider>
+<SafeAreaProvider>
+              <KeyboardProvider>
                 <GestureHandlerRootView
-                 style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+                 style={{ flex: 1, backgroundColor: theme.bgApp }}
                >
-                <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+                <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.bgApp} translucent={false} />
                 {/* 👇 根 Stack：聊天主界面（内嵌 Drawer）+ admin 页面。
-                    admin 页面通过 push/back 进出，侧滑转场中内容全程保持挂载 */}
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    // 侧滑进出场；JS Stack 映射为 SlideFromRightIOS：
-                    // 卡片连内容一起滑出，底层页面 parallax 揭示，手势侧滑返回跟手
-                    animation: 'slide_from_right',
-                    // 卡片内容底色：转场时露出的底不会是白的（JS Stack 选项名是 cardStyle）
-                    cardStyle: { backgroundColor: theme.bgApp },
-                  }}
-                >
-                  <Stack.Screen name="(drawer)" />
-                  <Stack.Screen name="admin-login" />
-                  <Stack.Screen name="admin" />
-                </Stack>
-              </GestureHandlerRootView>
-            </SafeAreaProvider>
+                     admin 页面通过 push/back 进出，侧滑转场中内容全程保持挂载 */}
+                 <Stack
+                   screenOptions={{
+                     headerShown: false,
+                     // 侧滑进出场；JS Stack 映射为 SlideFromRightIOS：
+                     // 卡片连内容一起滑出，底层页面 parallax 揭示，手势侧滑返回跟手
+                     animation: 'slide_from_right',
+                     // 卡片内容底色：转场时露出的底不会是白的（JS Stack 选项名是 cardStyle）
+                     cardStyle: { backgroundColor: theme.bgApp },
+                   }}
+                 >
+                   <Stack.Screen name="(drawer)" />
+                   <Stack.Screen name="admin-login" />
+                   <Stack.Screen name="admin" />
+                 </Stack>
+               </GestureHandlerRootView>
+              </KeyboardProvider>
+             </SafeAreaProvider>
           </ChatHost>
         </AuthGate>
         </AuthProvider>

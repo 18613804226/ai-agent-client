@@ -17,7 +17,7 @@
     },
     "android": {
       "usesCleartextTraffic": true,
-      "softwareKeyboardLayoutMode": "resize",
+      "softwareKeyboardLayoutMode": "pan",
       "package": "com.yourname.toto",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
