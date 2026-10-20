@@ -190,7 +190,11 @@ export async function playSpeech(uri: string, onEnd?: EndCallback) {
     return;
   }
 
-  await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    allowsRecording: false,
+    interruptionMode: 'doNotMix',
+  });
   // ⚠️ 等待音频会话时可能已被打断，此时不该再创建播放器
   if (isStale(session)) {
     await done;
@@ -458,6 +462,7 @@ function playSequence(
       await setAudioModeAsync({
         playsInSilentMode: true,
         allowsRecording: false,
+        interruptionMode: 'doNotMix',
       });
       if (isStale(session)) return;
     }
