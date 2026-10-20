@@ -40,10 +40,27 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
+      # 注意：ubuntu-latest 镜像里 sdkmanager 不在 PATH 上，
+      # 位于 $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
       - name: Install SDK components
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT" -type f -path '*/bin/sdkmanager' 2>/dev/null | head -n1 || true)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $SDK_ROOT" >&2
+            exit 1
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          { yes | "$SDKMANAGER" --licenses; } > /dev/null 2>&1 || true
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.1.12297006" \
+            "cmake;3.22.1"
 
       # npm ci 会触发 package.json 的 postinstall(patch-package) 打上 patches/*.patch
       - name: Install dependencies
