@@ -23,10 +23,10 @@ export function MobileHeader({
   autoRead, // 💡 接收全局的自动朗读状态
   onToggleAutoRead // 💡 接收切换开关的回调
 }: MobileHeaderProps) {
-  // 顶部留白：iOS 用安全区 insetsTop；Android 贴着状态栏留 8；
-  // Web/H5 无状态栏，留 0（原 34 让 H5 头部离顶太远）。
-  const topInset =
-    Platform.OS === 'ios' ? insetsTop : Platform.OS === 'web' ? 0 : 0
+  // 顶部留白：原生端（iOS/Android）都用安全区 insetsTop —— edge-to-edge 下
+  // insets.top 即状态栏高度，不加会被状态栏盖住；Web/H5 无状态栏，留 0
+  //（原 34 让 H5 头部离顶太远）。
+  const topInset = Platform.OS === 'web' ? 0 : insetsTop
   return (
     <View
       style={[
