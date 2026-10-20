@@ -34,7 +34,8 @@
       "expo-audio",
       "expo-system-ui",
       "react-native-blob-util",
-      "@config-plugins/react-native-pdf"
+      "@config-plugins/react-native-pdf",
+      "./plugins/withAbiSplits.js"
     ]
   }
 }

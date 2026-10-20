@@ -40,8 +40,10 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
 
       # npm ci 会触发 package.json 的 postinstall(patch-package) 打上 patches/*.patch
       - name: Install dependencies
@@ -81,13 +83,17 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon
+        run: |
+          ./gradlew assembleRelease --no-daemon
+          echo "--- split outputs:"
+          ls -lh app/build/outputs/apk/release/
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: dietai-agent-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          # ABI 分包产物全量上传（arm64-v8a / armeabi-v7a / x86_64）
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - name: Configure SSH
@@ -112,7 +118,7 @@ jobs:
           ssh -p "$SSH_PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes \
             "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_DIR'"
           scp -P "$SSH_PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes \
-            android/app/build/outputs/apk/release/app-release.apk \
+            android/app/build/outputs/apk/release/app-arm64-v8a-release.apk \
             "$SSH_USER@$SSH_HOST:$REMOTE_PATH"
           ssh -p "$SSH_PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes \
             "$SSH_USER@$SSH_HOST" "ls -lh '$REMOTE_PATH'"

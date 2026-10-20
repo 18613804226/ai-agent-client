@@ -21,6 +21,7 @@
 * **React Native / Expo**：移动端跨平台开发, 基于 Expo Router 构建, 完美适配 Web 端, 移动端, 桌面端。
 * **流式通信**：SSE（Server-Sent Events）流式订阅, `ReadableStream` 实时流处理。
 * **交互体验**：多端 UI 自适应, 抽屉式侧边栏, 多格式文件解析上传。
+* **动效与键盘**：react-native-reanimated 4 驱动动效, react-native-keyboard-controller 原生逐帧键盘高度, 位移与折叠动画全部跑在 UI 线程。
 
 ### 后端
 
@@ -45,7 +46,12 @@
 │   ├── store/            # 状态管理
 │   ├── types/            # TypeScript 类型定义
 │   └── utils/            # 通用工具与平台适配
+├── .github/workflows/    # CI/CD：类型检查、Web 部署、一键打 APK
+├── patches/              # patch-package 补丁（npm install 时自动应用）
+├── plugins/              # 本地 Expo Config Plugin（ABI 分包注入）
+├── scripts/              # CI 安卓签名注入等构建脚本
 ├── app.json              # Expo 应用配置
+├── .env.example          # 环境变量模板（复制为 .env 使用）
 ├── package.json          # 依赖与运行脚本
 └── tsconfig.json         # TypeScript 配置
 ```
@@ -58,7 +64,9 @@
 2. **大厂级 UI/UX 交互**：
 * 沉浸式双轨响应式布局（桌面端常驻侧边栏, 移动端抽屉平滑滑入与蒙层过渡）。
 * 支持浅色、深色与跟随系统三种外观模式；系统模式会响应设备主题变化，用户选择会保存在本地。
-* 自适应多行输入框, 精美 Markdown 气泡流, 现代滚动条优化与键盘平滑跟随。
+* 自适应多行输入框, 精美 Markdown 气泡流（支持跨段落连续选词、复制）, 现代滚动条优化；键盘由 react-native-keyboard-controller 逐帧跟手, 输入区提示文字随键盘平滑折叠。
+* 多模态附件消息：图片（缩略图与全屏预览）、文档、视频统一附件卡片, 点击可直接预览。
+* 语音朗读：AI 回答一键朗读（句级 TTS 合成）, 播放中可随时打断, 多条消息互不串音。
 
 
 3. **原生级微交互**：完整的历史会话管理（新建对话, 切换, 状态保持与删除逻辑）及现代化, 无侵入的自定义模态弹窗及动效。
@@ -71,7 +79,7 @@
 
 ## ⚙️ 系统核心流程（标准 RAG 架构）
 
-1. **用户上传文档**：支持 `TXT`、`PDF`、`DOCX` 格式, 前端完成基础校验与大小过滤, 后端执行纯文本提取。
+1. **用户上传文档**：支持 `TXT`、`PDF` 格式（`DOCX` 待支持）, 前端完成基础校验与大小过滤, 后端执行纯文本提取。
 2. **文本切片与向量化**：长文本自动分块切片, 调用千问 Embedding 接口将其转换为高维稠密向量, 持久化存入 PGVector 向量数据库。
 3. **用户语义提问**：用户输入的查询问题同样经过向量化处理, 在向量库中通过余弦相似度精准检索出 Top 3 ~ Top 5 最相关的文档片段。
 4. **大模型分析整合**：向量库仅负责召回相关片段, 由千问大模型负责上下文分析, 推理, 信息整合, 组织最终答案, 并输出结构化的 CoT（Chain-of-Thought）思考过程。
@@ -92,18 +100,47 @@
 
 ## 📦 快速上手
 
-> **注意**：建议使用 `npm` 进行依赖安装。**尽量不要使用 `pnpm**`，否则可能会因 `node_modules` 目录结构差异导致部分 React Native 依赖包无法正确识别。
+> **注意**：建议使用 `npm` 进行依赖安装。**尽量不要使用 `pnpm`**，否则可能会因 `node_modules` 目录结构差异导致部分 React Native 依赖包无法正确识别。
 
 ```bash
-# 1. 安装项目依赖
+# 1. 安装项目依赖（postinstall 会自动经 patch-package 应用 patches/ 下的补丁）
 npm install
 
-# 2. 启动开发服务器
-npx expo start
-# 或
-npm run start
+# 2. 配置环境变量：复制模板并按需修改
+#    EXPO_PUBLIC_API_URL 为后端 API 地址，缺省回退 http://localhost:3000
+cp .env.example .env
 
+# 3. 启动
+npm run start        # 交互式菜单（Expo Dev Server）
+npm run web          # 浏览器端
+npm run android      # 安卓（首次自动 prebuild 生成 android/ 工程）
+npm run ios          # iOS（需 macOS + Xcode）
 ```
+
+---
+
+## 📲 CI/CD 与一键打包（GitHub Actions）
+
+`.github/workflows/` 内置三条流水线：
+
+| Workflow | 触发条件 | 做什么 |
+| --- | --- | --- |
+| `ci.yml` | push / PR → `main` | `tsc --noEmit` 类型检查 + Web 构建冒烟 |
+| `cd.yml` | push → `main` | 构建 Web（API 地址取 `vars.API_URL`）并部署到阿里云 |
+| `android-release.yml` | Actions 手动触发 / 推 `v*` tag | ABI 分包打 release APK（v7a / arm64 / x86_64）→ 全部分包上传 Artifacts，仅 **arm64-v8a** 覆盖服务器最新包 |
+
+**一键打 release APK**：Actions → `Android APK → Aliyun` → **Run workflow**，`EXPO_PUBLIC_API_URL` 输入框**留空**即可——留空自动回落仓库变量 `API_URL`，填值则仅覆盖本次构建。构建完成后在该次运行的 **Artifacts**（`dietai-agent-apk`）下载 APK，同时服务器上的最新包被覆盖更新。
+
+**仓库配置清单**（Settings → Secrets and variables → Actions）：
+
+| 名称 | 位置 | 说明 |
+| --- | --- | --- |
+| `API_URL` | Variables | 生产 API 地址：`cd.yml` 构建 Web 与 `android-release.yml` 打包的缺省值 |
+| `ALIYUN_HOST`、`ALIYUN_USER`、`SSH_PRIVATE_KEY` | Secrets | Web 部署（`cd.yml`）**必填**，缺任意一个直接失败；打 APK 上传服务器同样依赖 `SSH_PRIVATE_KEY` |
+| `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` | Secrets | release 正式签名；**未配置时回退 debug 签名——每次构建签名都不同，无法覆盖安装升级** |
+| `ALIYUN_PORT`、`SSH_PORT`、`REMOTE_PATH` | Secrets | 均有默认值，一般无需配置 |
+
+> 不走 CI 也可以本地直出：`npm run android` 会用本机 debug keystore 生成可安装的包。
 
 ---
 
