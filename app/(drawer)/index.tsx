@@ -112,7 +112,7 @@ export default function ChatScreen() {
       )
     : 0
 
-  const { keyboardHeightStyle, isKeyboardUp, keyboardProgress, keyboardHeightValue, keyboardHeight } =
+  const { keyboardHeightStyle, isKeyboardUp, keyboardProgress, keyboardHeight } =
     useKeyboardAnimation()
   const drawerStatus = useDrawerStatus()
   const isDrawerOpen = drawerStatus === 'open'
@@ -317,7 +317,6 @@ export default function ChatScreen() {
                 isKeyboardUp={isKeyboardUp}
                 activeId={activeId}
                 autoRead={autoRead}
-                keyboardHeightValue={keyboardHeightValue}
                 keyboardHeightSV={keyboardHeight}
                 keyboardProgressSV={keyboardProgress}
                 isDrawerOpen={isDrawerOpen}

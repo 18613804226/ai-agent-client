@@ -43,7 +43,7 @@ const ThoughtCollapsible = memo(
     onToggle
   }: ThoughtCollapsibleProps) {
     const [isOpen, setIsOpen] = useState(true)
-    const [contentHeight, setContentHeight] = useState(0)
+    const contentHeightRef = useRef(0)
     const progress = useSharedValue(1)
 
     // ── 自定义滚动（不用原生嵌套 ScrollView）────────────────────────────
@@ -103,7 +103,7 @@ const ThoughtCollapsible = memo(
     const handleContentSize = useCallback(
       (h: number) => {
         contentH.value = h
-        setContentHeight(h)
+        contentHeightRef.current = h
         const canScroll = h > THOUGHT_SCROLL_MAX + 1
         setScrollable((prev) => (prev === canScroll ? prev : canScroll))
         if (isStreaming && followThoughtBottom.value && !dragging.value) {
@@ -165,8 +165,8 @@ const ThoughtCollapsible = memo(
     const toggleOpen = () => {
       const nextState = !isOpen
       const expandedH =
-        contentHeight > 0
-          ? Math.min(contentHeight, THOUGHT_SCROLL_MAX)
+        contentHeightRef.current > 0
+          ? Math.min(contentHeightRef.current, THOUGHT_SCROLL_MAX)
           : THOUGHT_SCROLL_MAX
       onToggle?.(nextState, expandedH)
       setIsOpen(nextState)

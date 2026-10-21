@@ -36,6 +36,7 @@ export function useChatScroll({
     handleScroll: originalHandleScroll,
   } = useChat();
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const showScrollToBottomRef = useRef(false);
 
   /**
    * 平滑贴底动画进行中的截止时间戳。
@@ -161,8 +162,12 @@ export function useChatScroll({
       // 原生 inverted：离底距离 = contentOffset.y；Web：contentSize - viewport - offset
       const distanceFromBottom = chatDistanceFromBottom(event?.nativeEvent);
 
-      // 上滑超过 120px 才显示按钮
-      setShowScrollToBottom(distanceFromBottom > 120);
+      // 上滑超过 120px 才显示按钮；只在跨阈值时 setState，避免滚动中反复调度
+      const shouldShow = distanceFromBottom > 120;
+      if (shouldShow !== showScrollToBottomRef.current) {
+        showScrollToBottomRef.current = shouldShow;
+        setShowScrollToBottom(shouldShow);
+      }
 
       // 迟滞区间 [40, 120]：远离底部才脱钩，滑回底部附近才重新跟随。
       // 这样吐字时那几十毫秒的高度误差不会误判成「用户上滑了」而突然停住。
@@ -282,7 +287,10 @@ export function useChatScroll({
   // 点「回到底部」→ 重新开启自动跟随 + 平滑贴底
   const handleScrollToBottom = useCallback(() => {
     autoFollowRef.current = true;
-    setShowScrollToBottom(false);
+    if (showScrollToBottomRef.current) {
+      showScrollToBottomRef.current = false;
+      setShowScrollToBottom(false);
+    }
     // pinToBottom(animated=true) 内部会开「动画保护窗口」（pinAnimUntilRef）
     pinToBottom(true);
   }, [pinToBottom, autoFollowRef]);

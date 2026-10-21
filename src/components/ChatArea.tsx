@@ -69,7 +69,6 @@ export default function ChatArea({
   streamingRenderMsg: _ignoredStreamingRenderMsg = null,
   autoRead = false, // 💡 新增
   isDrawerOpen = false, // 抽屉打开时禁用文本选择，防止误触
-  keyboardHeightValue = 0,
   keyboardHeightSV = null,
   keyboardProgressSV = null
 }: ChatAreaProps) {
@@ -211,8 +210,8 @@ export default function ChatArea({
   const pinTargetBaseRef = useRef(-1)
   const manualSpacerBaseRef = useRef(0)
 
-  /** 视口高（渲染留白用；root onLayout 量一次） */
-  const [viewportHState, setViewportHState] = useState(0)
+  /** 视口是否已测量（只用于决定留白占位是否渲染；精确高度走 viewportHRef） */
+  const [hasViewport, setHasViewport] = useState(false)
   /**
    * 流式期间底部常驻「一屏高」留白（参考 Gemini/元宝）：
    * 它和 messages 在同一个 commit 就存在 → 滚到任意消息顶部永远合法 →
@@ -317,18 +316,7 @@ export default function ChatArea({
   }, [scrollViewRef, pinTargetSV])
 
   /** 钉顶/历史贴底（纯 UI 线程逐帧）：目标由 JS 写共享值，用户一碰立即停手 */
-  useFrameCallback(() => {
-    'worklet'
-    if (touchedSV.value) return
-    if (!hasDataSV.value) return
-    if (pinTargetSV.value >= 0) {
-      scrollToWorklet(scrollViewRef, 0, pinTargetSV.value, false)
-      return
-    }
-    if (historyBottomSV.value === 1) {
-      scrollToWorklet(scrollViewRef, 0, 1e7, false)
-    }
-  })
+  // 注：具体实现放在 useChatScroll 之后（需要 outerOffsetSV / outerMaxSV）
 
   // 流式结束后不再清 pinTargetSV：思考框在流式结束后展开/折叠仍要贴顶。
   // 用户一碰（touchedSV）会停手；下次发送/切会话会重置目标。
@@ -633,9 +621,30 @@ export default function ChatArea({
     scrollViewStyle,
     showScrollToBottom,
     handleScrollToBottom,
+    outerOffsetSV,
     outerMaxSV,
     viewportOnLayout
   } = useChatScroll({ activeId, streamingRenderMsg, displayMessages })
+
+  /**
+   * 钉顶/历史贴底（纯 UI 线程逐帧）：目标由 JS 写共享值，用户一碰立即停手。
+   * 只有与当前 offset 相差超过 0.5px 时才下发 scrollTo —— 目标稳定时
+   * （钉顶不动、已贴底）不再每帧 dispatch 原生滚动命令。
+   */
+  useFrameCallback(() => {
+    'worklet'
+    if (touchedSV.value) return
+    if (!hasDataSV.value) return
+    const target =
+      pinTargetSV.value >= 0
+        ? pinTargetSV.value
+        : historyBottomSV.value === 1 && outerMaxSV.value > 0
+          ? outerMaxSV.value
+          : -1
+    if (target < 0) return
+    if (Math.abs(outerOffsetSV.value - target) <= 0.5) return
+    scrollToWorklet(scrollViewRef, 0, target, false)
+  })
 
   /** 「回到底部」（UI 线程）：滚到真实 maxScroll，animated=true 才有平滑动画 */
   const scrollToBottomUI = useCallback(() => {
@@ -739,7 +748,7 @@ export default function ChatArea({
   )
 
   const listFooter =
-    spacerVisible && viewportHState > 0 ? (
+    spacerVisible && hasViewport ? (
       <Animated.View style={spacerHeightStyle} pointerEvents="none" />
     ) : null
 
@@ -753,7 +762,7 @@ export default function ChatArea({
         // 键盘动画期间 h 与 p 同步变化，closedH 理论上恒定；布局取整会让它抖 ±1px，
         // 所以只在变化超过 1px 时才更新并重算，避免无谓抖动。
         const closedH = h - p * FOOTER_COLLAPSE
-        setViewportHState((prev) => (prev === h ? prev : h))
+        if (h > 0) setHasViewport(true)
         if (Math.abs(closedH - viewportHRef.current) > 1) {
           viewportHRef.current = closedH
           recomputePinSpacer()

@@ -32,10 +32,6 @@ function useNativeKeyboardAnimation() {
   // isKeyboardUp only toggles JS-driven UI (welcome text); JS-thread update is fine.
   const isKeyboardUp = useLibKeyboardState((s) => s.isVisible);
 
-  // 键盘高度（JS state，来自 keyboard-controller 自己的状态 —— 在 pan 模式下也能拿到）。
-  // 供聊天列表做「先吃留白、再顶内容」的补偿。
-  const keyboardHeightValue = useLibKeyboardState((s) => s.height);
-
   const keyboardHeightStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: height.value }],
   }));
@@ -47,7 +43,6 @@ function useNativeKeyboardAnimation() {
     isKeyboardUp,
     keyboardHeight: height,
     keyboardProgress: progress,
-    keyboardHeightValue,
   };
 }
 
@@ -104,6 +99,5 @@ function useWebKeyboardAnimation() {
     isKeyboardUp,
     keyboardHeight: null,
     keyboardProgress: null,
-    keyboardHeightValue: 0,
   };
 }

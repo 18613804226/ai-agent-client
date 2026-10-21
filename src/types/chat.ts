@@ -43,8 +43,6 @@ export interface ChatAreaProps {
   streamingRenderMsg?: StreamingRenderMsg | null;
   autoRead?: boolean; // 💡 新增：自动朗读开关
   isDrawerOpen?: boolean; // 抽屉打开时禁用文本选择，防止误触
-  /** 键盘最终高度（JS state，键盘动画结束时更新一次）：用于钉顶「先吃留白再顶内容」 */
-  keyboardHeightValue?: number;
   /** 驱动 translateY 的键盘高度共享值（UI 线程真实值） */
   keyboardHeightSV?: any;
   /** 键盘进度 0..1（UI 线程），用于补偿底部小字折叠的高度 */

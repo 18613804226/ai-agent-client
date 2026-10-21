@@ -437,8 +437,8 @@ const ChatMessageItem = memo(
     prev.reserveMinHeight === next.reserveMinHeight &&
     prev.animateIn === next.animateIn &&
     prev.onThoughtToggle === next.onThoughtToggle &&
-    (prev.item.images?.length ?? 0) === (next.item.images?.length ?? 0) &&
-    (prev.item.attachments?.length ?? 0) === (next.item.attachments?.length ?? 0)
+    prev.item.images === next.item.images &&
+    prev.item.attachments === next.item.attachments
 )
 
 export default ChatMessageItem
