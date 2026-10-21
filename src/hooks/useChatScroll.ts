@@ -370,17 +370,20 @@ export function useChatScroll({
     ...(Platform.OS === 'android' ? { scrollsChildToFocus: false } : null),
   };
 
-  const scrollViewStyle: any = [
+  // ⚠️ 必须是普通对象：FlashList 内部用对象展开合并 style，
+  // 传数组会变成 {"0": {...}}，Web 端落 DOM 时触发
+  // "Failed to set an indexed property [0] on 'CSSStyleDeclaration'" 黑屏。
+  const scrollViewStyle: any = {
     // 翻转 ScrollView 自身：offset 0 = 视觉底部，吐字期零滚动命令
-    INVERTED_CHAT_LIST ? CHAT_INVERSION_STYLE : null,
+    ...(INVERTED_CHAT_LIST ? CHAT_INVERSION_STYLE : null),
     // RNW 才认这两个滚动条样式
-    Platform.OS === 'web'
+    ...(Platform.OS === 'web'
       ? {
           scrollbarWidth: 'thin',
           scrollbarColor: 'rgba(255,255,255,0.3) transparent',
         }
-      : null,
-  ].filter(Boolean)
+      : null),
+  }
 
   return {
     scrollViewProps,
