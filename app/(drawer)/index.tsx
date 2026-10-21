@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import {
   StyleSheet,
   View,
@@ -56,10 +56,8 @@ export default function ChatScreen() {
     toggleAutoRead,
     isAtBottomRef,
     scrollViewRef,
-    handleScroll,
-    streamingRenderMsg
+    handleScroll
   } = useChat()
-
   const {
     selectedAttachments, // 👈 统一的附件列表（图片/文档/视频）
     setSelectedAttachments,
@@ -114,7 +112,7 @@ export default function ChatScreen() {
       )
     : 0
 
-  const { keyboardHeightStyle, isKeyboardUp, keyboardProgress } =
+  const { keyboardHeightStyle, isKeyboardUp, keyboardProgress, keyboardHeightValue, keyboardHeight } =
     useKeyboardAnimation()
   const drawerStatus = useDrawerStatus()
   const isDrawerOpen = drawerStatus === 'open'
@@ -123,9 +121,7 @@ export default function ChatScreen() {
   // BlurTargetView，再把这个 ref 透传给 ChatInputBar 的 BlurView.blurTarget。
   const inputBarBlurTargetRef = useRef<View | null>(null)
 
-  const handleSendWithImages = async (overrideText?: string) => {
-    // 只发送后端真实存在、已完成索引的文件 ID：
-    // 排除本地临时占位 ID（upload_*）、处理中/失败项，避免后端 RAG 解析到不存在的文件
+  const handleSendWithImages = useCallback(async (overrideText?: string) => {
     const knowledgeFileIds = uploadedFiles
       .filter(
         (f) =>
@@ -138,9 +134,6 @@ export default function ChatScreen() {
           f.enabled
       )
       .map((f) => f.id)
-    // 附件上传失败时 handleSend 返回 false：chips 留在输入栏、输入已还原，可直接重试。
-    // 第 5 参 onComposerClear：前置校验 + 附件上传一通过就清 chips，
-    // 不等流式吐字结束（清空时机由 handleSend 内部控制，失败不会调用）。
     await handleSend(
       overrideText,
       [],
@@ -148,7 +141,7 @@ export default function ChatScreen() {
       selectedAttachments,
       clearImages
     )
-  }
+  }, [uploadedFiles, selectedAttachments, clearImages, handleSend])
 
   // 💡 三端精准判断
   const screenWidth = Dimensions.get('window').width
@@ -319,12 +312,14 @@ export default function ChatScreen() {
               <ChatArea
                 key={activeId}
                 messages={currentChat?.messages ?? []}
-                streamingRenderMsg={streamingRenderMsg}
                 theme={theme}
                 isMobile={!isPCWeb}
                 isKeyboardUp={isKeyboardUp}
                 activeId={activeId}
                 autoRead={autoRead}
+                keyboardHeightValue={keyboardHeightValue}
+                keyboardHeightSV={keyboardHeight}
+                keyboardProgressSV={keyboardProgress}
                 isDrawerOpen={isDrawerOpen}
               />
               <ChatInputBar

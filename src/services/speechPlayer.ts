@@ -308,15 +308,20 @@ function playTrackWeb(
   uri: string,
 ): Promise<HTMLAudioElement | null> {
   // 复用上句元素：避免同一个序列里反复创建 <audio>
-  let audio = session.audio;
-  if (audio) {
+  // ⚠️ 但复用会把上一句的 ended/onended 状态带过来：waitForWebEndOrCancel
+  // 的 50ms 兜底轮询检查 audio.ended，上一句已播完时它永远是 true，
+  // 新句还没出声就立刻被判定「播完了」→ 整段听起来像没声。
+  // 所以这里每次新建一个 <audio>，彻底切断上一句的状态残留。
+  if (session.audio) {
     try {
-      audio.pause();
+      session.audio.onended = null;
+      session.audio.onerror = null;
+      session.audio.pause();
     } catch {}
-  } else {
-    audio = new window.Audio();
-    session.audio = audio;
+    session.audio = null;
   }
+  const audio = new window.Audio();
+  session.audio = audio;
 
   return new Promise<HTMLAudioElement | null>((resolve) => {
     // ⚠️ 跨端修复（web 中止按钮不出）：

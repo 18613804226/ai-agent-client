@@ -8,15 +8,23 @@ import type { useKnowledgeFiles } from '../hooks/useKnowledgeFiles';
  * 形成 require cycle（之前 MobileDrawer / ChatArea 反向 import _layout）。
  */
 
-// 聊天全局 Context
-export const ChatContext = createContext<ReturnType<
-  typeof useChatManager
+// 聊天全局 Context（不含流式渲染状态，避免每 token 更新触发整屏重渲染）
+export const ChatContext = createContext<Omit<
+  ReturnType<typeof useChatManager>,
+  'streamingRenderMsg'
 > | null>(null);
 export const useChat = () => {
   const context = useContext(ChatContext);
   if (!context) throw new Error('useChat must be used within a ChatProvider');
   return context;
 };
+
+// 流式渲染状态独立 Context：只有真正消费它的组件（ChatArea）会因 token 更新重渲染
+export const StreamingRenderMsgContext = createContext<ReturnType<
+  typeof useChatManager
+>['streamingRenderMsg']>(null);
+export const useStreamingRenderMsg = () =>
+  useContext(StreamingRenderMsgContext);
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 

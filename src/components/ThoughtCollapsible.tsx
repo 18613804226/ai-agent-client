@@ -19,17 +19,10 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  useAnimatedReaction,
   withTiming,
   withDecay,
-  scrollTo,
-  Easing,
-  type SharedValue
+  Easing
 } from 'react-native-reanimated'
-import {
-  INVERTED_CHAT_LIST,
-  THOUGHT_EDGE_SCROLL_ENABLED
-} from '../utils/chatScroll'
 import type { ThemeType } from '../types/chat'
 
 interface ThoughtCollapsibleProps {
@@ -37,12 +30,8 @@ interface ThoughtCollapsibleProps {
   theme: ThemeType
   /** 是否正在流式吐字：吐字结束自动收起思考框 */
   isStreaming?: boolean
-  /** 外层列表当前 offset（UI 线程可读），用于贴边联动 */
-  outerOffsetSV?: SharedValue<number>
-  /** 外层列表最大 offset（UI 线程可读） */
-  outerMaxSV?: SharedValue<number>
-  /** 外层列表的 animated ref（贴边联动 scrollTo 用） */
-  scrollViewRef: any
+  /** 思考框展开/折叠时回调：(expanding, height) —— 用于外层留白同步补偿 */
+  onToggle?: (expanding: boolean, height: number) => void
 }
 
 // ===================== ThoughtCollapsible =====================
@@ -51,40 +40,25 @@ const ThoughtCollapsible = memo(
     thought,
     theme,
     isStreaming = false,
-    outerOffsetSV,
-    outerMaxSV,
-    scrollViewRef
+    onToggle
   }: ThoughtCollapsibleProps) {
-    const [isOpen, setIsOpen] = useState(!!isStreaming)
-    const progress = useSharedValue(isStreaming ? 1 : 0)
+    const [isOpen, setIsOpen] = useState(true)
+    const [contentHeight, setContentHeight] = useState(0)
+    const progress = useSharedValue(1)
 
     // ── 自定义滚动（不用原生嵌套 ScrollView）────────────────────────────
     // 安卓默认 ScrollView 不是 NestedScrollingParent：外层会在同一帧抢走内层手势，
     // 贴边还会联动外层；走 JS 的 scrollEnabled 方案要等一次 JS 往返，吐字期赶不及。
     // 这里用 gesture-handler 的 Pan（原生线程仲裁）在根视图层吃掉触摸，外层拿不到事件。
     const THOUGHT_SCROLL_MAX = 200
-    // 原生 inverted 外层：offset 0 = 底部，往下拖(正 excess) offset 增大；
-    // Web 普通列表：scrollTop 0 = 顶部，方向相反。
-    const OUTER_SIGN = INVERTED_CHAT_LIST ? 1 : -1
     const contentH = useSharedValue(0)
     const scrollY = useSharedValue(0)
     const startY = useSharedValue(0)
     const startAbsY = useSharedValue(0)
-    const lastExcess = useSharedValue(0)
-    const outerBase = useSharedValue(0)
-    const outerPos = useSharedValue(-1)
     const dragging = useSharedValue(false)
     const followThoughtBottom = useSharedValue(true)
     const [scrollable, setScrollable] = useState(false)
     const scrollViewportRef = useRef<any>(null)
-
-    // 贴边联动：外层 offset 由 UI 线程 scrollTo 直接驱动（丝滑 + withDecay 惯性）
-    useAnimatedReaction(
-      () => outerPos.value,
-      (v) => {
-        if (v >= 0) scrollTo(scrollViewRef, 0, v, false)
-      }
-    )
 
     const pan = useMemo(
       () =>
@@ -96,8 +70,6 @@ const ThoughtCollapsible = memo(
           .onBegin((e) => {
             startY.value = scrollY.value
             startAbsY.value = e.absoluteY
-            lastExcess.value = 0
-            outerBase.value = outerOffsetSV ? outerOffsetSV.value : 0
             dragging.value = true
           })
           .onUpdate((e) => {
@@ -108,50 +80,19 @@ const ThoughtCollapsible = memo(
             const clamped = Math.max(min, Math.min(0, desired))
             scrollY.value = clamped
             followThoughtBottom.value = clamped <= min + 1
-            // 滚到边界后多出来的位移交给外层（THOUGHT_EDGE_SCROLL_ENABLED 关闭则锁死）
-            const excess = desired - clamped
-            lastExcess.value = excess
-            if (THOUGHT_EDGE_SCROLL_ENABLED && outerMaxSV) {
-              outerPos.value = Math.max(
-                0,
-                Math.min(
-                  outerMaxSV.value,
-                  outerBase.value + OUTER_SIGN * excess
-                )
-              )
-            }
           })
           .onEnd((e) => {
             const min = Math.min(0, THOUGHT_SCROLL_MAX - contentH.value)
-            if (
-              THOUGHT_EDGE_SCROLL_ENABLED &&
-              lastExcess.value !== 0 &&
-              outerMaxSV
-            ) {
-              // 贴边时惯性交给外层（velocity×0.6、deceleration 0.997 更跟手、不飘）
-              outerPos.value = withDecay({
-                velocity: OUTER_SIGN * e.velocityY * 0.6,
-                clamp: [0, outerMaxSV.value],
-                deceleration: 0.997
-              })
-            } else {
-              scrollY.value = withDecay({
-                velocity: e.velocityY * 0.6,
-                clamp: [min, 0],
-                deceleration: 0.997
-              })
-            }
+            scrollY.value = withDecay({
+              velocity: e.velocityY * 0.6,
+              clamp: [min, 0],
+              deceleration: 0.997
+            })
           })
           .onFinalize(() => {
             dragging.value = false
           }),
-      [
-        scrollable,
-        outerOffsetSV,
-        outerMaxSV,
-        scrollViewRef,
-        followThoughtBottom
-      ]
+      [scrollable, followThoughtBottom]
     )
 
     const scrollStyle = useAnimatedStyle(() => ({
@@ -162,6 +103,7 @@ const ThoughtCollapsible = memo(
     const handleContentSize = useCallback(
       (h: number) => {
         contentH.value = h
+        setContentHeight(h)
         const canScroll = h > THOUGHT_SCROLL_MAX + 1
         setScrollable((prev) => (prev === canScroll ? prev : canScroll))
         if (isStreaming && followThoughtBottom.value && !dragging.value) {
@@ -222,18 +164,18 @@ const ThoughtCollapsible = memo(
 
     const toggleOpen = () => {
       const nextState = !isOpen
+      const expandedH =
+        contentHeight > 0
+          ? Math.min(contentHeight, THOUGHT_SCROLL_MAX)
+          : THOUGHT_SCROLL_MAX
+      onToggle?.(nextState, expandedH)
       setIsOpen(nextState)
       animateTo(nextState)
     }
 
-    // 吐字结束自动收起思考框（用户可再手动点开）
-    useEffect(() => {
-      if (!isStreaming) {
-        setIsOpen(false)
-        animateTo(false)
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isStreaming])
+    // 默认展开、不自动折叠：吐字结束不再收起思考框 → 高度不自动变化，
+// 也就不会触发外层滚动的 clamp / 跳动（这正是之前"跳一下"的根源）。
+// 用户可以手动点标题栏收起。
 
     // 思考内容流式增长时自动贴到底部（见 handleContentSize：内容重排时贴底）
 
@@ -315,8 +257,7 @@ const ThoughtCollapsible = memo(
   (prev, next) =>
     prev.thought === next.thought &&
     prev.theme === next.theme &&
-    prev.isStreaming === next.isStreaming &&
-    prev.scrollViewRef === next.scrollViewRef
+    prev.isStreaming === next.isStreaming
 )
 
 const styles = StyleSheet.create({

@@ -109,7 +109,7 @@ interface ChatInputBarProps {
   blurTarget?: React.RefObject<View | null>
 }
 
-export default function ChatInputBar({
+function ChatInputBar({
   inputText,
   setInputText,
   onSend,
@@ -1111,3 +1111,5 @@ const styles = StyleSheet.create({
     lineHeight: 18
   }
 })
+
+export default React.memo(ChatInputBar)

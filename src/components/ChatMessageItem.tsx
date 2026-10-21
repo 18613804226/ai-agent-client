@@ -1,8 +1,12 @@
-import React, { memo, useMemo } from 'react'
+import React, { memo, useEffect, useMemo } from 'react'
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
 import Markdown from 'react-native-markdown-display'
 import { Feather } from '@expo/vector-icons'
-import type { SharedValue } from 'react-native-reanimated'
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming
+} from 'react-native-reanimated'
 import { INVERTED_CHAT_LIST, CELL_INVERSION_STYLE } from '../utils/chatScroll'
 import { WEB_ROW_CONTAINMENT } from '../utils/layout'
 import { selectableMarkdownRules, nonSelectableMarkdownRules, webMarkdownRules } from './markdown/markdownRules'
@@ -27,9 +31,10 @@ const ChatMessageItem = memo(
     onPreviewImage,
     onPreviewFile,
     textSelectable = true,
-    outerOffsetSV,
-    outerMaxSV,
-    scrollViewRef
+    onLayout,
+    reserveMinHeight = 0,
+    animateIn = false,
+    onThoughtToggle
   }: {
     item: Message
     theme: ThemeType
@@ -45,14 +50,28 @@ const ChatMessageItem = memo(
     onPreviewFile?: (att: PickedAttachment) => void
     /** 抽屉打开时传 false：禁用文本选择并清掉蓝色选择框，避免误触 */
     textSelectable?: boolean
-    /** 外层列表当前 offset（UI 线程可读），用于思考框贴边联动 */
-    outerOffsetSV: SharedValue<number>
-    /** 外层列表最大 offset（UI 线程可读） */
-    outerMaxSV: SharedValue<number>
-    /** 外层列表 animated ref（贴边联动 scrollTo 用） */
-    scrollViewRef: any
+    /** 钉顶模式：布局完成回调，用于把用户消息滚到视口顶部 */
+    onLayout?: (e: any) => void
+    /** 钉顶：给「回答区」预留至少一屏高（minHeight），让用户消息能被顶到顶部而不 clamp */
+    reserveMinHeight?: number
+    /** 刚发送的消息：做一次淡入 + 上滑入场动画 */
+    animateIn?: boolean
+    /** 思考框展开/折叠时回调：(msgId, expanding, height) —— 外层留白同步补偿 */
+    onThoughtToggle?: (msgId: string, expanding: boolean, height: number) => void
   }) => {
-    const isUser = item.role === 'user'
+    const entrance = useSharedValue(animateIn ? 0 : 1)
+  useEffect(() => {
+    // FlashList 会复用 cell：item 变化时必须把入场值重置，否则新消息可能继承上一条的 0/1
+    entrance.value = animateIn ? 0 : 1
+    if (!animateIn) return
+    entrance.value = withTiming(1, { duration: 200 })
+  }, [animateIn, entrance, item.id])
+  const entranceStyle = useAnimatedStyle(() => ({
+    opacity: entrance.value,
+    transform: [{ translateY: (1 - entrance.value) * 10 }],
+  }))
+
+  const isUser = item.role === 'user'
     const hasContent = !!(item.content && item.content !== '...')
     const hasThought = !!item.thought
     const isThinking = !isUser && !hasContent && !hasThought
@@ -157,9 +176,10 @@ const ChatMessageItem = memo(
      * 2. 修掉 `** xx **`（定界符内侧带空格）→ `**xx**`：CommonMark 规定闭定界符前
      *    不能是空白，否则整段当字面量、加粗不生效，而模型很爱输出带空格版。
      */
-    const renderContent = item.content
-      ? normalizeInlineEmphasis(item.content.trimEnd())
-      : ''
+    const renderContent =
+      !isStreaming && item.content
+        ? normalizeInlineEmphasis(item.content.trimEnd())
+        : ''
 
     const bubbleStyle = useMemo(
       () => [
@@ -204,7 +224,16 @@ const ChatMessageItem = memo(
     }
 
     return (
-      <View style={INVERTED_CHAT_LIST ? CELL_INVERSION_STYLE : null}>
+      <Animated.View
+        style={[
+          entranceStyle,
+          INVERTED_CHAT_LIST ? CELL_INVERSION_STYLE : null,
+          // 钉顶预留：给这条（流式回答）至少一屏高。回答没长满前高度恒定
+          // → 外层收不到内容尺寸变化 → 不回补、不抖；回答超过一屏后自然撑开。
+          reserveMinHeight > 0 ? { minHeight: reserveMinHeight } : null
+        ]}
+        onLayout={onLayout}
+      >
         <View
           style={[
             chatMessageStyles.messageRow,
@@ -321,11 +350,14 @@ const ChatMessageItem = memo(
                     <ThoughtCollapsible
                       thought={item.thought!}
                       theme={theme}
-                      isStreaming={isStreaming}
-                      outerOffsetSV={outerOffsetSV}
-                      outerMaxSV={outerMaxSV}
-                      scrollViewRef={scrollViewRef}
-                    />
+                       isStreaming={isStreaming}
+                       onToggle={
+                         onThoughtToggle
+                           ? (expanding, height) =>
+                               onThoughtToggle(item.id, expanding, height)
+                           : undefined
+                       }
+                     />
                   ) : null}
 
                   {/* 流式正文：两端统一用**段落级增量 markdown**（StreamingMarkdown）——
@@ -387,7 +419,7 @@ const ChatMessageItem = memo(
             </View>
           )}
         </View>
-      </View>
+      </Animated.View>
     )
   },
   (prev, next) =>
@@ -402,12 +434,11 @@ const ChatMessageItem = memo(
     prev.onPreviewImage === next.onPreviewImage &&
     prev.onPreviewFile === next.onPreviewFile &&
     prev.textSelectable === next.textSelectable &&
-    prev.outerOffsetSV === next.outerOffsetSV &&
-    prev.outerMaxSV === next.outerMaxSV &&
-    prev.scrollViewRef === next.scrollViewRef &&
-    JSON.stringify(prev.item.images) === JSON.stringify(next.item.images) &&
-    JSON.stringify(prev.item.attachments ?? []) ===
-      JSON.stringify(next.item.attachments ?? [])
+    prev.reserveMinHeight === next.reserveMinHeight &&
+    prev.animateIn === next.animateIn &&
+    prev.onThoughtToggle === next.onThoughtToggle &&
+    (prev.item.images?.length ?? 0) === (next.item.images?.length ?? 0) &&
+    (prev.item.attachments?.length ?? 0) === (next.item.attachments?.length ?? 0)
 )
 
 export default ChatMessageItem

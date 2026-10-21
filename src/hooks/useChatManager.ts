@@ -1,7 +1,22 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { Platform, Vibration } from 'react-native'
 import { useAnimatedRef } from 'react-native-reanimated'
 import { api, refreshDeviceSnapshot, refreshMyDevice } from '../services/api'
+
+/** 唯一消息 id：Date.now 单独用会在同一毫秒内重复（用户消息 + thinking 占位） */
+const makeId = (prefix = 'm') =>
+  `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+
+/** 服务端历史 id 可能是毫秒时间戳且重复；补成唯一 id，避免 FlashList/React duplicate key */
+const normalizeMessages = (list: any[]) => {
+  const seen = new Set<string>()
+  return (list || []).map((m: any) => {
+    let id = m?.id != null ? String(m.id) : ''
+    if (!id || seen.has(id)) id = makeId('m')
+    seen.add(id)
+    return { ...m, id }
+  })
+}
 import {
   getToken,
   onTokenChange,
@@ -84,7 +99,7 @@ export function useChatManager() {
 
   const autoFollowRef = useRef(true)
   const isAtBottomRef = useRef(true)
-  // animated ref：思考框贴边联动要用 UI 线程 scrollTo 驱动外层滚动（丝滑 + 惯性）
+  // animated ref：钉顶/历史贴底用 UI 线程 scrollTo 直接驱动 FlashList 内部 ScrollView
   const scrollViewRef = useAnimatedRef<any>()
 
   // ==================== 吐字参数 ====================
@@ -126,8 +141,8 @@ export function useChatManager() {
    * 流已结束、用户在等落盘，这时候「快」比「稳」重要。
    */
   const FINISH_MAX_PER_FRAME = 32
-  /** 每帧推一次 React 状态（≈60fps）：每帧都多吐至少一个字，肉眼看不出台阶 */
-  const FRAME_PUSH_INTERVAL = 16
+  /** 每帧推一次 React 状态（≈20fps）：批量更新，避免每 token 全树重渲染 */
+  const FRAME_PUSH_INTERVAL = 50
   /** 单帧时间上限，防止切后台回来一帧吐几百字 */
   const MAX_FRAME_GAP = 100
   const FIRST_FRAME_GAP = 16
@@ -210,7 +225,9 @@ export function useChatManager() {
           if (cancelled) return
           setConversations((prev) =>
             prev.map((c) =>
-              c.id === firstId ? { ...c, messages: detail.messages || [] } : c
+              c.id === firstId
+                ? { ...c, messages: normalizeMessages(detail.messages || []) }
+                : c
             )
           )
           return
@@ -286,7 +303,7 @@ export function useChatManager() {
       })
     }
 
-    const tempId = 'temp_' + Date.now()
+    const tempId = makeId('temp')
     const newConv = { id: tempId, title: '新对话' }
 
     setConversations((prev) => [newConv, ...prev].slice(0, 20))
@@ -325,7 +342,7 @@ export function useChatManager() {
 
     try {
       const detail: any = await api.getSessionDetail(id)
-      const messages = detail.messages || []
+      const messages = normalizeMessages(detail.messages || [])
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, messages } : c))
       )
@@ -385,8 +402,7 @@ export function useChatManager() {
   /** 追加一条消息到当前会话（用于「用户中止对话」提示等） */
   const appendMessage = useCallback(
     (msg: Partial<Message>) => {
-      const id =
-        msg.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      const id = msg.id ?? makeId('m')
       setConversations((prev) =>
         prev.map((conv) =>
           conv.id === activeId
@@ -1051,7 +1067,7 @@ export function useChatManager() {
     if (onComposerClear) onComposerClear()
 
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: makeId('u'),
       role: 'user',
       content: currentInput,
       images: uploadedImageUrls.length > 0 ? uploadedImageUrls : undefined,
@@ -1078,7 +1094,7 @@ export function useChatManager() {
         : undefined
     }
 
-    const thinkingMsgId = (Date.now() + 1).toString()
+    const thinkingMsgId = makeId('a')
     const thinkingMsg: Message = {
       id: thinkingMsgId,
       role: 'assistant',

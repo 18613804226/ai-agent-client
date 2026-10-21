@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo } from 'react'
 import { View, Text, StyleSheet, Platform } from 'react-native'
 import { IconPlus, IconSpeakerOn, IconSpeakerOff } from './Icons'
 import { HoverTouchable } from './HoverTouchable'
@@ -13,7 +13,7 @@ interface MobileHeaderProps {
   onToggleAutoRead: () => void
 }
 
-export function MobileHeader({
+export const MobileHeader = memo(function MobileHeader({
   theme,
   insetsTop,
   title,
@@ -128,7 +128,7 @@ export function MobileHeader({
       </View>
     </View>
   )
-}
+})
 
 const styles = StyleSheet.create({
   mobileTopBar: {

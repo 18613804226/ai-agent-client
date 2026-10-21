@@ -179,10 +179,42 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   // 已成形段落也过一遍强调归一化（`** xx **` → `**xx**`）：这些段落会走
   // 真正 的 markdown 解析，内侧带空格的定界符在这里必须修掉，否则加粗失效。
   // 尾巴仍是纯文本、`**` 只会原样显示，故不处理它（见 TailText 注释）。
-  const { blocks, tail } = useMemo(
-    () => splitStableBlocks(normalizeInlineEmphasis(content)),
-    [content]
-  )
+  // 流式切块：文本只增不减，稳定块一旦产生永不改写。
+  // 这里用 ref 缓存上一次的切块结果：content 每 token 都变，但稳定块只在"空行切点
+  // 定型"时才新增，所以短间隔/小增量时直接复用缓存的 blocks，只更新 tail，
+  // 把每 token 的 O(n) split 降到每 ~60ms / 8 字符一次，长回答不再 O(n²)。
+  const cacheRef = useRef<{
+    content: string
+    blocks: string[]
+    tail: string
+    lastCut: number
+    lastCompute: number
+  }>({ content: '', blocks: [], tail: '', lastCut: 0, lastCompute: 0 })
+
+  const { blocks, tail } = useMemo(() => {
+    const c = content
+    const cache = cacheRef.current
+    if (c === cache.content) {
+      return { blocks: cache.blocks, tail: cache.tail }
+    }
+    const now = Date.now()
+    const grew = c.startsWith(cache.content) && cache.content.length > 0
+    const smallDelta = c.length - cache.content.length < 8
+    const recent = now - cache.lastCompute < 60
+    if (grew && smallDelta && recent && cache.blocks.length >= 0) {
+      const tail = normalizeInlineEmphasis(c.slice(cache.lastCut))
+      cache.content = c
+      cache.tail = tail
+      return { blocks: cache.blocks, tail }
+    }
+    const r = splitStableBlocks(normalizeInlineEmphasis(c))
+    cache.content = c
+    cache.blocks = r.blocks
+    cache.tail = r.tail
+    cache.lastCut = c.length - r.tail.length
+    cache.lastCompute = now
+    return r
+  }, [content])
   const color = style.body?.color ?? '#000'
 
   return (

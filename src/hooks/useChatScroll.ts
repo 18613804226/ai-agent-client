@@ -5,6 +5,7 @@ import { useChat } from '../context/appContexts';
 import {
   CHAT_INVERSION_STYLE,
   INVERTED_CHAT_LIST,
+  APP_PIN_USER_MESSAGE,
   chatDistanceFromBottom,
   scrollChatToBottom,
 } from '../utils/chatScroll';
@@ -113,9 +114,16 @@ export function useChatScroll({
     );
     if (!ref || maxOffset <= 0) return;
     pinAnimUntilRef.current = Date.now() + PIN_ANIM_MS;
-    ref.scrollTo?.({ x: 0, y: maxOffset, animated: false });
+    if (typeof ref.scrollTo === 'function') {
+      ref.scrollTo?.({ x: 0, y: maxOffset, animated: false });
+      requestAnimationFrame(() => {
+        ref.scrollTo?.({ x: 0, y: 0, animated: true });
+      });
+      return;
+    }
+    ref.scrollToOffset?.({ offset: maxOffset, animated: false });
     requestAnimationFrame(() => {
-      ref.scrollTo?.({ x: 0, y: 0, animated: true });
+      ref.scrollToOffset?.({ offset: 0, animated: true });
     });
   }, [scrollViewRef]);
 
@@ -130,6 +138,9 @@ export function useChatScroll({
       pendingEntryAnimRef.current = true;
       return;
     }
+    // APP 钉顶模式：进入/切会话的贴底由 ChatArea 的「历史贴底」统一负责，
+    // 这里不再发 pinToBottom —— 否则会和钉顶/历史贴底两股滚动互抢，表现为"抽搐"。
+    if (APP_PIN_USER_MESSAGE) return;
     pinAnimUntilRef.current = Date.now() + PIN_ANIM_MS;
     const id = setTimeout(() => pinToBottom(true), 50);
     return () => clearTimeout(id);
@@ -189,6 +200,7 @@ export function useChatScroll({
    */
   const followBottom = useCallback(() => {
     if (INVERTED_CHAT_LIST) return;
+    if (APP_PIN_USER_MESSAGE) return; // 钉顶模式：吐字期不自动吸底
     if (!autoFollowRef.current) return;
     if (streamingRenderMsg) {
       pinToBottom(false);
@@ -225,6 +237,7 @@ export function useChatScroll({
     const finished = !isStreamingNow && wasStreamingRef.current;
     wasStreamingRef.current = isStreamingNow;
     if (!finished) return;
+    if (APP_PIN_USER_MESSAGE) return; // 钉顶模式：不自动贴底，保持用户消息在顶部
     pinToBottom(false);
     if (INVERTED_CHAT_LIST) {
       // 原生：内容尺寸回调可能晚一帧，下一帧再兜一次，确保 offset 回到 0。
@@ -292,13 +305,15 @@ export function useChatScroll({
       }
 
       if (INVERTED_CHAT_LIST) {
-        // 进场动画：等新会话的内容高度就绪后再演一次（每次切会话只演一次）
+        // 进场动画...
         if (pendingEntryAnimRef.current) {
           pendingEntryAnimRef.current = false;
           playEntryScroll();
         }
         return;
       }
+
+      if (APP_PIN_USER_MESSAGE) return; // 钉顶模式：内容变化不自动吸底
 
       if (!autoFollowRef.current) return;
       // 程序化平滑贴底动画在途：此时的高 distance 是动画本身，插手会把它掐成瞬移
@@ -337,6 +352,7 @@ export function useChatScroll({
     scrollEventThrottle: 32,
     onContentSizeChange: handleContentSizeChange,
     showsVerticalScrollIndicator: !INVERTED_CHAT_LIST,
+    removeClippedSubviews: Platform.OS !== 'web',
     // 原生端吐字时用不到贴底，但滚动手感保持原样
     ...(INVERTED_CHAT_LIST ? { decelerationRate: 'fast' } : null),
     // Android 翻转布局：长按选中文本时系统会走 requestChildRectangleOnScreen 把选区

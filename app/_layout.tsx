@@ -27,6 +27,7 @@ import {
   type RoleMode,
   type ThemeMode,
 } from '../src/context/appContexts';
+import { StreamingRenderMsgContext } from '../src/context/appContexts';
 import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/context/appContexts';
@@ -219,10 +220,40 @@ function AuthGate({ children }: { children: React.ReactNode }) {
  * 初始化会话请求发生在 device-login（token 落盘）之后。
  */
 function ChatHost({ children }: { children: React.ReactNode }) {
-  const chatManager = useChatManager(); // 👈 整个应用的聊天状态在这里统一托管！
+  const chatManager = useChatManager();
+  // 流式渲染状态与其余聊天状态拆开：token 更新只影响 StreamingRenderMsgContext，
+  // 不让 ChatScreen / 输入栏 / 抽屉消费者每帧重渲染。
+  const chatValue = React.useMemo(() => {
+    const {
+      streamingRenderMsg: _ignored,
+      ...rest
+    } = chatManager;
+    return rest;
+  }, [
+    chatManager.conversations,
+    chatManager.activeId,
+    chatManager.currentChat,
+    chatManager.inputText,
+    chatManager.isGenerating,
+    chatManager.autoRead,
+    chatManager.handleNewChat,
+    chatManager.handleSelectChat,
+    chatManager.handleDeleteChat,
+    chatManager.handleSend,
+    chatManager.handleStopGeneration,
+    chatManager.setInputText,
+    chatManager.setAutoRead,
+    chatManager.toggleAutoRead,
+    chatManager.handleScroll,
+    chatManager.isAtBottomRef,
+    chatManager.scrollViewRef,
+    chatManager.autoFollowRef,
+  ]);
   return (
-    <ChatContext.Provider value={chatManager}>
-      <KnowledgeProvider>{children}</KnowledgeProvider>
+    <ChatContext.Provider value={chatValue}>
+      <StreamingRenderMsgContext.Provider value={chatManager.streamingRenderMsg}>
+        <KnowledgeProvider>{children}</KnowledgeProvider>
+      </StreamingRenderMsgContext.Provider>
     </ChatContext.Provider>
   );
 }

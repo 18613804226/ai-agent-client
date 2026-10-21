@@ -15,7 +15,6 @@ import {
  * - Native (Android/iOS): `height` shared value from KeyboardProvider is driven
  *   frame-by-frame by native keyboard events (UI thread), so
  *   `keyboardHeightStyle.translateY = height` follows the finger.
- *   useReanimatedKeyboardAnimation also applies adjustResize on Android.
  *   Requires KeyboardProvider wrapping the root layout (see app/_layout.tsx).
  * - Web: lib implementation is a NOOP (height stays 0) -- fall back to
  *   visualViewport height-diff to detect show/hide (mobile browsers do not
@@ -33,13 +32,23 @@ function useNativeKeyboardAnimation() {
   // isKeyboardUp only toggles JS-driven UI (welcome text); JS-thread update is fine.
   const isKeyboardUp = useLibKeyboardState((s) => s.isVisible);
 
+  // 键盘高度（JS state，来自 keyboard-controller 自己的状态 —— 在 pan 模式下也能拿到）。
+  // 供聊天列表做「先吃留白、再顶内容」的补偿。
+  const keyboardHeightValue = useLibKeyboardState((s) => s.height);
+
   const keyboardHeightStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: height.value }],
   }));
 
   // UI-thread keyboard signals: pass through so footer collapse can react
   // inside worklets without a JS round-trip.
-  return { keyboardHeightStyle, isKeyboardUp, keyboardHeight: height, keyboardProgress: progress };
+  return {
+    keyboardHeightStyle,
+    isKeyboardUp,
+    keyboardHeight: height,
+    keyboardProgress: progress,
+    keyboardHeightValue,
+  };
 }
 
 /** Web fallback: visualViewport height diff detects keyboard show/hide (no follow offset). */
@@ -90,5 +99,11 @@ function useWebKeyboardAnimation() {
   // keyboardHeight/Progress are null on web (lib is NOOP there); footer falls
   // back to the JS isKeyboardUp flag.
   const keyboardHeightStyle = useAnimatedStyle(() => ({}));
-  return { keyboardHeightStyle, isKeyboardUp, keyboardHeight: null, keyboardProgress: null };
+  return {
+    keyboardHeightStyle,
+    isKeyboardUp,
+    keyboardHeight: null,
+    keyboardProgress: null,
+    keyboardHeightValue: 0,
+  };
 }
