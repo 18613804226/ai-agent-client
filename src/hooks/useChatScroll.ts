@@ -380,7 +380,7 @@ export function useChatScroll({
           scrollbarColor: 'rgba(255,255,255,0.3) transparent',
         }
       : null,
-  ];
+  ].filter(Boolean)
 
   return {
     scrollViewProps,

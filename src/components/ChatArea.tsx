@@ -727,7 +727,7 @@ export default function ChatArea({
     ({ index: _index, ...props }: any) => (
       <AnimatedCellContainer
         {...props}
-        style={[props.style, contentShiftStyle]}
+        style={[props.style, contentShiftStyle].filter(Boolean)}
       />
     ),
     [contentShiftStyle],
@@ -827,11 +827,11 @@ export default function ChatArea({
         <PopAnim kind="fab">
           {(animStyle) => (
             <Animated.View
-              style={[
-                styles.scrollToBottomBtnWrap,
-                POP_CSS_FALLBACK,
-                animStyle
-              ]}
+                style={[
+                  styles.scrollToBottomBtnWrap,
+                  POP_CSS_FALLBACK,
+                  animStyle
+                ].filter(Boolean)}
             >
               <HoverTouchable
                 onPress={
