@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   Platform,
   Keyboard,
+  AppState,
   Image,
   ScrollView,
   Pressable,
@@ -379,6 +380,22 @@ function ChatInputBar({
 
   /* ---------- Web 粘贴图片 ---------- */
   const inputRef = useRef<any>(null)
+
+  // 原生：键盘收起后主动 blur。Android 键盘回落（返回键/点击空白）不会自动失焦，
+  // 之后从后台切回 Activity 会因焦点还在输入框而自动弹起键盘。
+  useEffect(() => {
+    if (Platform.OS === 'web') return
+    const blur = () => inputRef.current?.blur?.()
+    const keyboardSub = Keyboard.addListener('keyboardDidHide', blur)
+    const appStateSub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' || state === 'inactive') blur()
+    })
+    return () => {
+      keyboardSub.remove()
+      appStateSub.remove()
+    }
+  }, [])
+
   useEffect(() => {
     if (!isDesktopWeb || !inputRef.current) return
     const nativeElement = inputRef.current
