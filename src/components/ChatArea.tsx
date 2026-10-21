@@ -727,7 +727,15 @@ export default function ChatArea({
     ({ index: _index, ...props }: any) => (
       <AnimatedCellContainer
         {...props}
-        style={[props.style, contentShiftStyle].filter(Boolean)}
+        // ⚠️ FlashList 会把 CellRendererComponent 的 style 直接落到 host 元素上；
+        // Web 端必须给普通对象，数组会触发 CSSStyleDeclaration indexed setter 报错。
+        // contentShiftStyle 只服务原生键盘位移，Web 不需要。
+        style={
+          StyleSheet.flatten([
+            props.style,
+            Platform.OS === 'web' ? null : contentShiftStyle,
+          ]) as any
+        }
       />
     ),
     [contentShiftStyle],
