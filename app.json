@@ -16,7 +16,6 @@
       "supportsTablet": true
     },
     "android": {
-      "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "pan",
       "package": "com.yourname.toto",
       "adaptiveIcon": {
@@ -35,7 +34,16 @@
       "expo-system-ui",
       "react-native-blob-util",
       "@config-plugins/react-native-pdf",
-      "./plugins/withAbiSplits.js"
+      "./plugins/withAbiSplits.js",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "buildArchs": ["arm64-v8a"]
+          }
+        }
+      ]
     ]
   }
 }
