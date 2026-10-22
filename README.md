@@ -155,7 +155,15 @@ npm run ios          # iOS（需 macOS + Xcode）
 
 **一键打 release APK**：Actions → `Android APK → Aliyun` → **Run workflow**，`EXPO_PUBLIC_API_URL` 输入框**留空**即可——留空自动回落仓库变量 `API_URL`，填值则仅覆盖本次构建。构建完成后在该次运行的 **Artifacts**（`dietai-agent-apk`）下载 APK，同时服务器上的最新包被覆盖更新。
 
-### 💻 本地打 OTA release 包
+### ☁️ 云打包 APK
+
+```bash
+npm run android:cloud
+```
+
+使用 EAS `production` profile 在云端构建；`eas.json` 已配置 production channel、API URL 和 `autoIncrement`。首次使用需先 `eas login`。
+
+### 💻 本地打 release APK（支持 OTA）
 
 ```bash
 npm run android:release
@@ -185,8 +193,10 @@ tar -xOf android/app/build/outputs/apk/release/app-arm64-v8a-release.apk assets/
 JS、图片等资源改动走 OTA，不需要重新打 APK：
 
 ```bash
-eas update --channel production --environment production --message "描述本次更新"
+npm run ota -- --message "描述本次更新"
 ```
+
+等价的底层命令是 `eas update --channel production --environment production`。
 
 - Android 端固定使用 `production` channel，App 启动时会检查并下载更新。
 - 下载完成后通过 `Updates.useUpdates()` 自动 `reloadAsync()`，不需要再手动冷启动两次。
