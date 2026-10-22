@@ -43,31 +43,64 @@ function useNativeKeyboardAnimation() {
     isKeyboardUp,
     keyboardHeight: height,
     keyboardProgress: progress,
+    webViewportStyle: null,
   };
 }
 
-/** Web fallback: visualViewport height diff detects keyboard show/hide (no follow offset). */
+/** Web fallback: visualViewport height diff detects keyboard show/hide and fits the app to the visible area. */
 function useWebKeyboardAnimation() {
   const [isKeyboardUp, setIsKeyboardUp] = useState(false);
+  const [webViewportStyle, setWebViewportStyle] = useState<{
+    top: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (viewportMeta) {
+      const content = viewportMeta.getAttribute('content') ?? '';
+      if (!content.includes('interactive-widget')) {
+        viewportMeta.setAttribute(
+          'content',
+          `${content}, interactive-widget=resizes-content`
+        );
+      }
+    }
     const vv = (window as any).visualViewport as VisualViewport | undefined;
     if (vv && typeof vv.addEventListener === 'function') {
       const baseHeightRef = { current: vv.height };
-      const onResize = () => {
-        // Viewport shrunk by >150px => keyboard shown (filters rotation/url-bar jitter).
-        const shrunk = baseHeightRef.current - vv.height;
-        if (shrunk > 150) {
-          setIsKeyboardUp((prev) => (prev ? prev : true));
-        } else if (shrunk < 80) {
-          // Keyboard hidden, viewport restored: sync back and refresh baseline.
-          baseHeightRef.current = vv.height;
-          setIsKeyboardUp((prev) => (prev ? false : prev));
-        }
+      let frame = 0;
+
+      const syncViewport = () => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          const shrunk = baseHeightRef.current - vv.height;
+          if (shrunk > 150) {
+            setIsKeyboardUp((prev) => (prev ? prev : true));
+            setWebViewportStyle((prev) =>
+              prev &&
+              prev.top === vv.offsetTop &&
+              prev.height === vv.height
+                ? prev
+                : { top: vv.offsetTop, height: vv.height }
+            );
+          } else if (shrunk < 80) {
+            baseHeightRef.current = vv.height;
+            setIsKeyboardUp((prev) => (prev ? false : prev));
+            setWebViewportStyle((prev) => (prev === null ? prev : null));
+          }
+        });
       };
-      vv.addEventListener('resize', onResize);
-      return () => vv.removeEventListener('resize', onResize);
+
+      vv.addEventListener('resize', syncViewport);
+      vv.addEventListener('scroll', syncViewport);
+      return () => {
+        vv.removeEventListener('resize', syncViewport);
+        vv.removeEventListener('scroll', syncViewport);
+        if (frame) cancelAnimationFrame(frame);
+      };
     }
     // Legacy engines without visualViewport: fall back to global focus/blur on inputs.
     const onFocusIn = (e: Event) => {
@@ -99,5 +132,6 @@ function useWebKeyboardAnimation() {
     isKeyboardUp,
     keyboardHeight: null,
     keyboardProgress: null,
+    webViewportStyle,
   };
 }

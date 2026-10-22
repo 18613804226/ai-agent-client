@@ -353,10 +353,19 @@ export function useChatScroll({
   const viewportOnLayout = useCallback(
     (e: any) => {
       const h = e.nativeEvent.layout.height;
+      const prev = viewportHeightRef.current;
       viewportHeightRef.current = h;
       outerMaxSV.value = Math.max(0, contentHeightRef.current - h);
+      if (
+        Platform.OS === 'web' &&
+        prev > 0 &&
+        Math.abs(h - prev) > 1 &&
+        autoFollowRef.current
+      ) {
+        requestAnimationFrame(() => pinToBottom(false));
+      }
     },
-    [outerMaxSV],
+    [autoFollowRef, outerMaxSV, pinToBottom],
   );
 
   const scrollViewProps: Record<string, any> = {

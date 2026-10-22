@@ -112,8 +112,13 @@ export default function ChatScreen() {
       )
     : 0
 
-  const { keyboardHeightStyle, isKeyboardUp, keyboardProgress, keyboardHeight } =
-    useKeyboardAnimation()
+  const {
+    keyboardHeightStyle,
+    isKeyboardUp,
+    keyboardProgress,
+    keyboardHeight,
+    webViewportStyle
+  } = useKeyboardAnimation()
   const drawerStatus = useDrawerStatus()
   const isDrawerOpen = drawerStatus === 'open'
 
@@ -205,7 +210,11 @@ export default function ChatScreen() {
   return (
     <RootSiblingParent>
       <View
-        style={[styles.container, { backgroundColor: theme.bgApp }]}
+        style={[
+          styles.container,
+          { backgroundColor: theme.bgApp },
+          webViewportStyle
+        ]}
         {...panResponder.panHandlers}
       >
         {!isPCWeb && (
