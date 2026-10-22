@@ -180,6 +180,27 @@ tar -xOf android/app/build/outputs/apk/release/app-arm64-v8a-release.apk assets/
 
 紧急情况下也可以使用与云构建同构的本地 EAS 流水线：`eas build --platform android --profile production --local`。
 
+### 🔄 OTA 更新
+
+JS、图片等资源改动走 OTA，不需要重新打 APK：
+
+```bash
+eas update --channel production --environment production --message "描述本次更新"
+```
+
+- Android 端固定使用 `production` channel，App 启动时会检查并下载更新。
+- 下载完成后通过 `Updates.useUpdates()` 自动 `reloadAsync()`，不需要再手动冷启动两次。
+- 原生配置、签名、SDK 版本、新增原生依赖仍然必须重新打 APK；OTA 只覆盖 JS 和资源。
+- `patches/expo-updates+57.0.26.patch` 强制 manifest 请求使用 `gzip`，规避 Android 上 zstd 响应卡住 `Check` 的问题；`patch-package` 会在 `npm install` 后自动应用，不要删除。
+- 发布顺序：先确认安装包已包含当前原生配置，再发布 OTA。若先发 OTA 又重新打 APK，新 APK 自带最新 JS，启动时会显示无更新。
+
+验证更新是否生效：
+
+```bash
+adb logcat -s dev.expo.updates:V
+# 期望：CheckCompleteAvailable -> DownloadComplete -> Restart
+```
+
 **仓库配置清单**（Settings → Secrets and variables → Actions）：
 
 | 名称 | 位置 | 说明 |
