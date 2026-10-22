@@ -663,8 +663,7 @@ export default function ChatArea({
 
   const showWelcome =
     !isHistoryLoading &&
-    (!displayMessages || displayMessages.length === 0) &&
-    !isKeyboardUp
+    (!displayMessages || displayMessages.length === 0)
 
   // 数据返回（列表挂载）后才允许 scrollTo，避免 uninitialized ref 警告
   useEffect(() => {
