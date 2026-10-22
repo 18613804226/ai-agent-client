@@ -355,8 +355,8 @@ export default function ChatScreen() {
             </View>
             </Reanimated.View>
         </View>
+        <GlobalToastContainer />
       </View>
-      <GlobalToastContainer />
     </RootSiblingParent>
   )
 }

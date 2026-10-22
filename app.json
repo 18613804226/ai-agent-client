@@ -35,6 +35,7 @@
       "react-native-blob-util",
       "@config-plugins/react-native-pdf",
       "./plugins/withAbiSplits.js",
+      "./plugins/withHighRefreshRate.js",
       [
         "expo-build-properties",
         {

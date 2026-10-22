@@ -57,7 +57,7 @@ export default function GlobalToastContainer() {
   if (!visible && !message) return null;
 
   return (
-    <View style={[styles.toastOverlay, { pointerEvents: 'none' }]}>
+    <View pointerEvents="none" style={styles.toastOverlay}>
       <Animated.View
         style={[
           styles.toastBox,
