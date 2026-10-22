@@ -161,7 +161,7 @@ npm run ios          # iOS（需 macOS + Xcode）
 npm run android:release
 ```
 
-这条命令固定执行：干净 `expo prebuild` → 补回 `android/local.properties` → 放入 `release.keystore` → 注入 release 签名 → arm64 release 构建。**`app.json` 改过配置后必须走这条命令**，不要直接对祖传 `android/` 跑 gradle。
+这条命令固定执行：读取本地 `.env` / `.env.production` → 干净 `expo prebuild` → 补回 `android/local.properties` → 放入 `release.keystore` → 注入 release 签名 → arm64 release 构建。`EXPO_PUBLIC_API_URL` 会显式传给 Gradle，避免本地包回落到 `localhost`。**`app.json` 改过配置后必须走这条命令**，不要直接对祖传 `android/` 跑 gradle。
 
 签名信息放在项目根目录的 `keystore.properties`（已 gitignore）：
 

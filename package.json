@@ -57,7 +57,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "android:release": "npx expo prebuild --clean --platform android --no-install && node scripts/ensure-android-sdk.mjs && node -e \"require('fs').copyFileSync('release.keystore','android/app/release.keystore')\" && node scripts/patch-android-signing.mjs && cd android && gradlew.bat assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a && cd ..",
+    "android:release": "node scripts/android-release.mjs",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "postinstall": "patch-package"
