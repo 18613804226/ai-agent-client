@@ -7,7 +7,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  useWindowDimensions
 } from 'react-native'
 import { Redirect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -18,6 +19,7 @@ import { MyToast } from '../src/components/GlobalToast'
 export default function AdminLoginScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const { height } = useWindowDimensions()
   const { isAdminPreview, setAdminPreview } = useAdminPreview()
   const { loginAsAdmin } = useAuth()
   const { theme } = useTheme()
@@ -71,7 +73,11 @@ export default function AdminLoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.page, { backgroundColor: theme.bgApp }]}
+      style={[
+        styles.page,
+        Platform.OS === 'web' && { height, maxHeight: height, overflow: 'hidden' as const },
+        { backgroundColor: theme.bgApp }
+      ]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <Pressable
@@ -94,6 +100,7 @@ export default function AdminLoginScreen() {
         </View>
       </Pressable>
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={[
           styles.content,
           {
@@ -184,6 +191,10 @@ export default function AdminLoginScreen() {
 const styles = StyleSheet.create({
   page: {
     flex: 1
+  },
+  scroll: {
+    flex: 1,
+    minHeight: 0
   },
   content: {
     flexGrow: 1,

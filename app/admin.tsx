@@ -28,7 +28,7 @@ const formatNumber = (value: number) => value.toLocaleString('en-US')
 export default function AdminDashboardScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
-  const { width } = useWindowDimensions()
+  const { width, height } = useWindowDimensions()
   const { isAdminPreview, setAdminPreview } = useAdminPreview()
   const { device, logoutToDevice } = useAuth()
   // 当前登录设备的 deviceId：列表里据此高亮「本机」这一行/卡
@@ -172,7 +172,13 @@ export default function AdminDashboardScreen() {
   }
 
   return (
-    <View style={[styles.page, { backgroundColor: theme.bgApp }]}>
+    <View
+      style={[
+        styles.page,
+        Platform.OS === 'web' && { height, maxHeight: height, overflow: 'hidden' as const },
+        { backgroundColor: theme.bgApp }
+      ]}
+    >
       <View
         style={[
           styles.topBar,
@@ -225,6 +231,7 @@ export default function AdminDashboardScreen() {
       </View>
 
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -886,6 +893,12 @@ function EmptyState({ theme }: { theme: any }) {
 const styles = StyleSheet.create({
   page: {
     flex: 1
+  },
+  scroll: {
+    flex: 1,
+    // Web: flex 子项默认 min-height:auto，会被内容撑到 5775px，
+    // 内部 ScrollView 就没有可滚动高度（body 又 overflow:hidden）。
+    minHeight: 0
   },
   topBar: {
     minHeight: 62,
