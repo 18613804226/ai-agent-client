@@ -32,7 +32,7 @@ import { KnowledgeProvider } from '../src/context/KnowledgeProvider';
 import { AuthProvider } from '../src/context/AuthProvider';
 import { useAuth } from '../src/context/appContexts';
 import BootSplash, { BOOT_EXIT_MS } from '../src/components/BootSplash';
-
+import GlobalToastContainer from '../src/components/GlobalToast';
 const THEME_MODE_KEY = 'theme-mode';
 
 export default function RootLayout() {
@@ -163,8 +163,9 @@ export default function RootLayout() {
                    <Stack.Screen name="(drawer)" />
                    <Stack.Screen name="admin-login" />
                    <Stack.Screen name="admin" />
-                 </Stack>
-               </GestureHandlerRootView>
+                  </Stack>
+                  <GlobalToastContainer />
+                </GestureHandlerRootView>
               </KeyboardProvider>
              </SafeAreaProvider>
           </ChatHost>

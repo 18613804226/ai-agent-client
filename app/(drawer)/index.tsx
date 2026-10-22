@@ -26,7 +26,6 @@ import { MobileHeader } from '../../src/components/MobileHeader'
 import Reanimated from 'react-native-reanimated'
 
 import { useKeyboardAnimation } from '../../src/hooks/useKeyboardAnimation'
-import GlobalToastContainer from '../../src/components/GlobalToast'
 import { useImagePicker } from '../../src/hooks/useImagePicker'
 import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts' // 💡 全局 Context（与 app/_layout 共用）
 import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme'
@@ -355,7 +354,6 @@ export default function ChatScreen() {
             </View>
             </Reanimated.View>
         </View>
-        <GlobalToastContainer />
       </View>
     </RootSiblingParent>
   )
