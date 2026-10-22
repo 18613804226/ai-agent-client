@@ -66,7 +66,10 @@
     },
     "owner": "553807266",
     "updates": {
-      "url": "https://u.expo.dev/57c842b8-e90e-44fb-8118-bc85a3c4dca5"
+      "url": "https://u.expo.dev/57c842b8-e90e-44fb-8118-bc85a3c4dca5",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     }
   }
 }
