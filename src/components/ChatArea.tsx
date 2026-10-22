@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { StyleSheet, Text, View, Platform } from 'react-native'
+import {
+  StyleSheet,
+  Text,
+  View,
+  Platform,
+  ActivityIndicator
+} from 'react-native'
 import Svg, { Path } from 'react-native-svg'
 import ImageViewer from './ImageViewer'
 import FilePreviewer, { classifyFile } from './FilePreviewer'
@@ -32,8 +38,7 @@ import type { PickedAttachment } from '../hooks/useImagePicker'
 /** 钉顶时用户消息上方保留的间隙 = 相邻气泡之间的间距（messageRow.marginBottom），
  *  这样钉顶后气泡上方的留白与「和上一个气泡的间距」一致，不会显得突兀。
  *  想调多/调少改 ChatMessageItem.styles 的 messageRow.marginBottom 即可。 */
-const PIN_TOP_GAP =
-  (chatMessageStyles.messageRow as any)?.marginBottom ?? 20
+const PIN_TOP_GAP = (chatMessageStyles.messageRow as any)?.marginBottom ?? 20
 
 /** 输入框底部小字行的高度差：键盘收起时展开 17px，键盘升起时折叠到 10px。
  *  它会让 ChatArea 的布局高度反向变化 7px（键盘越起，聊天区越高）。
@@ -66,6 +71,7 @@ export default function ChatArea({
   isMobile = false,
   isKeyboardUp = false,
   activeId,
+  isHistoryLoading = false,
   streamingRenderMsg: _ignoredStreamingRenderMsg = null,
   autoRead = false, // 💡 新增
   isDrawerOpen = false, // 抽屉打开时禁用文本选择，防止误触
@@ -238,7 +244,7 @@ export default function ChatArea({
     height:
       spacerSV.value +
       manualSpacerSV.value +
-      (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE,
+      (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
   }))
   /** 钉顶目标（共享值）：UI 线程帧回调每帧把滚动对齐到这里 */
   const pinTargetSV = useSharedValue(-1)
@@ -248,17 +254,16 @@ export default function ChatArea({
   const contentShiftStyle = useAnimatedStyle(() => {
     // 键盘把整层往上推 K；内容反向下方位移 min(K, 可用留白) —— 先吃留白、超出才顶内容。
     // 可用留白 = 基准留白 + 键盘小字折叠补的那 7px（这两块都是真实可滚动的空白）。
-    const footerExtra =
-      (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
+    const footerExtra = (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
     return {
       transform: [
         {
           translateY: Math.min(
             Math.abs(keyboardHeightSV?.value ?? 0),
-            spacerSV.value + manualSpacerSV.value + footerExtra,
-          ),
-        },
-      ],
+            spacerSV.value + manualSpacerSV.value + footerExtra
+          )
+        }
+      ]
     }
   })
 
@@ -282,7 +287,7 @@ export default function ChatArea({
     if (!layout) return
     const target = Math.max(
       0,
-      layout.y + (ref?.getFirstItemOffset?.() ?? 0) - PIN_TOP_GAP,
+      layout.y + (ref?.getFirstItemOffset?.() ?? 0) - PIN_TOP_GAP
     )
     // 注意：这里只重算留白，不再写 pinTargetSV —— 目标由 handleMessageLayout /
     // handleThoughtToggle 显式管理，避免动画期间被 recompute 覆盖导致抽动。
@@ -291,12 +296,11 @@ export default function ChatArea({
     if (vh <= 0 || ch <= 0) return
     // 底部小字行随键盘进度折叠/展开 ±7px：spacerHeightStyle 负责「渲染层增长」，
     // 这里把这份临时高度从实测内容高里扣掉，避免基准留白重复计算。
-    const keyboardExtra =
-      (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
+    const keyboardExtra = (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
     const baseCh = Math.max(0, ch - keyboardExtra)
     const exact = Math.max(
       0,
-      Math.ceil(spacerSV.value + target + vh + 1 - baseCh),
+      Math.ceil(spacerSV.value + target + vh + 1 - baseCh)
     )
     if (exact !== spacerSV.value) spacerSV.value = exact
   }, [manualSpacerSV, scrollViewRef, keyboardProgressSV, pinTargetSV])
@@ -309,7 +313,7 @@ export default function ChatArea({
     if (!layout) return
     const target = Math.max(
       0,
-      layout.y + (ref?.getFirstItemOffset?.() ?? 0) - PIN_TOP_GAP,
+      layout.y + (ref?.getFirstItemOffset?.() ?? 0) - PIN_TOP_GAP
     )
     pinTargetSV.value = target
     pinTargetBaseRef.current = target
@@ -322,30 +326,26 @@ export default function ChatArea({
   // 用户一碰（touchedSV）会停手；下次发送/切会话会重置目标。
 
   // ===== 加载历史贴底 =====
-  const historyHardRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  /** 立即收手（用户上滑 / 发送消息时） */
+  /** 立即收手（用户触摸 / 发送消息时） */
   const endHistoryBottom = useCallback(() => {
     historyBottomSV.value = 0
-    if (historyHardRef.current) clearTimeout(historyHardRef.current)
   }, [historyBottomSV])
 
-  /** 开始一轮「历史贴底」：置 1，2.5s 后自动收手（覆盖欢迎层→列表挂载的时序） */
+  /**
+   * 历史贴底：保持到用户真正触摸列表为止。
+   * 旧实现 2.5s 后就收手，长会话的图片/Markdown 在 2.5s 后才完成测量，
+   * 内容继续变高时已经没人跟随 → 打开历史会话会慢慢漂离底部。
+   */
   const beginHistoryBottom = useCallback(() => {
     if (!APP_PIN_USER_MESSAGE) return
     historyBottomSV.value = 1
-    if (historyHardRef.current) clearTimeout(historyHardRef.current)
-    historyHardRef.current = setTimeout(() => {
-      historyBottomSV.value = 0
-    }, 2500)
   }, [historyBottomSV])
 
   useEffect(
     () => () => {
-      if (historyHardRef.current) clearTimeout(historyHardRef.current)
       if (thoughtSettleRef.current) clearTimeout(thoughtSettleRef.current)
     },
-    [],
+    []
   )
 
   /** 钉顶：把某条用户消息滚到视口顶部（上方留 PIN_TOP_GAP 间隙）。
@@ -368,7 +368,7 @@ export default function ChatArea({
       manualSpacerBaseRef.current = 0
       pinnedMsgIdRef.current = userId
       const nextIndex = displayMessagesRef.current.findIndex(
-        (m) => m.id === userId,
+        (m) => m.id === userId
       )
       pinnedIndexRef.current = nextIndex
       // 用户可能正停在很早的历史位置：新消息不在 FlashList 的渲染窗口里，
@@ -385,7 +385,7 @@ export default function ChatArea({
             list?.scrollToIndex?.({
               index: nextIndex,
               animated: false,
-              viewPosition: 0,
+              viewPosition: 0
             })
           } catch {}
           if (attempts > 0) {
@@ -396,7 +396,7 @@ export default function ChatArea({
       }
       contentHRef.current = 0
     },
-    [endHistoryBottom, spacerSV, touchedSV, pinTargetSV, scrollViewRef],
+    [endHistoryBottom, spacerSV, touchedSV, pinTargetSV, scrollViewRef]
   )
 
   // key={activeId} 会让 ChatArea 每次切会话重挂 → 每个实例只做一次「首次历史落盘」
@@ -406,6 +406,29 @@ export default function ChatArea({
 
   useEffect(() => {
     if (!APP_PIN_USER_MESSAGE) return
+
+    // 切会话的详情还在路上：不要用旧 messages 参与「首屏历史 / 新消息」判定。
+    // 等 loading 结束、新数据落盘后，再从干净状态走一次历史贴底。
+    if (isHistoryLoading) {
+      historyLoadedRef.current = false
+      prevLastUserIdRef.current = null
+      endHistoryBottom()
+      // 重新拉历史时清掉上一轮「钉顶/流式留白」的布局状态。
+      // 否则同一个会话被再次点开（activeId 不变、ChatArea 不 remount）时，
+      // keepSpacer 还在，ListFooter 会留下整屏空白，贴底也会贴到空白后面。
+      setKeepSpacer(false)
+      spacerSV.value = 0
+      manualSpacerSV.value = 0
+      pinTargetSV.value = -1
+      pinTargetBaseRef.current = -1
+      manualSpacerBaseRef.current = 0
+      pinnedMsgIdRef.current = null
+      pinnedIndexRef.current = -1
+      contentHRef.current = 0
+      touchedSV.value = false
+      userTouchedRef.current = false
+      return
+    }
 
     // 最后一条用户消息（发送时 handleSend 会同时追加「用户消息 + thinking 占位」，
     // 所以最后一条往往是 assistant —— 往回找最近的一条用户消息才是刚发的）
@@ -438,15 +461,23 @@ export default function ChatArea({
       return
     }
 
-    // ② 之后的「最后一条用户消息 id 变化」= 发送 → 钉顶
+    // ② 之后的「最后一条用户消息 id 变化」只有在生成中才算「发送」→ 钉顶。
+    //    重新拉取历史时 id 也可能变化（重复 id 归一化、消息同步），
+    //    此时必须继续贴底，不能把历史消息钉到视口顶部。
     if (lastUser && lastUserId !== prevLastUserIdRef.current) {
-      pinUserMessage(lastUserId!)
+      if (isGeneratingRef.current) {
+        pinUserMessage(lastUserId!)
+      } else {
+        beginHistoryBottom()
+      }
     }
     prevLastUserIdRef.current = lastUserId
   }, [
     messages,
+    isHistoryLoading,
     beginHistoryBottom,
-    pinUserMessage,
+    endHistoryBottom,
+    pinUserMessage
   ])
 
   /**
@@ -471,7 +502,7 @@ export default function ChatArea({
         recomputePinSpacer()
       }
     },
-    [recomputePinSpacer, syncPinTarget, scrollViewRef],
+    [recomputePinSpacer, syncPinTarget, scrollViewRef]
   )
 
   /**
@@ -483,7 +514,7 @@ export default function ChatArea({
       if (!APP_PIN_USER_MESSAGE) return
       if (!pinnedMsgIdRef.current) return
       const msgIndex = displayMessagesRef.current.findIndex(
-        (m) => m.id === msgId,
+        (m) => m.id === msgId
       )
       if (msgIndex < 0) return
       thoughtBusyRef.current = true
@@ -495,14 +526,14 @@ export default function ChatArea({
         if (pinTargetSV.value >= 0) {
           pinTargetBaseRef.current = Math.max(
             0,
-            pinTargetBaseRef.current + (expanding ? height : -height),
+            pinTargetBaseRef.current + (expanding ? height : -height)
           )
           runOnUI((sv: any, target: number) => {
             'worklet'
             if (sv.value < 0) return
             sv.value = withTiming(target, {
               duration: 250,
-              easing: Easing.bezier(0.25, 0.1, 0.5, 1),
+              easing: Easing.bezier(0.25, 0.1, 0.5, 1)
             })
           })(pinTargetSV, pinTargetBaseRef.current)
         }
@@ -523,7 +554,7 @@ export default function ChatArea({
         if (layout) {
           const target = Math.max(
             0,
-            layout.y + (ref?.getFirstItemOffset?.() ?? 0) - PIN_TOP_GAP,
+            layout.y + (ref?.getFirstItemOffset?.() ?? 0) - PIN_TOP_GAP
           )
           const vh = viewportHRef.current
           const ch = contentHRef.current
@@ -531,18 +562,16 @@ export default function ChatArea({
           if (vh > 0 && ch > 0) {
             const exact = Math.max(
               0,
-              Math.ceil(spacerSV.value + manual + target + vh + 1 - ch),
+              Math.ceil(spacerSV.value + manual + target + vh + 1 - ch)
             )
             manualSpacerBaseRef.current = 0
             pinTargetSV.value = target
             pinTargetBaseRef.current = target
-            runOnUI(
-              (msp: any, ssp: any, m: number, s: number) => {
-                'worklet'
-                msp.value = m
-                ssp.value = s
-              },
-            )(manualSpacerSV, spacerSV, 0, exact)
+            runOnUI((msp: any, ssp: any, m: number, s: number) => {
+              'worklet'
+              msp.value = m
+              ssp.value = s
+            })(manualSpacerSV, spacerSV, 0, exact)
           } else {
             pinTargetSV.value = target
             pinTargetBaseRef.current = target
@@ -551,7 +580,7 @@ export default function ChatArea({
         thoughtBusyRef.current = false
       }, 300)
     },
-    [manualSpacerSV, pinTargetSV, scrollViewRef],
+    [manualSpacerSV, pinTargetSV, scrollViewRef]
   )
 
   // 💡 自动朗读：开即读 + 后续跟读
@@ -633,12 +662,14 @@ export default function ChatArea({
   }, [])
 
   const showWelcome =
-    (!displayMessages || displayMessages.length === 0) && !isKeyboardUp
+    !isHistoryLoading &&
+    (!displayMessages || displayMessages.length === 0) &&
+    !isKeyboardUp
 
   // 数据返回（列表挂载）后才允许 scrollTo，避免 uninitialized ref 警告
   useEffect(() => {
-    hasDataSV.value = !showWelcome
-  }, [showWelcome, hasDataSV])
+    hasDataSV.value = !showWelcome && !isHistoryLoading
+  }, [showWelcome, isHistoryLoading, hasDataSV])
 
   const getListFooterHeight = useCallback(() => {
     if (!spacerVisible || !hasViewport) return 0
@@ -647,13 +678,7 @@ export default function ChatArea({
       manualSpacerSV.value +
       (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
     )
-  }, [
-    spacerVisible,
-    hasViewport,
-    spacerSV,
-    manualSpacerSV,
-    keyboardProgressSV
-  ])
+  }, [spacerVisible, hasViewport, spacerSV, manualSpacerSV, keyboardProgressSV])
 
   const {
     scrollViewProps,
@@ -706,7 +731,7 @@ export default function ChatArea({
       isDrawerOpen,
       theme,
       messageCount: displayMessages.length,
-      animateInUserId: lastUserIdForAnim,
+      animateInUserId: lastUserIdForAnim
     }),
     [
       playingMsgId,
@@ -714,19 +739,19 @@ export default function ChatArea({
       isDrawerOpen,
       theme,
       displayMessages.length,
-      lastUserIdForAnim,
-    ],
+      lastUserIdForAnim
+    ]
   )
 
   const keyExtractor = useCallback(
     // 服务端历史 ID 偶发重复时，纯 id 会让 FlashList 复用错 cell / 直接不渲染。
     // 聊天只有追加、没有中间插入，index + id 仍保持稳定，同时天然去重。
     (item: Message, index: number) => `${item.id ?? 'm'}:${index}`,
-    [],
+    []
   )
   const getItemType = useCallback(
     (item: Message) => (item.systemNote ? 'system' : item.role),
-    [],
+    []
   )
 
   const renderItem = useCallback(
@@ -768,8 +793,8 @@ export default function ChatArea({
       openPreview,
       openFilePreview,
       handleMessageLayout,
-      handleThoughtToggle,
-    ],
+      handleThoughtToggle
+    ]
   )
 
   const renderCell = useCallback(
@@ -782,12 +807,12 @@ export default function ChatArea({
         style={
           StyleSheet.flatten([
             props.style,
-            Platform.OS === 'web' ? null : contentShiftStyle,
+            Platform.OS === 'web' ? null : contentShiftStyle
           ]) as any
         }
       />
     ),
-    [contentShiftStyle],
+    [contentShiftStyle]
   )
 
   /** FlashList 内部 ScrollView：把 animated ref 挂上去，UI 线程才能 scrollTo */
@@ -801,7 +826,7 @@ export default function ChatArea({
         />
       )
     },
-    [scrollViewRef],
+    [scrollViewRef]
   )
 
   const listFooter =
@@ -827,7 +852,11 @@ export default function ChatArea({
         viewportOnLayout(e)
       }}
     >
-      {showWelcome ? (
+      {isHistoryLoading ? (
+        <View style={styles.welcomeOverlay}>
+          <ActivityIndicator size="small" color={theme.textMuted} />
+        </View>
+      ) : showWelcome ? (
         <View style={styles.welcomeOverlay}>
           <View style={styles.emptyContainer}>
             <Text style={styles.welcomeEmoji}>👋</Text>
@@ -861,9 +890,15 @@ export default function ChatArea({
             if (pinnedMsgIdRef.current) recomputePinSpacer()
           }}
           // 用户一碰列表 = 接管：此后不再把视口纠正回钉顶（否则会「滑上去又被拽回」）
+          onTouchStart={() => {
+            userTouchedRef.current = true
+            touchedSV.value = true
+            endHistoryBottom()
+          }}
           onScrollBeginDrag={(e: any) => {
             userTouchedRef.current = true
             touchedSV.value = true
+            endHistoryBottom()
             scrollViewProps.onScrollBeginDrag?.(e)
           }}
           // 列表挂载/内容变化时兜底滚到底（历史异步落盘 + 图片加载都会触发）
@@ -880,15 +915,15 @@ export default function ChatArea({
       )}
 
       {/* ✅ 悬浮「回到底部」按钮：上滑超过一定距离才显示，淡入 + 上滑出现 */}
-      {!showWelcome && showScrollToBottom && (
+      {!showWelcome && !isHistoryLoading && showScrollToBottom && (
         <PopAnim kind="fab">
           {(animStyle) => (
             <Animated.View
-                style={[
-                  styles.scrollToBottomBtnWrap,
-                  POP_CSS_FALLBACK,
-                  animStyle
-                ].filter(Boolean)}
+              style={[
+                styles.scrollToBottomBtnWrap,
+                POP_CSS_FALLBACK,
+                animStyle
+              ].filter(Boolean)}
             >
               <HoverTouchable
                 onPress={

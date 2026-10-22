@@ -7,12 +7,17 @@ import { api, refreshDeviceSnapshot, refreshMyDevice } from '../services/api'
 const makeId = (prefix = 'm') =>
   `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 
-/** 服务端历史 id 可能是毫秒时间戳且重复；补成唯一 id，避免 FlashList/React duplicate key */
+/** 服务端历史 id 可能是毫秒时间戳且重复；补成唯一且稳定的 id，避免 FlashList/React duplicate key */
 const normalizeMessages = (list: any[]) => {
   const seen = new Set<string>()
-  return (list || []).map((m: any) => {
+  return (list || []).map((m: any, index: number) => {
     let id = m?.id != null ? String(m.id) : ''
-    if (!id || seen.has(id)) id = makeId('m')
+    if (!id) id = `local_${index}`
+    if (seen.has(id)) {
+      let suffix = 2
+      while (seen.has(`${id}#${suffix}`)) suffix += 1
+      id = `${id}#${suffix}`
+    }
     seen.add(id)
     return { ...m, id }
   })
@@ -53,6 +58,8 @@ type StreamChunk = { type: 'thought' | 'content'; text: string }
 export function useChatManager() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string>('')
+  const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null)
+  const selectRunRef = useRef(0)
   const [inputText, setInputText] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
 
@@ -220,6 +227,7 @@ export function useChatManager() {
           setConversations(sessions)
           const firstId = sessions[0].id
           setActiveId(firstId)
+          setHistoryLoadingId(firstId)
 
           const detail: any = await api.getSessionDetail(firstId)
           if (cancelled) return
@@ -230,6 +238,7 @@ export function useChatManager() {
                 : c
             )
           )
+          setHistoryLoadingId((current) => (current === firstId ? null : current))
           return
         }
         setConversations([])
@@ -240,6 +249,7 @@ export function useChatManager() {
           (error as any)?.response?.status ?? (error as any)?.status
         if (!cancelled && status !== 401)
           console.error('初始化后端会话失败:', error)
+        if (!cancelled) setHistoryLoadingId(null)
       }
     }
     initChatData()
@@ -250,6 +260,7 @@ export function useChatManager() {
         lastLoadedDeviceIdRef.current = null
         setConversations([])
         setActiveId('')
+        setHistoryLoadingId(null)
       }
     })
     return () => {
@@ -306,6 +317,8 @@ export function useChatManager() {
     const tempId = makeId('temp')
     const newConv = { id: tempId, title: '新对话' }
 
+    selectRunRef.current += 1
+    setHistoryLoadingId(null)
     setConversations((prev) => [newConv, ...prev].slice(0, 20))
     setActiveId(tempId)
 
@@ -338,16 +351,24 @@ export function useChatManager() {
     // （否则新会话会被 autoRead 的 effect 自动接着念）
     setAutoRead(false)
     stopSpeech()
+    const run = ++selectRunRef.current
     setActiveId(id)
+    setHistoryLoadingId(id)
 
     try {
       const detail: any = await api.getSessionDetail(id)
+      if (selectRunRef.current !== run) return
       const messages = normalizeMessages(detail.messages || [])
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, messages } : c))
       )
     } catch (error) {
-      console.error('获取会话详情失败:', error)
+      if (selectRunRef.current === run) {
+        console.error('获取会话详情失败:', error)
+        MyToast.show('加载历史记录失败，请稍后重试')
+      }
+    } finally {
+      if (selectRunRef.current === run) setHistoryLoadingId(null)
     }
   }
 
@@ -1225,6 +1246,7 @@ export function useChatManager() {
   return {
     conversations,
     activeId,
+    isHistoryLoading: historyLoadingId === activeId,
     currentChat,
     inputText,
     setInputText,

@@ -16,6 +16,9 @@
     "production": {
       "autoIncrement": true,
       "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.dietai.space"
+      },
       "android": {
         "buildType": "apk"
       }

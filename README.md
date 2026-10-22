@@ -155,6 +155,31 @@ npm run ios          # iOS（需 macOS + Xcode）
 
 **一键打 release APK**：Actions → `Android APK → Aliyun` → **Run workflow**，`EXPO_PUBLIC_API_URL` 输入框**留空**即可——留空自动回落仓库变量 `API_URL`，填值则仅覆盖本次构建。构建完成后在该次运行的 **Artifacts**（`dietai-agent-apk`）下载 APK，同时服务器上的最新包被覆盖更新。
 
+### 💻 本地打 OTA release 包
+
+```bash
+npm run android:release
+```
+
+这条命令固定执行：干净 `expo prebuild` → 补回 `android/local.properties` → 放入 `release.keystore` → 注入 release 签名 → arm64 release 构建。**`app.json` 改过配置后必须走这条命令**，不要直接对祖传 `android/` 跑 gradle。
+
+签名信息放在项目根目录的 `keystore.properties`（已 gitignore）：
+
+```properties
+storeFile=../../release.keystore
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+也可以改用环境变量 `KEYSTORE_FILE`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`。产物在 `android/app/build/outputs/apk/release/`，验收 OTA 配置：
+
+```bash
+tar -xOf android/app/build/outputs/apk/release/app-arm64-v8a-release.apk assets/app.config | grep -i "u.expo.dev\|expo-channel-name"
+```
+
+紧急情况下也可以使用与云构建同构的本地 EAS 流水线：`eas build --platform android --profile production --local`。
+
 **仓库配置清单**（Settings → Secrets and variables → Actions）：
 
 | 名称 | 位置 | 说明 |

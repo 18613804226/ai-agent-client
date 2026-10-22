@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, useColorScheme, StatusBar } from 'react-native';
 import * as SystemUI from 'expo-system-ui';
+import * as Updates from 'expo-updates';
 import { darkTheme, lightTheme } from '../src/constants/theme';
 import React, { useState, useMemo, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 
@@ -63,6 +64,15 @@ export default function RootLayout() {
       isMounted = false;
     };
   }, []);
+
+  const { isUpdatePending } = Updates.useUpdates();
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isUpdatePending) return;
+    Updates.reloadAsync().catch((error) => {
+      console.error('[OTA] reload failed:', error);
+    });
+  }, [isUpdatePending]);
 
   const setThemeMode = useCallback((mode: ThemeMode) => {
     userChangedTheme.current = true;
@@ -233,6 +243,7 @@ function ChatHost({ children }: { children: React.ReactNode }) {
   }, [
     chatManager.conversations,
     chatManager.activeId,
+    chatManager.isHistoryLoading,
     chatManager.currentChat,
     chatManager.inputText,
     chatManager.isGenerating,

@@ -50,3 +50,4 @@ assets/*.original.png
 %TEMP%
 keystore.*
 *.keystore
+keystore.properties

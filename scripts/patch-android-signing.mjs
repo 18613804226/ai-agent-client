@@ -8,11 +8,34 @@
  * - CI 每次都是 `prebuild --clean` 的全新模板 → 必走插入分支。
  *
  * 依赖 env：KEYSTORE_FILE KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD
+ * 本地也可在项目根目录放 keystore.properties（已 gitignore）：
+ *   storeFile=../../release.keystore
+ *   storePassword=...
+ *   keyAlias=...
+ *   keyPassword=...
  */
 import fs from 'node:fs';
+import path from 'node:path';
 
 const GRADLE = 'android/app/build.gradle';
-const { KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD } = process.env;
+
+/** 本地签名：优先环境变量，其次忽略提交的 keystore.properties */
+function readLocalSigningConfig() {
+  const propsPath = path.join(process.cwd(), 'keystore.properties');
+  if (!fs.existsSync(propsPath)) return {};
+  const props = {};
+  for (const line of fs.readFileSync(propsPath, 'utf8').split(/\r?\n/)) {
+    const match = line.match(/^\s*([^#=]+?)\s*=\s*(.*)\s*$/);
+    if (match) props[match[1]] = match[2];
+  }
+  return props;
+}
+
+const local = readLocalSigningConfig();
+const KEYSTORE_FILE = process.env.KEYSTORE_FILE || local.storeFile;
+const KEYSTORE_PASSWORD = process.env.KEYSTORE_PASSWORD || local.storePassword;
+const KEY_ALIAS = process.env.KEY_ALIAS || local.keyAlias;
+const KEY_PASSWORD = process.env.KEY_PASSWORD || local.keyPassword;
 
 if (!KEYSTORE_FILE || !KEYSTORE_PASSWORD || !KEY_ALIAS || !KEY_PASSWORD) {
   console.log('[signing] 签名 secrets 未配置 → 保留模板 debug 签名兜底');

@@ -57,6 +57,7 @@ export function MobileDrawer({
         conversations={conversations}
         activeId={activeId}
         drawerOpen={drawerOpen}
+        onCloseDrawer={onClose}
         onNewChat={() => {
           onNewChat();
           onClose?.(); // 💡 点击新建聊天后自动收起抽屉

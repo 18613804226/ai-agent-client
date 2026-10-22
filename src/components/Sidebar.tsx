@@ -80,6 +80,8 @@ interface SidebarProps {
    * 抽屉关闭时把长按菜单/二次确认一起收掉，否则下次打开弹窗还飘在那。
    */
   drawerOpen?: boolean
+  /** 移动端：离开聊天页前先收起抽屉，避免 admin 返回时先关到底层抽屉 */
+  onCloseDrawer?: () => void
 }
 
 // 💡 统一的 Hover 组件：全部采用“新建对话按钮”同款的悬停变色逻辑（悬停时叠加统一的半透明遮罩/高亮层）
@@ -530,7 +532,8 @@ export default function Sidebar({
   onUploadFile,
   onDeleteFile,
   onToggleFileEnabled,
-  drawerOpen
+  drawerOpen,
+  onCloseDrawer
 }: SidebarProps) {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
@@ -1018,7 +1021,10 @@ export default function Sidebar({
               accessibilityLabel="管理员登录"
               style={styles.adminEntry}
               hoverBg={theme.historyActiveBg}
-              onPress={() => router.push('/admin')}
+              onPress={() => {
+                onCloseDrawer?.()
+                router.push('/admin')
+              }}
             >
               {/* <Text style={styles.adminEntryIcon}>⚙️</Text> */}
               <Text style={[styles.adminEntryText, { color: theme.textMain }]}>
@@ -1083,6 +1089,7 @@ const selected = effectiveRole === value
                           if (ok) {
                             MyToast.show('已切换为管理员');
                           } else {
+                            onCloseDrawer?.()
                             router.push('/admin-login');
                           }
                         } finally {

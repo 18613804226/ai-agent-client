@@ -40,6 +40,8 @@ export interface ChatAreaProps {
   isMobile?: boolean;
   isKeyboardUp?: boolean;
   activeId: string;
+  /** 正在拉取当前会话详情：显示加载态，避免先闪欢迎页或旧消息再跳到底部 */
+  isHistoryLoading?: boolean;
   streamingRenderMsg?: StreamingRenderMsg | null;
   autoRead?: boolean; // 💡 新增：自动朗读开关
   isDrawerOpen?: boolean; // 抽屉打开时禁用文本选择，防止误触

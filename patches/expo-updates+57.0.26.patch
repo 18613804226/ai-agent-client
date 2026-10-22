@@ -1,0 +1,24 @@
+diff --git a/node_modules/expo-updates/android/src/main/java/expo/modules/updates/loader/CompressionInterceptor.kt b/node_modules/expo-updates/android/src/main/java/expo/modules/updates/loader/CompressionInterceptor.kt
+index 349bade..6a2c766 100644
+--- a/node_modules/expo-updates/android/src/main/java/expo/modules/updates/loader/CompressionInterceptor.kt
++++ b/node_modules/expo-updates/android/src/main/java/expo/modules/updates/loader/CompressionInterceptor.kt
+@@ -30,7 +30,7 @@ import org.brotli.dec.BrotliInputStream
+ /**
+  * Transparent compressed response support for Zstandard, Brotli and Gzip.
+  *
+- * Adds `Accept-Encoding: zstd, br, gzip` to outgoing requests when the caller has not set the
++ * Adds `Accept-Encoding: gzip` to outgoing requests when the caller has not set the
+  * header, and decompresses (and strips `Content-Encoding`/`Content-Length` from) responses
+  * encoded with any of the three.
+  *
+@@ -42,7 +42,9 @@ object CompressionInterceptor : Interceptor {
+   override fun intercept(chain: Interceptor.Chain): Response =
+     if (chain.request().header("Accept-Encoding") == null) {
+       val request = chain.request().newBuilder()
+-        .header("Accept-Encoding", "zstd, br, gzip")
++        // OTA manifest check can stall on Android when Cloudflare returns zstd for
++        // the multipart manifest; gzip uses okhttp's battle-tested GzipSource path.
++        .header("Accept-Encoding", "gzip")
+         .build()
+ 
+       val response = chain.proceed(request)

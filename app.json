@@ -17,7 +17,7 @@
     },
     "android": {
       "softwareKeyboardLayoutMode": "pan",
-      "package": "com.yourname.toto",
+      "package": "com.dietai.agent",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/icon-1024-padded.png"

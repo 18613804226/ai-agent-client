@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RootSiblingParent } from 'react-native-root-siblings'
 import { DrawerActions } from 'expo-router/react-navigation'
-import { useNavigation } from 'expo-router'
+import { useFocusEffect, useNavigation } from 'expo-router'
 import { useDrawerStatus } from 'expo-router/drawer'
 
 import Sidebar from '../../src/components/Sidebar'
@@ -46,6 +46,7 @@ export default function ChatScreen() {
     inputText,
     setInputText,
     isGenerating,
+    isHistoryLoading,
     handleNewChat,
     handleSelectChat,
     handleDeleteChat,
@@ -178,14 +179,19 @@ export default function ChatScreen() {
   }, [isPCWeb, navigation, drawerStatus])
 
   // 安卓返回：抽屉开着时优先关抽屉，而不是让 JS Stack 的返回把手势返回直接吞成「退出 app」。
-  useEffect(() => {
-    if (Platform.OS !== 'android' || !isDrawerOpen) return
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      navigation.dispatch(DrawerActions.closeDrawer())
-      return true // 消费掉，别退出 app
-    })
-    return () => sub.remove()
-  }, [isDrawerOpen, navigation])
+  // ⚠️ 必须绑定到「聊天页聚焦」而不是仅 drawerStatus：进入 admin 后聊天页仍挂载在
+  //    Stack 下层，旧写法会让它的 BackHandler 抢在 admin 的返回之前关掉底层抽屉，
+  //    表现为要按两次返回才能退出 admin。
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android' || !isDrawerOpen) return
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigation.dispatch(DrawerActions.closeDrawer())
+        return true // 消费掉，别退出 app
+      })
+      return () => sub.remove()
+    }, [isDrawerOpen, navigation])
+  )
 
   const panResponder = useRef(
     PanResponder.create({
@@ -324,6 +330,7 @@ export default function ChatScreen() {
                 isMobile={!isPCWeb}
                 isKeyboardUp={isKeyboardUp}
                 activeId={activeId}
+                isHistoryLoading={isHistoryLoading}
                 autoRead={autoRead}
                 keyboardHeightSV={keyboardHeight}
                 keyboardProgressSV={keyboardProgress}
