@@ -367,12 +367,36 @@ export default function ChatArea({
       pinTargetBaseRef.current = -1
       manualSpacerBaseRef.current = 0
       pinnedMsgIdRef.current = userId
-      pinnedIndexRef.current = displayMessagesRef.current.findIndex(
+      const nextIndex = displayMessagesRef.current.findIndex(
         (m) => m.id === userId,
       )
+      pinnedIndexRef.current = nextIndex
+      // 用户可能正停在很早的历史位置：新消息不在 FlashList 的渲染窗口里，
+      // 它的 onLayout 就永远不会触发，钉顶目标也永远不会建立（表现为
+      // SSE 在吐字、滚动条在变，但视口里什么都没有）。
+      // 先按 index 把这条消息滚进渲染窗口，保证 onLayout 一定会到。
+      if (nextIndex >= 0) {
+        // scrollToIndex 在 FlashList 还没把新 data 登记进 layout 时会静默 no-op，
+        // 于是下一帧再补一次；一旦 onLayout 已写出 pinTarget 就立即停手。
+        const scrollPinnedIntoView = (attempts: number) => {
+          if (pinTargetSV.value >= 0) return
+          const list = scrollViewRef.current as any
+          try {
+            list?.scrollToIndex?.({
+              index: nextIndex,
+              animated: false,
+              viewPosition: 0,
+            })
+          } catch {}
+          if (attempts > 0) {
+            requestAnimationFrame(() => scrollPinnedIntoView(attempts - 1))
+          }
+        }
+        scrollPinnedIntoView(2)
+      }
       contentHRef.current = 0
     },
-    [endHistoryBottom, spacerSV, touchedSV, pinTargetSV],
+    [endHistoryBottom, spacerSV, touchedSV, pinTargetSV, scrollViewRef],
   )
 
   // key={activeId} 会让 ChatArea 每次切会话重挂 → 每个实例只做一次「首次历史落盘」
@@ -694,7 +718,12 @@ export default function ChatArea({
     ],
   )
 
-  const keyExtractor = useCallback((item: Message) => item.id, [])
+  const keyExtractor = useCallback(
+    // 服务端历史 ID 偶发重复时，纯 id 会让 FlashList 复用错 cell / 直接不渲染。
+    // 聊天只有追加、没有中间插入，index + id 仍保持稳定，同时天然去重。
+    (item: Message, index: number) => `${item.id ?? 'm'}:${index}`,
+    [],
+  )
   const getItemType = useCallback(
     (item: Message) => (item.systemNote ? 'system' : item.role),
     [],

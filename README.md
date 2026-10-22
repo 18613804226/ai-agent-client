@@ -22,6 +22,7 @@
 * **流式通信**：SSE（Server-Sent Events）流式订阅, `ReadableStream` 实时流处理。
 * **交互体验**：多端 UI 自适应, 抽屉式侧边栏, 多格式文件解析上传。
 * **动效与键盘**：react-native-reanimated 4 驱动动效, react-native-keyboard-controller 原生逐帧键盘高度, 位移与折叠动画全部跑在 UI 线程。
+* **高刷适配**：Android 通过本地 Expo Config Plugin 在启动时请求屏幕支持的最高刷新率, 120Hz 设备可满帧滚动与动画。
 
 ### 后端
 
@@ -48,7 +49,7 @@
 │   └── utils/            # 通用工具与平台适配
 ├── .github/workflows/    # CI/CD：类型检查、Web 部署、一键打 APK
 ├── patches/              # patch-package 补丁（npm install 时自动应用）
-├── plugins/              # 本地 Expo Config Plugin（ABI 分包注入）
+├── plugins/              # 本地 Expo Config Plugin（ABI 分包、高刷新率注入）
 ├── scripts/              # CI 安卓签名注入等构建脚本
 ├── app.json              # Expo 应用配置
 ├── .env.example          # 环境变量模板（复制为 .env 使用）
@@ -65,6 +66,7 @@
 * 沉浸式双轨响应式布局（桌面端常驻侧边栏, 移动端抽屉平滑滑入与蒙层过渡）。
 * 支持浅色、深色与跟随系统三种外观模式；系统模式会响应设备主题变化，用户选择会保存在本地。
 * 自适应多行输入框, 精美 Markdown 气泡流（支持跨段落连续选词、复制）, 现代滚动条优化；键盘由 react-native-keyboard-controller 逐帧跟手, 输入区提示文字随键盘平滑折叠。
+* Web 移动端监听 `visualViewport`, 键盘弹出时聊天区贴合可视区域并自动跟随到底部, 不再被浏览器地址栏/软键盘遮挡。
 * 多模态附件消息：图片（缩略图与全屏预览）、文档、视频统一附件卡片, 点击可直接预览。
 * 语音朗读：AI 回答一键朗读（句级 TTS 合成）, 播放中可随时打断, 多条消息互不串音。
 
