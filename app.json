@@ -22,7 +22,17 @@
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/icon-1024-padded.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "favicon": "./assets/logo-favicon.png"
@@ -41,10 +51,22 @@
         {
           "android": {
             "usesCleartextTraffic": true,
-            "buildArchs": ["arm64-v8a"]
+            "buildArchs": [
+              "arm64-v8a"
+            ]
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "57c842b8-e90e-44fb-8118-bc85a3c4dca5"
+      }
+    },
+    "owner": "553807266",
+    "updates": {
+      "url": "https://u.expo.dev/57c842b8-e90e-44fb-8118-bc85a3c4dca5"
+    }
   }
 }
