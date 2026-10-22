@@ -19,6 +19,7 @@ interface UseChatScrollOptions {
   activeId: string;
   streamingRenderMsg: StreamingRenderMsg | null;
   displayMessages: Message[];
+  getFooterHeight?: () => number;
 }
 
 /**
@@ -29,6 +30,7 @@ export function useChatScroll({
   activeId,
   streamingRenderMsg,
   displayMessages,
+  getFooterHeight,
 }: UseChatScrollOptions) {
   const {
     scrollViewRef,
@@ -160,7 +162,10 @@ export function useChatScroll({
       if (Date.now() < pinAnimUntilRef.current) return;
 
       // 原生 inverted：离底距离 = contentOffset.y；Web：contentSize - viewport - offset
-      const distanceFromBottom = chatDistanceFromBottom(event?.nativeEvent);
+      const footerHeight = getFooterHeight?.() ?? 0;
+      const distanceFromBottom = !INVERTED_CHAT_LIST
+        ? Math.max(0, chatDistanceFromBottom(event?.nativeEvent) - footerHeight)
+        : chatDistanceFromBottom(event?.nativeEvent);
 
       // 上滑超过 120px 才显示按钮；只在跨阈值时 setState，避免滚动中反复调度
       const shouldShow = distanceFromBottom > 120;
@@ -187,7 +192,7 @@ export function useChatScroll({
         autoFollowRef.current = true;
       }
     },
-    [originalHandleScroll, autoFollowRef],
+    [originalHandleScroll, autoFollowRef, getFooterHeight],
   );
 
   /**

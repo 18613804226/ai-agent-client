@@ -616,6 +616,21 @@ export default function ChatArea({
     hasDataSV.value = !showWelcome
   }, [showWelcome, hasDataSV])
 
+  const getListFooterHeight = useCallback(() => {
+    if (!spacerVisible || !hasViewport) return 0
+    return (
+      spacerSV.value +
+      manualSpacerSV.value +
+      (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
+    )
+  }, [
+    spacerVisible,
+    hasViewport,
+    spacerSV,
+    manualSpacerSV,
+    keyboardProgressSV
+  ])
+
   const {
     scrollViewProps,
     scrollViewStyle,
@@ -624,7 +639,12 @@ export default function ChatArea({
     outerOffsetSV,
     outerMaxSV,
     viewportOnLayout
-  } = useChatScroll({ activeId, streamingRenderMsg, displayMessages })
+  } = useChatScroll({
+    activeId,
+    streamingRenderMsg,
+    displayMessages,
+    getFooterHeight: getListFooterHeight
+  })
 
   /**
    * 钉顶/历史贴底（纯 UI 线程逐帧）：目标由 JS 写共享值，用户一碰立即停手。
