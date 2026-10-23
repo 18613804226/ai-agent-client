@@ -193,17 +193,6 @@ export default function ChatScreen() {
     }, [isDrawerOpen, navigation])
   )
 
-  // Web 端从 admin 页返回时，抽屉状态会保留为「打开」（原生端在进入 admin 前
-  // 已通过 onCloseDrawer 关闭，但 Web 端 closeDrawer 不生效/时序不对）。
-  // useFocusEffect 只在屏幕重新获得焦点时触发（打开抽屉浮层不会失焦），
-  // 所以这里不会误关用户手动打开的抽屉，只在从 admin 返回时关掉。
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'web' || !isDrawerOpen) return
-      navigation.dispatch(DrawerActions.closeDrawer())
-    }, [isDrawerOpen, navigation])
-  )
-
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
