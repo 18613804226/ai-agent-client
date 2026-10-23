@@ -47,6 +47,7 @@
       "./plugins/withAbiSplits.js",
       "./plugins/withHighRefreshRate.js",
       "./plugins/withResourceShrink.js",
+      "./plugins/withLintDisable.js",
       [
         "expo-build-properties",
         {
