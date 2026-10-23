@@ -19,7 +19,7 @@ import {
 } from '../src/context/appContexts'
 import { isPCWebWidth } from '../src/constants/theme'
 import { api, type DeviceInfo, type AdminStats } from '../src/services/api'
-import GlobalToastContainer, { MyToast } from '../src/components/GlobalToast'
+import { MyToast } from '../src/components/GlobalToast'
 import HoverTouchable from '../src/components/HoverTouchable'
 import type { DeviceUsageRecord } from '../src/types/admin'
 
@@ -411,8 +411,6 @@ export default function AdminDashboardScreen() {
           </Text>
         </View>
       </ScrollView>
-
-      <GlobalToastContainer />
     </View>
   )
 }
