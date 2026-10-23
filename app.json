@@ -48,6 +48,7 @@
       "./plugins/withHighRefreshRate.js",
       "./plugins/withResourceShrink.js",
       "./plugins/withLintDisable.js",
+      "./plugins/withWindowBackground.js",
       [
         "expo-build-properties",
         {
