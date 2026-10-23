@@ -1085,13 +1085,13 @@ const selected = effectiveRole === value
                         // 乐观反馈：先高亮 Admin，再去免密激活；失败/无缓存再回滚
                         setPendingRole('admin');
                         try {
-                          const ok = await activateAdmin();
-                          if (ok) {
-                            MyToast.show('已切换为管理员');
-                          } else {
-                            onCloseDrawer?.()
-                            router.push('/admin-login');
-                          }
+                           const ok = await activateAdmin();
+                           if (ok) {
+                             // 静默切换，不弹 toast
+                           } else {
+                             onCloseDrawer?.()
+                             router.push('/admin-login');
+                           }
                         } finally {
                           setPendingRole(null);
                         }
@@ -1099,10 +1099,10 @@ const selected = effectiveRole === value
                       }
                       if (role === 'admin') {
                         setPendingRole('user');
-                        try {
-                          await logoutToDevice();
-                          MyToast.show('已切换为普通用户');
-                        } catch {
+                         try {
+                           await logoutToDevice();
+                           // 静默切换，不弹 toast
+                         } catch {
                           MyToast.show('切换失败，请检查网络');
                         } finally {
                           setPendingRole(null);
