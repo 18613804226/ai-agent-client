@@ -261,6 +261,14 @@ export default function ChatArea({
   const spacerSV = useSharedValue(0)
   /** 思考框折叠/展开的 UI 线程补偿（与 spacerSV 分离，避免 recompute 双重计数） */
   const manualSpacerSV = useSharedValue(0)
+  /**
+   * 视口高（键盘收起基准）与内容总高的 UI 线程副本。
+   * 键盘位移 worklet 需要它们来算「内容不足一屏时下方自然留出的空白」：
+   * 加载历史后只有一两条消息时，这段空白不在 spacer 里，但同样应先被键盘吃掉。
+   * （JS 侧 ref 在 worklet 里读不到最新值，必须同步到 shared value）
+   */
+  const viewportHeightSV = useSharedValue(0)
+  const contentHeightSV = useSharedValue(0)
   const spacerHeightStyle = useAnimatedStyle(() => ({
     height:
       spacerSV.value +
@@ -273,15 +281,23 @@ export default function ChatArea({
   const hasDataSV = useSharedValue(false)
   const historyBottomSV = useSharedValue(0)
   const contentShiftStyle = useAnimatedStyle(() => {
-    // 键盘把整层往上推 K；内容反向下方位移 min(K, 可用留白) —— 先吃留白、超出才顶内容。
-    // 可用留白 = 基准留白 + 键盘小字折叠补的那 7px（这两块都是真实可滚动的空白）。
+    // 键盘把整层往上推 K；内容反向下方位移 min(K, 可用空白) —— 先吃空白、超出才顶内容。
+    // 可用空白 = 内容下方的全部空白：
+    //   ① 钉顶留白（spacer + manual + 键盘小字折叠补的 7px）；
+    //   ② 内容不足一屏时列表下方自然空出来的那块（视口高 - 自然内容高）。
+    // ② 正是短会话（加载历史后只有一两条消息）的来源：没有它，键盘一升整条消息
+    // 就被顶上去，而不是先吃掉下方空白。
     const footerExtra = (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
+    const pinSpacer = spacerSV.value + manualSpacerSV.value + footerExtra
+    // 自然内容高 = 总内容高 - 留白（留白本身也计入内容高度）
+    const naturalH = Math.max(0, contentHeightSV.value - pinSpacer)
+    const emptyBelow = Math.max(0, viewportHeightSV.value - naturalH)
     return {
       transform: [
         {
           translateY: Math.min(
             Math.abs(keyboardHeightSV?.value ?? 0),
-            spacerSV.value + manualSpacerSV.value + footerExtra
+            Math.max(pinSpacer, emptyBelow)
           )
         }
       ]
@@ -867,6 +883,7 @@ export default function ChatArea({
         if (h > 0) setHasViewport(true)
         if (Math.abs(closedH - viewportHRef.current) > 1) {
           viewportHRef.current = closedH
+          viewportHeightSV.value = closedH
           recomputePinSpacer()
         }
         viewportOnLayout(e)
@@ -927,6 +944,7 @@ export default function ChatArea({
             const h = args[1]
             if (typeof h === 'number' && h > 0) {
               contentHRef.current = h
+              contentHeightSV.value = h
               if (!thoughtBusyRef.current) syncPinTarget()
               recomputePinSpacer()
             }
