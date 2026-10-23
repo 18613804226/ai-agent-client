@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RootSiblingParent } from 'react-native-root-siblings'
 import { DrawerActions } from 'expo-router/react-navigation'
-import { useFocusEffect, useNavigation } from 'expo-router'
+import { useFocusEffect, useNavigation, usePathname } from 'expo-router'
 import { useDrawerStatus } from 'expo-router/drawer'
 
 import Sidebar from '../../src/components/Sidebar'
@@ -192,6 +192,19 @@ export default function ChatScreen() {
       return () => sub.remove()
     }, [isDrawerOpen, navigation])
   )
+
+  // Web 端：从 admin 页返回时，抽屉状态可能保留为「打开」。
+  // 用 pathname 变化检测返回,在聊天页重新渲染前同步关闭抽屉,
+  // 避免用户看到抽屉关闭动画(无感)。
+  const pathname = usePathname()
+  const prevPathnameRef = useRef(pathname)
+  useEffect(() => {
+    if (Platform.OS !== 'web') return
+    if (prevPathnameRef.current === '/admin' && pathname !== '/admin') {
+      navigation.dispatch(DrawerActions.closeDrawer())
+    }
+    prevPathnameRef.current = pathname
+  }, [pathname, navigation])
 
   const panResponder = useRef(
     PanResponder.create({
