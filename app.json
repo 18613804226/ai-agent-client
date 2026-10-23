@@ -46,6 +46,7 @@
       "@config-plugins/react-native-pdf",
       "./plugins/withAbiSplits.js",
       "./plugins/withHighRefreshRate.js",
+      "./plugins/withResourceShrink.js",
       [
         "expo-build-properties",
         {
@@ -53,7 +54,11 @@
             "usesCleartextTraffic": true,
             "buildArchs": [
               "arm64-v8a"
-            ]
+            ],
+            "enableBundleCompression": true,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# --- 项目自定义 keep(JNI/反射敏感类,防止 R8 混淆后运行时崩溃) ---\n# react-native-pdf:JNI 直呼类名,不能混淆\n-keep class org.wonday.pdf.** { *; }\n-keep class com.shockwave.pdfium.** { *; }\n# react-native-blob-util:文件下载/预览用\n-keep class com.RNFetchBlob.** { *; }\n"
           }
         }
       ]

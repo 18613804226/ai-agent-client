@@ -62,7 +62,7 @@
     "ota": "eas update --channel production --environment production",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package && node scripts/trim-icon-fonts.mjs"
   },
   "private": true
 }
