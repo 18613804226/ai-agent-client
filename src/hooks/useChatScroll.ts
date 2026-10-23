@@ -15,6 +15,23 @@ import type { Message, StreamingRenderMsg } from '../types/chat';
 /** 程序化「平滑贴底」动画的保护窗口（ms） */
 const PIN_ANIM_MS = 900;
 
+/**
+ * 安全取 Web 滚动 DOM 节点。
+ * ⚠️ FlashList 的公开句柄是普通对象（getScrollableNode 等方法内部再解引用它自己的
+ * scrollViewRef.current）；ChatArea 因 key={activeId} remount（切会话/删会话/新建）时，
+ * 旧句柄可能还留在共享 scrollViewRef 上而其内部 ScrollView 已卸载 —— 此时调用会在
+ * FlashList 内部抛 `Cannot read properties of null`，没有错误边界就整树卸载
+ * （H5 白/黑屏）。这里统一吞掉：拿不到节点一律按「无可滚动视图」处理。
+ */
+function getScrollNodeSafe(ref: any): any | null {
+  if (!ref || typeof ref.getScrollableNode !== 'function') return null;
+  try {
+    return ref.getScrollableNode() || null;
+  } catch {
+    return null;
+  }
+}
+
 interface UseChatScrollOptions {
   activeId: string;
   streamingRenderMsg: StreamingRenderMsg | null;
@@ -72,10 +89,7 @@ export function useChatScroll({
     if (!ref) return;
 
     if (Platform.OS === 'web') {
-      const node =
-        typeof ref.getScrollableNode === 'function'
-          ? ref.getScrollableNode()
-          : null;
+      const node = getScrollNodeSafe(ref);
       if (!node) return;
 
       // 平滑滚动需要一段时间才到位，这段时间内忽略 onScroll 的「离底很远」
@@ -259,11 +273,7 @@ export function useChatScroll({
   // RNW 的样式表透传不到这个属性，直接写 DOM（此时 ref 已在本轮 commit 里挂好）。
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    const ref: any = scrollViewRef.current;
-    const node =
-      (ref && typeof ref.getScrollableNode === 'function'
-        ? ref.getScrollableNode()
-        : null) || null;
+    const node = getScrollNodeSafe(scrollViewRef.current);
     if (node && node.style) node.style.overflowAnchor = 'none';
   }, []);
 
@@ -271,11 +281,7 @@ export function useChatScroll({
   // effect 抢在滚动事件后执行，把用户刚滚上去的位置又拉回底部。
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    const ref: any = scrollViewRef.current;
-    const node =
-      (ref && typeof ref.getScrollableNode === 'function'
-        ? ref.getScrollableNode()
-        : null) || null;
+    const node = getScrollNodeSafe(scrollViewRef.current);
     if (!node) return;
     const handleWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) autoFollowRef.current = false;
@@ -333,10 +339,7 @@ export function useChatScroll({
       if (Date.now() < pinAnimUntilRef.current) return;
 
       const ref: any = scrollViewRef.current;
-      const node =
-        ref && typeof ref.getScrollableNode === 'function'
-          ? ref.getScrollableNode()
-          : null;
+      const node = getScrollNodeSafe(ref);
       if (
         node &&
         typeof node.scrollTop === 'number' &&

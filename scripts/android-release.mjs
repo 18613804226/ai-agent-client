@@ -48,7 +48,8 @@ run('node', ['scripts/ensure-android-sdk.mjs']);
 fs.copyFileSync('release.keystore', path.join('android', 'app', 'release.keystore'));
 run('node', ['scripts/patch-android-signing.mjs']);
 run(
-  isWindows ? 'gradlew.bat' : './gradlew',
+  // ".\" 前缀必需:NoDefaultCurrentDirectoryInExePath=1 时 cmd 不从当前目录解析裸 gradlew.bat
+  isWindows ? '.\\gradlew.bat' : './gradlew',
   ['assembleRelease', '--no-daemon', '-PreactNativeArchitectures=arm64-v8a'],
   { cwd: path.join(root, 'android') },
 );

@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo
+} from 'react'
 import {
   StyleSheet,
   Text,
@@ -81,6 +88,20 @@ export default function ChatArea({
   const { scrollViewRef, isGenerating } = useChat()
   const streamingRenderMsg = useStreamingRenderMsg()
   const [playingMsgId, setPlayingMsgId] = useState<string | null>(null)
+
+  // ⚠️ 卸载时清空共享 ref：scrollViewRef 由 ChatHost 常驻持有，而 ChatArea 因
+  //    key={activeId} 在切会话/删会话/新建会话时频繁 remount。FlashList 卸载后其
+  //    公开句柄对象可能仍留在共享 ref 里（内部 ScrollView 已置 null），新实例的
+  //    layout effect 拿到这个「死句柄」调 getScrollableNode 会在 FlashList 内部抛
+  //    TypeError —— 没有错误边界时整棵 React 树直接卸载，H5 表现为全屏白/黑。
+  //    layout cleanup 在同一 commit 里先于新树的 layout effect 执行，
+  //    保证新 ChatArea 挂载时读到的是 null（走各调用点的空保护）。
+  useLayoutEffect(
+    () => () => {
+      scrollViewRef.current = null
+    },
+    [scrollViewRef]
+  )
 
   // 💡 播放归属包装：playingMsgId 被手动喇叭接管（变成非自动播的 id / 清空）时，
   // 自动朗读要让位，避免旧 effect 误判还在自动播、后续乱停别人的音

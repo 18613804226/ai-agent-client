@@ -64,10 +64,18 @@ export function scrollChatToBottom(ref: any, animated = false): void {
     ref.scrollTo?.({ x: 0, y: 0, animated });
     return;
   }
-  const node =
-    typeof ref.getScrollableNode === 'function'
-      ? ref.getScrollableNode()
-      : null;
+  // ⚠️ FlashList 死句柄防护：ChatArea remount（切/删/新建会话）后共享 ref 可能
+  // 还挂着旧句柄而其内部 ScrollView 已卸载，getScrollableNode 会在 FlashList 内部
+  // 抛 TypeError（详见 useChatScroll.getScrollNodeSafe 注释）。吞掉按不可滚动处理。
+  let node: any = null;
+  try {
+    node =
+      typeof ref.getScrollableNode === 'function'
+        ? ref.getScrollableNode()
+        : null;
+  } catch {
+    return;
+  }
   if (!node) return;
   ref.scrollToEnd?.({ animated });
 }
