@@ -1023,7 +1023,13 @@ export default function Sidebar({
               hoverBg={theme.historyActiveBg}
               onPress={() => {
                 onCloseDrawer?.()
-                router.push('/admin')
+                if (Platform.OS === 'web') {
+                  // Web 端 closeDrawer 是异步的,直接 push 会导致抽屉状态保留为「打开」,
+                  // 返回 admin 页时侧栏仍展开。延后导航等抽屉关闭完成。
+                  setTimeout(() => router.push('/admin'), 300)
+                } else {
+                  router.push('/admin')
+                }
               }}
             >
               {/* <Text style={styles.adminEntryIcon}>⚙️</Text> */}
