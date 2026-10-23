@@ -133,9 +133,10 @@ npm install
 # 2. 配置环境变量：复制模板并按需修改
 #    EXPO_PUBLIC_API_URL 为后端 API 地址，缺省回退 http://localhost:3000
 #    ⚠️ 本仓库 .env 默认指向线上地址 https://api.dietai.space（而非 localhost）：
-#       release/APK 运行在真机/模拟器上，localhost 指向设备自身无法访问开发机后端；
-#       线上地址可直接连通生产服务。本地 Web 开发如需连本地后端，
-#       将 .env 的 EXPO_PUBLIC_API_URL 改回 http://localhost:3000（或用 .env.local 覆盖）。
+#       云打包(EAS build / GitHub Actions)只会读取 .env 里的 EXPO_PUBLIC_API_URL，
+#       若留 localhost 会被原样打进 release 包，导致真机/模拟器无法访问后端。
+#       本地 Web 开发如需连本地后端，将 .env 的 EXPO_PUBLIC_API_URL 改回
+#       http://localhost:3000（或用 .env.local 覆盖）即可。
 cp .env.example .env
 
 # 3. 启动
