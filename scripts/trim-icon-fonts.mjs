@@ -24,8 +24,7 @@ const USED_ICON_FONTS = new Set([
 ]);
 
 const fontDirs = [
-  'node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/fonts',
-  'node_modules/react-native-vector-icons/Fonts',
+  'node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts',
 ];
 
 // expo-symbols(被 expo-ui 依赖带入,本项目未使用)的 Material Symbols 各字重
@@ -34,13 +33,16 @@ const globDirs = ['node_modules/@expo-google-fonts/material-symbols'];
 const root = process.cwd();
 let replaced = 0;
 
-// Feather.ttf 内容来源(必然存在,项目在用)
-const featherBuf = fs.readFileSync(
-  path.join(
-    root,
-    'node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/fonts/Feather.ttf'
-  )
+// Feather.ttf 内容来源(必然存在,项目在用)。大小写敏感:Linux 上目录名为 Fonts(大写 F)
+const featherPath = path.join(
+  root,
+  'node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Feather.ttf'
 );
+if (!fs.existsSync(featherPath)) {
+  console.warn('[trim-icon-fonts] Feather.ttf not found, skipping (CI/dev env?)');
+  process.exit(0);
+}
+const featherBuf = fs.readFileSync(featherPath);
 
 for (const dir of fontDirs) {
   const abs = path.join(root, dir);
