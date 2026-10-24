@@ -35,7 +35,7 @@ const copyCodeToClipboard = async (code: string) => {
   await Clipboard.setStringAsync(code);
 };
 
-const CodeCopyButton = ({
+export const CodeCopyButton = ({
   code,
   styles,
 }: {

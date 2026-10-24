@@ -17,7 +17,7 @@ import {
   splitInlineSegments,
   type InlineSeg
 } from '../../utils/emphasisSplit'
-import { MONO_FONT } from './markdownRules'
+import { MONO_FONT, CodeCopyButton } from './markdownRules'
 
 /**
  * 已成形段落：props 只有字符串 + 两个稳定引用，内容不变时 memo 直接跳过，
@@ -73,26 +73,66 @@ const InlineMoonPhase = memo(function InlineMoonPhase() {
 })
 
 /**
- * 还在增长的最后一行。
+ * 流式尾巴切块：文本段 / 代码栅栏段。
  *
- * 之前这里是纯文本，导致吐字期 `**加粗**` 原样显示、要等段落成形才变粗。
- * 现在用 splitInlineSegments 做**内联强调**切分：`**`/`__` → 粗、`*`/`_` → 斜，
- * 行内代码按等宽字面量。块级语法（标题/列表/表格）仍不在这里解析，等段落成形
- * 后交给 StableMarkdown —— 因为块级结构每帧变才是当初「正文重排跳动」的根源。
+ * 代码栅栏在吐字期就渲染成与最终一致的 codeBox（而不是等「空行切点」把它升级成
+ * 稳定块才变盒子）。否则尾巴会从「纯文本（行高 24、无上下留白）」跳成 codeBox
+ * （paddingTop 34 + 行高 20 + 上下外边距），气泡高度当场跳一下 ——
+ * 即「第一次生成代码块，气泡闪一下」。
  *
- * 安全性：切分器**只在强调对真正闭合的那一刻**才产生结构变化，未闭合的 `**bo`
- * 原样输出（等价于纯文本），所以吐字期的抖动特性与纯文本一致；而对应 span 的
- * fontSize/lineHeight/粗细与 markdownRules 的 strong/em 保持一致，
- * 「尾巴升级成稳定段落」那一刻不会跳高度。
+ * 未闭合的栅栏（还没吐到收尾 ```）也按盒子渲染：此时它与最终渲染同高，不产生跳变。
  */
+type TailSeg = { kind: 'text'; text: string } | { kind: 'fence'; code: string }
+
+const FENCE_OPEN = /^\s*(```|~~~)/
+const FENCE_CLOSE = /^\s*(```|~~~)\s*$/
+
+function splitTailSegments(text: string): TailSeg[] {
+  const segs: TailSeg[] = []
+  const lines = text.split('\n')
+  const buf: string[] = []
+  const flush = () => {
+    if (buf.length) {
+      segs.push({ kind: 'text', text: buf.join('\n') })
+      buf.length = 0
+    }
+  }
+  let i = 0
+  while (i < lines.length) {
+    if (FENCE_OPEN.test(lines[i])) {
+      flush()
+      i++ // 栅栏起始行本身不是代码内容（与 fence 规则的 content 一致）
+      const code: string[] = []
+      while (i < lines.length && !FENCE_CLOSE.test(lines[i])) {
+        code.push(lines[i])
+        i++
+      }
+      if (i < lines.length) i++ // 跳过收尾 ```
+      segs.push({ kind: 'fence', code: code.join('\n') })
+      continue
+    }
+    buf.push(lines[i])
+    i++
+  }
+  flush()
+  return segs
+}
+
 const TailText = memo(function TailText({
   text,
   selectable,
-  color
+  color,
+  style,
+  leadingNewline
 }: {
   text: string
   selectable: boolean
   color: string
+  style: any
+  /** 尾巴前面还有已落定的稳定块 —— 最终 Markdown 的 paragraph 规则会给
+   *  `node.index > 0` 的段落前面补一个 `\n`，尾巴必须照样补，否则升级成
+   *  稳定块时会当场多/少一行 + 段落下边距，气泡跳一下。 */
+  leadingNewline: boolean
 }) {
   // 吐字期每 token 都会传入新的 text；直接每次 splitInlineSegments 会 O(n²)。
   // 这里节流：显示文本每 ~80ms 才更新一次，中间 token 只跑一次时间判断，
@@ -118,16 +158,59 @@ const TailText = memo(function TailText({
     }
   }, [text])
 
-  const segs = useMemo(
-    () => (hasInlineMarkup(displayedText) ? splitInlineSegments(displayedText) : null),
+  const tailSegs = useMemo(
+    () => splitTailSegments(displayedText),
     [displayedText]
   )
 
+  // 最后一个文本段后面贴「月球自转」提示（保持原来的内联行为：
+  // 纯文本尾巴时提示仍贴着最后一个字）。代码段之后的提示单独占一行。
+  const lastTextIdx = (() => {
+    for (let i = tailSegs.length - 1; i >= 0; i--) {
+      if (tailSegs[i].kind === 'text') return i
+    }
+    return -1
+  })()
+
   return (
-    <Text selectable={selectable} style={[styles.tail, { color }]}>
-      {segs ? segs.map((seg, i) => renderSeg(seg, `s${i}`)) : displayedText}
-      <InlineMoonPhase />
-    </Text>
+    <View>
+      {tailSegs.map((seg, i) => {
+        if (seg.kind === 'fence') {
+          return (
+            <View key={`f${i}`} style={style.codeBox}>
+              <CodeCopyButton code={seg.code} styles={style} />
+              <Text
+                selectable={selectable}
+                style={[styles.tail, style.codeText]}
+              >
+                {seg.code}
+              </Text>
+            </View>
+          )
+        }
+        // 内联强调按「本段文本」切分，避免把整条尾巴的切分结果重复渲染到每个文本段
+        const segInline =
+          hasInlineMarkup(seg.text) && seg.text
+            ? splitInlineSegments(seg.text)
+            : null
+        // 段落样式必须与最终 Markdown 的 paragraph 完全一致（含 marginBottom），
+        // 否则尾巴升级成稳定块的那一刻会跳高度。
+        return (
+          <Text
+            key={`t${i}`}
+            selectable={selectable}
+            style={[styles.tail, style.paragraph, { color }]}
+          >
+            {i > 0 || leadingNewline ? '\n' : null}
+            {segInline
+              ? segInline.map((s, j) => renderSeg(s, `s${i}.${j}`))
+              : seg.text}
+            {i === lastTextIdx && <InlineMoonPhase />}
+          </Text>
+        )
+      })}
+      {lastTextIdx < 0 && <InlineMoonPhase />}
+    </View>
   )
 })
 
@@ -227,7 +310,13 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
           rules={rules}
         />
       ))}
-      <TailText text={tail} selectable={selectable} color={color} />
+      <TailText
+        text={tail}
+        selectable={selectable}
+        color={color}
+        style={style}
+        leadingNewline={blocks.length > 0}
+      />
     </View>
   )
 })

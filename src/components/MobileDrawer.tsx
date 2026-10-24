@@ -50,7 +50,7 @@ export function MobileDrawer({
     <View
       style={[
         styles.container,
-        { borderColor: theme.border, backgroundColor: theme.bgApp },
+        { borderColor: theme.border, backgroundColor: theme.bgSidebar },
       ]}
     >
       <Sidebar
@@ -94,6 +94,9 @@ const styles = StyleSheet.create({
     flex: 1,
     width: DRAWER_WIDTH,
     height: '100%',
-    borderRightWidth: 1,
+    // ⚠️ 不要在这里加 borderRightWidth：`_layout.tsx` 的 drawerStyle 已经显式
+    //    关掉抽屉右边框（borderRightWidth: 0），这里再画 1px 会让它「关不掉」，
+    //    暗色主题下表现为侧栏收起时的竖直拖影。
+    borderRightWidth: 0,
   },
 });

@@ -21,7 +21,13 @@ export const INVERTED_CHAT_LIST = false;
  */
 /**
  * APP 端「钉顶」模式：流式吐字期间不自动吸底，把刚发送的用户消息钉在视口顶部，
- * AI 回答在下方增长（用户手动滚动查看完整内容）。WEB 端保持自动吸底，不动。
+ * AI 回答在其下方增长（用户手动滚动查看完整内容）。WEB 端保持自动吸底，不动。
+ *
+ * ⚠️ 钉顶依赖 FlashList 的 `getLayout(index).y`，而这个值是 FlashList 用
+ * `measureItemLayout(cellContainer)` 反推出来的。Android 的 measureLayout 走
+ * `getLocationInWindow`，**包含 view 的 translation** —— 所以 cell 容器
+ * 绝不能带 transform，否则整个 layout manager 的 y 全错。
+ * 键盘位移已挪到 cell 内部的包裹层（见 ChatArea.renderCell），这里才可以安全打开。
  */
 export const APP_PIN_USER_MESSAGE = Platform.OS !== 'web';
 

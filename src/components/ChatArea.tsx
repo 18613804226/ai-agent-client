@@ -224,6 +224,14 @@ export default function ChatArea({
   /** 实测内容总高（自然高度：尚未加预留时） */
   const contentHRef = useRef(0)
   /**
+   * 自然内容高 = 实测内容高 − 当前留白 − 键盘小字补偿。
+   * 与留白解耦后，recomputePinSpacer 的「目标留白」是**绝对值**而不是增量：
+   * 同一帧内被多次调用（多条 cell onLayout 连续上报）不会累加 overshoot。
+   * 用实测总高做 delta 时，第二次调用会基于「还没长出新留白」的旧高度再补一次，
+   * 留白越补越多 → maxScroll 虚高 → 钉顶目标被顶到视口外（新消息看不到）。
+   */
+  const naturalHRef = useRef(0)
+  /**
    * 本轮钉顶期间用户是否已手动触摸/滚动过。
    * 一旦用户接管（上滑看历史 / 展开别的思考框…），就不再纠正视口 ——
    * 否则会出现「往上一滑又被拽回最新气泡」。每次发送时重置为 false。
@@ -329,16 +337,11 @@ export default function ChatArea({
     // 注意：这里只重算留白，不再写 pinTargetSV —— 目标由 handleMessageLayout /
     // handleThoughtToggle 显式管理，避免动画期间被 recompute 覆盖导致抽动。
     const vh = viewportHRef.current
-    const ch = contentHRef.current
-    if (vh <= 0 || ch <= 0) return
-    // 底部小字行随键盘进度折叠/展开 ±7px：spacerHeightStyle 负责「渲染层增长」，
-    // 这里把这份临时高度从实测内容高里扣掉，避免基准留白重复计算。
-    const keyboardExtra = (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
-    const baseCh = Math.max(0, ch - keyboardExtra)
-    const exact = Math.max(
-      0,
-      Math.ceil(spacerSV.value + target + vh + 1 - baseCh)
-    )
+    const naturalH = naturalHRef.current
+    if (vh <= 0 || naturalH <= 0) return
+    // 目标：内容总高 = 钉顶位置 + 一屏（⇒ maxScroll === 钉顶位置）。
+    // 基准用「自然高」（不含留白）→ 结果与调用次数无关，可安全重复调用。
+    const exact = Math.max(0, Math.ceil(target + vh + 1 - naturalH))
     if (exact !== spacerSV.value) spacerSV.value = exact
   }, [manualSpacerSV, scrollViewRef, keyboardProgressSV, pinTargetSV])
 
@@ -355,6 +358,48 @@ export default function ChatArea({
     pinTargetSV.value = target
     pinTargetBaseRef.current = target
   }, [scrollViewRef, pinTargetSV])
+
+  /**
+   * 钉顶收敛窗口：发送后 FlashList 要把新消息从「估算高度」测成「实测高度」需要几帧，
+   * 期间 getLayout(pinnedIndex).y 一直在变。若只信第一次 onLayout 的结果，目标可能
+   * 偏小 → 视口停在被钉消息上方 → 「新发的消息看不到 / 布局错乱」。
+   * 这里在窗口内每帧用 getLayout 重算目标（UI 线程帧回调负责真正滚过去），
+   * 数值稳定或超时即停手；用户一碰列表立即停。
+   */
+  const pinConvergeRafRef = useRef<number | null>(null)
+  const stopPinConverge = useCallback(() => {
+    if (pinConvergeRafRef.current != null) {
+      cancelAnimationFrame(pinConvergeRafRef.current)
+      pinConvergeRafRef.current = null
+    }
+  }, [])
+  const startPinConverge = useCallback(() => {
+    stopPinConverge()
+    const startedAt = Date.now()
+    const tick = () => {
+      if (Date.now() - startedAt > 900) {
+        pinConvergeRafRef.current = null
+        return
+      }
+      const idx = pinnedIndexRef.current
+      const ref = scrollViewRef.current as any
+      const layout = idx >= 0 ? ref?.getLayout?.(idx) : undefined
+      if (layout && !thoughtBusyRef.current && pinTargetSV.value >= 0) {
+        const target = Math.max(
+          0,
+          layout.y + (ref?.getFirstItemOffset?.() ?? 0) - PIN_TOP_GAP
+        )
+        if (Math.abs(target - pinTargetSV.value) > 0.5) {
+          pinTargetSV.value = target
+          pinTargetBaseRef.current = target
+        }
+      }
+      pinConvergeRafRef.current = requestAnimationFrame(tick)
+    }
+    pinConvergeRafRef.current = requestAnimationFrame(tick)
+  }, [pinTargetSV, scrollViewRef, stopPinConverge])
+
+  useEffect(() => stopPinConverge, [stopPinConverge])
 
   /** 钉顶/历史贴底（纯 UI 线程逐帧）：目标由 JS 写共享值，用户一碰立即停手 */
   // 注：具体实现放在 useChatScroll 之后（需要 outerOffsetSV / outerMaxSV）
@@ -432,8 +477,18 @@ export default function ChatArea({
         scrollPinnedIntoView(2)
       }
       contentHRef.current = 0
+      naturalHRef.current = 0
+      // 新消息刚进列表时 FlashList 只有估算高度，让目标在窗口内持续收敛
+      startPinConverge()
     },
-    [endHistoryBottom, spacerSV, touchedSV, pinTargetSV, scrollViewRef]
+    [
+      endHistoryBottom,
+      spacerSV,
+      touchedSV,
+      pinTargetSV,
+      scrollViewRef,
+      startPinConverge
+    ]
   )
 
   // key={activeId} 会让 ChatArea 每次切会话重挂 → 每个实例只做一次「首次历史落盘」
@@ -462,6 +517,7 @@ export default function ChatArea({
       pinnedMsgIdRef.current = null
       pinnedIndexRef.current = -1
       contentHRef.current = 0
+      naturalHRef.current = 0
       touchedSV.value = false
       userTouchedRef.current = false
       return
@@ -698,14 +754,40 @@ export default function ChatArea({
     }
   }, [])
 
-  const showWelcome =
+  /** 数据层面「空会话」——与键盘无关，决定 hasDataSV / 是否走钉顶 */
+  const isEmptyConversation =
     !isHistoryLoading &&
     (!displayMessages || displayMessages.length === 0)
 
+  /**
+   * 键盘升起来时把欢迎语收掉：视口被键盘吃掉大半，欢迎语挤在剩下的窄条里既难看
+   * 又占位（用户此刻是要打字，不是要看欢迎语）。
+   * 注意别直接改 isEmptyConversation —— 它还要喂给 hasDataSV（钉顶的「有没有数据」
+   * 判据），键盘状态不该影响那套滚动逻辑。
+   */
+  const showWelcome = isEmptyConversation && !isKeyboardUp
+
+  /**
+   * 欢迎语淡入淡出。用共享值 + withTiming 走 UI 线程，避免键盘动画期间每帧过 JS bridge。
+   * 隐藏后仍挂在树上（opacity 0 + pointerEvents none），这样重新显示时能直接淡回来，
+   * 不用等一次挂载。
+   */
+  const welcomeOpacity = useSharedValue(0)
+  useEffect(() => {
+    welcomeOpacity.value = withTiming(showWelcome ? 1 : 0, {
+      duration: 220,
+      easing: Easing.out(Easing.quad)
+    })
+  }, [showWelcome, welcomeOpacity])
+  const welcomeStyle = useAnimatedStyle(() => ({
+    opacity: welcomeOpacity.value,
+    transform: [{ translateY: (1 - welcomeOpacity.value) * 10 }]
+  }))
+
   // 数据返回（列表挂载）后才允许 scrollTo，避免 uninitialized ref 警告
   useEffect(() => {
-    hasDataSV.value = !showWelcome && !isHistoryLoading
-  }, [showWelcome, isHistoryLoading, hasDataSV])
+    hasDataSV.value = !isEmptyConversation
+  }, [isEmptyConversation, hasDataSV])
 
   const getListFooterHeight = useCallback(() => {
     if (!spacerVisible || !hasViewport) return 0
@@ -834,19 +916,20 @@ export default function ChatArea({
   )
 
   const renderCell = useCallback(
-    ({ index: _index, ...props }: any) => (
-      <AnimatedCellContainer
-        {...props}
-        // ⚠️ FlashList 会把 CellRendererComponent 的 style 直接落到 host 元素上；
-        // Web 端必须给普通对象，数组会触发 CSSStyleDeclaration indexed setter 报错。
-        // contentShiftStyle 只服务原生键盘位移，Web 不需要。
-        style={
-          StyleSheet.flatten([
-            props.style,
-            Platform.OS === 'web' ? null : contentShiftStyle
-          ]) as any
-        }
-      />
+    ({ index: _index, children, ...props }: any) => (
+      <AnimatedCellContainer {...props} style={props.style}>
+        {Platform.OS === 'web' ? (
+          children
+        ) : (
+          // ⚠️ 键盘位移**不能**加在 cell 容器上，只能加在 cell 内部的包裹层：
+          // FlashList 用 measureItemLayout(cellContainer) 反推每一条的 y，
+          // 容器一旦带 transform，测量值会整体偏移（偏移量 = 键盘高度，可达上千 px），
+          // layout manager 里的 y 就全错了 —— cell 被摆到错误位置，
+          // 表现为「新消息跑到最上面 / 回复位置错乱 / 自己发的消息不见了」。
+          // 包一层之后，容器的布局尺寸不受 transform 影响，测量保持准确。
+          <Animated.View style={contentShiftStyle}>{children}</Animated.View>
+        )}
+      </AnimatedCellContainer>
     ),
     [contentShiftStyle]
   )
@@ -893,19 +976,29 @@ export default function ChatArea({
         <View style={styles.welcomeOverlay}>
           <ActivityIndicator size="small" color={theme.textMuted} />
         </View>
-      ) : showWelcome ? (
-        <View style={styles.welcomeOverlay}>
-          <View style={styles.emptyContainer}>
-            <Text style={styles.welcomeEmoji}>👋</Text>
-            <Text style={[styles.welcomeTitle, { color: theme.textMain }]}>
-              你好，欢迎使用 AI 智能体
-            </Text>
-            <Text style={[styles.welcomeSubtitle, { color: theme.textMuted }]}>
-              今天有什么想聊的？
-            </Text>
-          </View>
-        </View>
       ) : (
+        <>
+          {/* 空会话：欢迎语。挂载与否看 isEmptyConversation（数据层面），
+              显隐交给 welcomeStyle —— 键盘升起时淡出，避免「啪」一下消失 */}
+          {isEmptyConversation && (
+            <Animated.View
+              style={[styles.welcomeOverlay, welcomeStyle]}
+              pointerEvents="none"
+            >
+              <View style={styles.emptyContainer}>
+                <Text style={styles.welcomeEmoji}>👋</Text>
+                <Text style={[styles.welcomeTitle, { color: theme.textMain }]}>
+                  你好，欢迎使用 AI 智能体
+                </Text>
+                <Text
+                  style={[styles.welcomeSubtitle, { color: theme.textMuted }]}
+                >
+                  今天有什么想聊的？
+                </Text>
+              </View>
+            </Animated.View>
+          )}
+          {!isEmptyConversation && (
         <FlashList
           ref={scrollViewRef}
           data={displayMessages}
@@ -930,11 +1023,13 @@ export default function ChatArea({
           onTouchStart={() => {
             userTouchedRef.current = true
             touchedSV.value = true
+            stopPinConverge()
             endHistoryBottom()
           }}
           onScrollBeginDrag={(e: any) => {
             userTouchedRef.current = true
             touchedSV.value = true
+            stopPinConverge()
             endHistoryBottom()
             scrollViewProps.onScrollBeginDrag?.(e)
           }}
@@ -943,6 +1038,12 @@ export default function ChatArea({
             scrollViewProps.onContentSizeChange?.(args[0], args[1])
             const h = args[1]
             if (typeof h === 'number' && h > 0) {
+              const keyboardExtra =
+                (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
+              naturalHRef.current = Math.max(
+                0,
+                h - (spacerSV.value + manualSpacerSV.value + keyboardExtra)
+              )
               contentHRef.current = h
               contentHeightSV.value = h
               if (!thoughtBusyRef.current) syncPinTarget()
@@ -950,10 +1051,12 @@ export default function ChatArea({
             }
           }}
         />
+          )}
+        </>
       )}
 
       {/* ✅ 悬浮「回到底部」按钮：上滑超过一定距离才显示，淡入 + 上滑出现 */}
-      {!showWelcome && !isHistoryLoading && showScrollToBottom && (
+      {!isEmptyConversation && !isHistoryLoading && showScrollToBottom && (
         <PopAnim kind="fab">
           {(animStyle) => (
             <Animated.View

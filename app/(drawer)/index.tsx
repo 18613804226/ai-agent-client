@@ -206,12 +206,19 @@ export default function ChatScreen() {
     prevPathnameRef.current = pathname
   }, [pathname, navigation])
 
+  // 用于在 PanResponder 回调中判断抽屉状态（避免闭包读取旧值）
+  const isDrawerOpenRef = useRef(isDrawerOpen)
+  useEffect(() => {
+    isDrawerOpenRef.current = isDrawerOpen
+  }, [isDrawerOpen])
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        if (isPCWeb) return false
+        // ⚠️ 抽屉打开时禁用手势，避免与抽屉自己的 Pan 手势冲突导致「卡死」
+        if (isPCWeb || isDrawerOpenRef.current) return false
         return (
           gestureState.dx > 3 &&
           Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 0.6

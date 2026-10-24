@@ -377,7 +377,10 @@ export function useChatScroll({
     scrollEventThrottle: 32,
     onContentSizeChange: handleContentSizeChange,
     showsVerticalScrollIndicator: !INVERTED_CHAT_LIST,
-    removeClippedSubviews: Platform.OS !== 'web',
+    // ⚠️ 不要把 removeClippedSubviews 透传给 FlashList：它落到 FlashList 内部的
+    // ScrollView 上，会和 FlashList 自己的 cell 回收机制打架 —— 回收窗口内的 cell
+    // 被原生错误裁剪，表现为「消息丢失」与「布局错乱」。FlashList 已自行管理回收，
+    // 这里必须省略该属性（默认即不裁剪）。
     // 原生端吐字时用不到贴底，但滚动手感保持原样
     ...(INVERTED_CHAT_LIST ? { decelerationRate: 'fast' } : null),
     // Android 翻转布局：长按选中文本时系统会走 requestChildRectangleOnScreen 把选区
