@@ -176,6 +176,10 @@ const TailText = memo(function TailText({
     <View>
       {tailSegs.map((seg, i) => {
         if (seg.kind === 'fence') {
+          // 栅栏刚打开、还没吐到任何代码行时先什么都不画：空盒子会凭空多出
+          // 一整套 codeBox 外壳（marginTop+paddingTop+paddingBottom+marginBottom
+          // ≈ 56px），这正是「出代码块那一下」的另一个来源。
+          if (!seg.code) return null
           return (
             <View key={`f${i}`} style={style.codeBox}>
               <CodeCopyButton code={seg.code} styles={style} />
@@ -193,13 +197,16 @@ const TailText = memo(function TailText({
           hasInlineMarkup(seg.text) && seg.text
             ? splitInlineSegments(seg.text)
             : null
-        // 段落样式必须与最终 Markdown 的 paragraph 完全一致（含 marginBottom），
-        // 否则尾巴升级成稳定块的那一刻会跳高度。
+        // ⚠️ 这里必须用 styles.tail（= body 的字号/行高），**不能**用
+        // style.paragraph：最终渲染里 body 规则会把连续段落合并进同一个 <Text>，
+        // 段落退化成内联子节点，`paragraph.marginBottom` 在那条链上不生效，
+        // 只有段前 `\n` 生效。尾巴若带上 marginBottom，升级成稳定块时会凭空
+        // 多出 8px —— 这正是「出代码块时抽一下」的来源之一。
         return (
           <Text
             key={`t${i}`}
             selectable={selectable}
-            style={[styles.tail, style.paragraph, { color }]}
+            style={[styles.tail, { color }]}
           >
             {i > 0 || leadingNewline ? '\n' : null}
             {segInline
