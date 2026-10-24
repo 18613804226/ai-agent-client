@@ -3,8 +3,18 @@ import { Platform } from 'react-native';
 import { getToken, notifyUnauthorized, setDevice } from './authStore';
 import type { DeviceMeta } from '../utils/deviceInfo';
 
-// 从环境变量读取后端地址，若未配置则使用默认值
-export const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+/**
+ * 从环境变量读取后端地址。
+ *
+ * ⚠️ 兜底必须是**线上**地址，不能是 localhost：
+ * `eas update` 只把 EAS 云端环境变量注入导出进程，**不读本地 `.env`**
+ * （`expo export` 自己会读，所以 Gradle release 一直是对的）。
+ * 云端变量一旦漏配，这里拿到的就是 undefined，运行时会落到兜底值 ——
+ * 兜底成 localhost 会把线上用户指到他自己机器上的 3000 端口。
+ * 开发期由 `.env.development` 覆盖成内网地址，不受影响。
+ */
+export const baseURL =
+  process.env.EXPO_PUBLIC_API_URL || 'https://api.dietai.space';
 
 export const httpClient = axios.create({
   baseURL,

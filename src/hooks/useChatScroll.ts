@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import { useChat } from '../context/appContexts';
@@ -371,24 +371,30 @@ export function useChatScroll({
     [autoFollowRef, outerMaxSV, pinToBottom],
   );
 
-  const scrollViewProps: Record<string, any> = {
-    onScroll: handleScroll,
-    onScrollBeginDrag: handleScrollBeginDrag,
-    scrollEventThrottle: 32,
-    onContentSizeChange: handleContentSizeChange,
-    showsVerticalScrollIndicator: !INVERTED_CHAT_LIST,
-    // ⚠️ 不要把 removeClippedSubviews 透传给 FlashList：它落到 FlashList 内部的
-    // ScrollView 上，会和 FlashList 自己的 cell 回收机制打架 —— 回收窗口内的 cell
-    // 被原生错误裁剪，表现为「消息丢失」与「布局错乱」。FlashList 已自行管理回收，
-    // 这里必须省略该属性（默认即不裁剪）。
-    // 原生端吐字时用不到贴底，但滚动手感保持原样
-    ...(INVERTED_CHAT_LIST ? { decelerationRate: 'fast' } : null),
-    // Android 翻转布局：长按选中文本时系统会走 requestChildRectangleOnScreen 把选区
-    // 「滚进可视区」，但坐标是普通坐标系，落到 scale(-1) 镜像的 ScrollView 上就映射成
-    // 大幅度跳动。该 prop 让 ReactScrollView.requestChildRectangleOnScreen 直接返回 false，
-    // 从源头吞掉这次系统补正，原生跨段选择能力不受影响。
-    ...(Platform.OS === 'android' ? { scrollsChildToFocus: false } : null),
-  };
+  // ⚠️ 必须 memo：这个对象每帧都会传到 FlashList 上，引用变了就会让它重新处理
+  // 内部 ScrollView 的 props（流式期 20×/s）。回调本身已是 useCallback，
+  // 所以 deps 只剩它们三个。
+  const scrollViewProps = useMemo<Record<string, any>>(
+    () => ({
+      onScroll: handleScroll,
+      onScrollBeginDrag: handleScrollBeginDrag,
+      scrollEventThrottle: 32,
+      onContentSizeChange: handleContentSizeChange,
+      showsVerticalScrollIndicator: !INVERTED_CHAT_LIST,
+      // ⚠️ 不要把 removeClippedSubviews 透传给 FlashList：它落到 FlashList 内部的
+      // ScrollView 上，会和 FlashList 自己的 cell 回收机制打架 —— 回收窗口内的 cell
+      // 被原生错误裁剪，表现为「消息丢失」与「布局错乱」。FlashList 已自行管理回收，
+      // 这里必须省略该属性（默认即不裁剪）。
+      // 原生端吐字时用不到贴底，但滚动手感保持原样
+      ...(INVERTED_CHAT_LIST ? { decelerationRate: 'fast' } : null),
+      // Android 翻转布局：长按选中文本时系统会走 requestChildRectangleOnScreen 把选区
+      // 「滚进可视区」，但坐标是普通坐标系，落到 scale(-1) 镜像的 ScrollView 上就映射成
+      // 大幅度跳动。该 prop 让 ReactScrollView.requestChildRectangleOnScreen 直接返回 false，
+      // 从源头吞掉这次系统补正，原生跨段选择能力不受影响。
+      ...(Platform.OS === 'android' ? { scrollsChildToFocus: false } : null),
+    }),
+    [handleScroll, handleScrollBeginDrag, handleContentSizeChange]
+  );
 
   // ⚠️ 必须是普通对象：FlashList 内部用对象展开合并 style，
   // 传数组会变成 {"0": {...}}，Web 端落 DOM 时触发

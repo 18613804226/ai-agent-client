@@ -814,6 +814,37 @@ export default function ChatArea({
   })
 
   /**
+   * 列表内容尺寸变化：记自然高/总高 + 重算钉顶与留白。
+   * ⚠️ 必须 useCallback：它是 FlashList 的 prop，每帧新建一个闭包会让
+   * FlashList 重新处理内部 ScrollView（流式期 20×/s）。
+   */
+  const handleListContentSizeChange = useCallback(
+    (_w: number, h: number) => {
+      scrollViewProps.onContentSizeChange?.(_w, h)
+      if (typeof h === 'number' && h > 0) {
+        const keyboardExtra =
+          (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
+        naturalHRef.current = Math.max(
+          0,
+          h - (spacerSV.value + manualSpacerSV.value + keyboardExtra)
+        )
+        contentHRef.current = h
+        contentHeightSV.value = h
+        if (!thoughtBusyRef.current) syncPinTarget()
+        recomputePinSpacer()
+      }
+    },
+    [
+      scrollViewProps,
+      spacerSV,
+      manualSpacerSV,
+      keyboardProgressSV,
+      syncPinTarget,
+      recomputePinSpacer
+    ]
+  )
+
+  /**
    * 钉顶/历史贴底（纯 UI 线程逐帧）：目标由 JS 写共享值，用户一碰立即停手。
    * 只有与当前 offset 相差超过 0.5px 时才下发 scrollTo —— 目标稳定时
    * （钉顶不动、已贴底）不再每帧 dispatch 原生滚动命令。
@@ -822,12 +853,19 @@ export default function ChatArea({
     'worklet'
     if (touchedSV.value) return
     if (!hasDataSV.value) return
-    const target =
+    const rawTarget =
       pinTargetSV.value >= 0
         ? pinTargetSV.value
         : historyBottomSV.value === 1 && outerMaxSV.value > 0
           ? outerMaxSV.value
           : -1
+    if (rawTarget < 0) return
+    // ⚠️ 必须把目标钳到真实可滚区间：pinTargetSV 来自 getLayout()，
+    // 代码块出现/高度变化时 layout manager 会滞后几帧，那几帧里
+    // target 可能 > outerMaxSV（够不到）。不钳的话 scrollTo 每帧都被 clamp
+    // 回 maxScroll，offset 永远追不上 target → 每帧都发一次滚动 →
+    // 无限重绘 + 满 CPU（表现为出代码块时气泡被拉长再缩回、界面像卡住）。
+    const target = Math.max(0, Math.min(rawTarget, outerMaxSV.value))
     if (target < 0) return
     if (Math.abs(outerOffsetSV.value - target) <= 0.5) return
     scrollToWorklet(scrollViewRef, 0, target, false)
@@ -1034,22 +1072,7 @@ export default function ChatArea({
             scrollViewProps.onScrollBeginDrag?.(e)
           }}
           // 列表挂载/内容变化时兜底滚到底（历史异步落盘 + 图片加载都会触发）
-          onContentSizeChange={(...args: any[]) => {
-            scrollViewProps.onContentSizeChange?.(args[0], args[1])
-            const h = args[1]
-            if (typeof h === 'number' && h > 0) {
-              const keyboardExtra =
-                (keyboardProgressSV?.value ?? 0) * FOOTER_COLLAPSE
-              naturalHRef.current = Math.max(
-                0,
-                h - (spacerSV.value + manualSpacerSV.value + keyboardExtra)
-              )
-              contentHRef.current = h
-              contentHeightSV.value = h
-              if (!thoughtBusyRef.current) syncPinTarget()
-              recomputePinSpacer()
-            }
-          }}
+          onContentSizeChange={handleListContentSizeChange}
         />
           )}
         </>

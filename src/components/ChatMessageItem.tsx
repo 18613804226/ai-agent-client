@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo } from 'react'
+import React, { memo, useEffect, useMemo, useState } from 'react'
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
 import Markdown from 'react-native-markdown-display'
 import { Feather } from '@expo/vector-icons'
@@ -205,9 +205,16 @@ const ChatMessageItem = memo(
      * 三端分别处理：iOS 用 shadow*，Android 用 elevation，Web 用 boxShadow。
      */
 
+    /**
+     * 气泡可用宽度：代码框要按它钉死宽度（否则宽度跟着最长代码行走 →
+     * 气泡 shrink-to-fit 跟着抖 → 兄弟段落重排、高度跳）。稳定块一级的
+     * onLayout 只在真的变化时 setState，不会每帧重渲染。
+     */
+    const [rowWidth, setRowWidth] = useState(0)
+
     const dynamicMarkdownStyles = useMemo(
-      () => createDynamicMarkdownStyles(theme),
-      [theme]
+      () => createDynamicMarkdownStyles(theme, rowWidth),
+      [theme, rowWidth]
     )
 
     // 系统标记行（如「用户中止对话」）：居中、哥倩、不走气泡，跟正常气泡错开
@@ -241,6 +248,10 @@ const ChatMessageItem = memo(
             isUser ? chatMessageStyles.rowUser : chatMessageStyles.rowAi,
             WEB_ROW_CONTAINMENT
           ]}
+          onLayout={(e) => {
+            const w = e.nativeEvent.layout.width
+            setRowWidth((prev) => (prev === w ? prev : w))
+          }}
         >
           {/* 用户消息带附件：统一「附件列」——文档/视频行 + 图片缩略图 + 正文气泡 */}
           {isUser && hasAttachments ? (

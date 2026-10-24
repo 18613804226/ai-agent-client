@@ -80,35 +80,62 @@ const InlineMoonPhase = memo(function InlineMoonPhase() {
  * （paddingTop 34 + 行高 20 + 上下外边距），气泡高度当场跳一下 ——
  * 即「第一次生成代码块，气泡闪一下」。
  *
- * 未闭合的栅栏（还没吐到收尾 ```）也按盒子渲染：此时它与最终渲染同高，不产生跳变。
+ * 未闭合的栅栏（还没吐到收尾 ```）只要有代码行就按盒子渲染：此时它与最终渲染同高，
+ * 不产生跳变。唯一例外是「栅栏刚打开、还没有任何代码行」——那时把起始行按普通文本
+ * 渲染（而不是画空盒子、也不是什么都不画），让这一行的可见性保持不变，高度才单调。
  */
-type TailSeg = { kind: 'text'; text: string } | { kind: 'fence'; code: string }
+type TailSeg =
+  | { kind: 'text'; text: string }
+  | { kind: 'fence'; marker: string; code: string; closed: boolean }
 
 const FENCE_OPEN = /^\s*(```|~~~)/
 const FENCE_CLOSE = /^\s*(```|~~~)\s*$/
+
+/** 只去掉结尾的**一个**换行：与最终 fence / code_block 规则对 content 的处理一致。
+ *  不去掉的话尾巴里的 `"code\n"` 会多渲染一个空行，围栏闭合时又消失 → 高度跳一下。 */
+const stripOneTrailingNewline = (s: string) =>
+  s.endsWith('\n') ? s.slice(0, -1) : s
 
 function splitTailSegments(text: string): TailSeg[] {
   const segs: TailSeg[] = []
   const lines = text.split('\n')
   const buf: string[] = []
   const flush = () => {
-    if (buf.length) {
-      segs.push({ kind: 'text', text: buf.join('\n') })
-      buf.length = 0
-    }
+    // 文本段末尾的空行只是「光标停在空行上」/ 与下一块的分隔符；最终渲染里
+    // 它们是段落边界、不产生空行。不裁掉的话尾巴会凭空多出空行，等它升级成
+    // 稳定块时又消失 → 高度跳一下。
+    // 段**内**的空行同理：最终渲染里 body 把连续段落合并进同一个 <Text>，
+    // 段落之间只有一个 `\n`（见 markdownRules 的 paragraph 规则），
+    // 所以 `A\n\nB` 必须按 `A\nB` 渲染，否则会多出一行、等切点落定又消失。
+    const t = buf
+      .join('\n')
+      .replace(/\n+$/, '')
+      .replace(/\n{2,}/g, '\n')
+    buf.length = 0
+    if (t) segs.push({ kind: 'text', text: t })
   }
   let i = 0
   while (i < lines.length) {
     if (FENCE_OPEN.test(lines[i])) {
       flush()
+      const marker = lines[i]
       i++ // 栅栏起始行本身不是代码内容（与 fence 规则的 content 一致）
       const code: string[] = []
+      let closed = false
       while (i < lines.length && !FENCE_CLOSE.test(lines[i])) {
         code.push(lines[i])
         i++
       }
-      if (i < lines.length) i++ // 跳过收尾 ```
-      segs.push({ kind: 'fence', code: code.join('\n') })
+      if (i < lines.length) {
+        closed = true
+        i++ // 跳过收尾 ```
+      }
+      segs.push({
+        kind: 'fence',
+        marker,
+        code: stripOneTrailingNewline(code.join('\n')),
+        closed
+      })
       continue
     }
     buf.push(lines[i])
@@ -122,52 +149,30 @@ const TailText = memo(function TailText({
   text,
   selectable,
   color,
-  style,
-  leadingNewline
+  style
 }: {
   text: string
   selectable: boolean
   color: string
   style: any
-  /** 尾巴前面还有已落定的稳定块 —— 最终 Markdown 的 paragraph 规则会给
-   *  `node.index > 0` 的段落前面补一个 `\n`，尾巴必须照样补，否则升级成
-   *  稳定块时会当场多/少一行 + 段落下边距，气泡跳一下。 */
-  leadingNewline: boolean
 }) {
-  // 吐字期每 token 都会传入新的 text；直接每次 splitInlineSegments 会 O(n²)。
-  // 这里节流：显示文本每 ~80ms 才更新一次，中间 token 只跑一次时间判断，
-  // 把内联强调切分的开销降到 1/5~1/10。
-  const [displayedText, setDisplayedText] = useState(text)
-  const lastUpdateRef = useRef(0)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    const now = Date.now()
-    if (now - lastUpdateRef.current >= 80) {
-      lastUpdateRef.current = now
-      setDisplayedText(text)
-      return
-    }
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => {
-      lastUpdateRef.current = Date.now()
-      setDisplayedText(text)
-      timerRef.current = null
-    }, 80 - (now - lastUpdateRef.current))
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [text])
+  // 不做节流：每 token 直接切。
+  // ① 之前节流带来的「显示文本 vs 块结构」两个时钟，正是段落边界那一抽的根因；
+  // ② 外层 StreamingMarkdown 的 content 是 prop，每 token 本来就会 re-render，
+  //    节流省不掉这次提交，只省尾巴内部那点活；
+  // ③ 真正贵的 splitInlineSegments 前面还有 hasInlineMarkup 这道廉价闸门。
+  // 代价（少量重复的 O(n) 切分）远小于它引入的状态机复杂度。
+  const tailSegs = useMemo(() => splitTailSegments(text), [text])
 
-  const tailSegs = useMemo(
-    () => splitTailSegments(displayedText),
-    [displayedText]
-  )
+  // 栅栏刚打开、还没吐到代码行时按普通文本渲染（见下），此时它也算「文本段」。
+  const rendersAsText = (seg: TailSeg) =>
+    seg.kind === 'text' || (!seg.code && !seg.closed)
 
   // 最后一个文本段后面贴「月球自转」提示（保持原来的内联行为：
   // 纯文本尾巴时提示仍贴着最后一个字）。代码段之后的提示单独占一行。
   const lastTextIdx = (() => {
     for (let i = tailSegs.length - 1; i >= 0; i--) {
-      if (tailSegs[i].kind === 'text') return i
+      if (rendersAsText(tailSegs[i])) return i
     }
     return -1
   })()
@@ -176,10 +181,22 @@ const TailText = memo(function TailText({
     <View>
       {tailSegs.map((seg, i) => {
         if (seg.kind === 'fence') {
-          // 栅栏刚打开、还没吐到任何代码行时先什么都不画：空盒子会凭空多出
-          // 一整套 codeBox 外壳（marginTop+paddingTop+paddingBottom+marginBottom
-          // ≈ 56px），这正是「出代码块那一下」的另一个来源。
-          if (!seg.code) return null
+          // 栅栏刚打开、还没吐到任何代码行：把起始行按**普通文本**渲染。
+          // ⚠️ 不能 `return null` —— 那会让已经显示出来的 ``` 行凭空消失（-24px）；
+          // 也不能画空 codeBox —— paddingTop 34 会留出一大块空白。
+          // 保持这一行可见，高度就单调；等第一个代码行吐出来才换成盒子。
+          if (!seg.code && !seg.closed) {
+            return (
+              <Text
+                key={`f${i}`}
+                selectable={selectable}
+                style={[styles.tail, { color }]}
+              >
+                {seg.marker}
+                {i === lastTextIdx && <InlineMoonPhase />}
+              </Text>
+            )
+          }
           return (
             <View key={`f${i}`} style={style.codeBox}>
               <CodeCopyButton code={seg.code} styles={style} />
@@ -202,13 +219,15 @@ const TailText = memo(function TailText({
         // 段落退化成内联子节点，`paragraph.marginBottom` 在那条链上不生效，
         // 只有段前 `\n` 生效。尾巴若带上 marginBottom，升级成稳定块时会凭空
         // 多出 8px —— 这正是「出代码块时抽一下」的来源之一。
+        // ⚠️ 也**不能**在段首补 `\n`：最终渲染里那个 `\n` 是同一个 <Text> 里的
+        // 换行，而尾巴是**另一个** <Text>，再补一个 `\n` 就凭空多一个空行
+        //（+24px），等尾巴升级成稳定块时又消失 —— 高度跳一下。
         return (
           <Text
             key={`t${i}`}
             selectable={selectable}
             style={[styles.tail, { color }]}
           >
-            {i > 0 || leadingNewline ? '\n' : null}
             {segInline
               ? segInline.map((s, j) => renderSeg(s, `s${i}.${j}`))
               : seg.text}
@@ -322,7 +341,6 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
         selectable={selectable}
         color={color}
         style={style}
-        leadingNewline={blocks.length > 0}
       />
     </View>
   )

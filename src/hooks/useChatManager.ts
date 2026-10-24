@@ -1,7 +1,12 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Platform, Vibration } from 'react-native'
 import { useAnimatedRef } from 'react-native-reanimated'
-import { api, refreshDeviceSnapshot, refreshMyDevice } from '../services/api'
+import {
+  api,
+  baseURL,
+  refreshDeviceSnapshot,
+  refreshMyDevice
+} from '../services/api'
 
 /** 唯一消息 id：Date.now 单独用会在同一毫秒内重复（用户消息 + thinking 占位） */
 const makeId = (prefix = 'm') =>
@@ -50,8 +55,6 @@ export interface Conversation {
   title: string
   messages?: Message[]
 }
-
-const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'
 
 type StreamChunk = { type: 'thought' | 'content'; text: string }
 
@@ -103,6 +106,10 @@ export function useChatManager() {
   const charCarryRef = useRef(0)
   const lastFrameTimeRef = useRef(0)
   const lastPushTimeRef = useRef(0)
+  /** 上次推给 React 的流式内容/思考（null = 还没推过）。
+   *  内容没变就别推 —— 否则模型停顿时每 50ms 白跑一次整屏重渲染。 */
+  const lastPushedContentRef = useRef<string | null>(null)
+  const lastPushedThoughtRef = useRef<string | null>(null)
 
   const autoFollowRef = useRef(true)
   const isAtBottomRef = useRef(true)
@@ -164,6 +171,8 @@ export function useChatManager() {
     charCarryRef.current = 0
     lastFrameTimeRef.current = 0
     lastPushTimeRef.current = 0
+    lastPushedContentRef.current = null
+    lastPushedThoughtRef.current = null
     currentThoughtRef.current = ''
     currentContentRef.current = ''
     if (timerRef.current) {
@@ -238,7 +247,9 @@ export function useChatManager() {
                 : c
             )
           )
-          setHistoryLoadingId((current) => (current === firstId ? null : current))
+          setHistoryLoadingId((current) =>
+            current === firstId ? null : current
+          )
           return
         }
         setConversations([])
@@ -445,6 +456,18 @@ export function useChatManager() {
         // 已结束且队列空，不再更新临时状态
         return
       }
+      // 这一帧没吐字（模型停顿 / 预算不够）→ 内容一个字没变就别推，
+      // 否则每 50ms 白跑一次 ChatArea + FlashList 的整屏 diff。
+      // 用 null 当「还没推过」的哨兵：保证第一轮一定推（否则流式气泡不挂 isStreaming，
+      // 自动朗读会盯上那条 "..." 占位消息）。
+      if (
+        content === lastPushedContentRef.current &&
+        thought === lastPushedThoughtRef.current
+      ) {
+        return
+      }
+      lastPushedContentRef.current = content
+      lastPushedThoughtRef.current = thought
       setStreamingRenderMsg({
         msgId,
         thought,
@@ -951,15 +974,15 @@ export function useChatManager() {
    *                     否则发送输入框当前内容。
    * @param images 可选。选中的图片 base64/URL 数组，发送前会上传到后端。
    * @param knowledgeFileIds 可选。选中的知识库文件 ID 数组，告知后端用于 RAG 上下文。
-    * @param files 可选。随消息发送的文档/视频附件：选中时已上传拿 id
-    *             （useImagePicker.uploadAttachment），这里对失败/未完成/临近过期的
-    *             做兜底重传，再以 attachmentIds 随本轮消息引用（不入向量库）。
-    * @param onComposerClear 可选。**前置校验 + 附件上传全部通过**时立刻回调一次：
-    *             用来清掉输入栏的图片/文件 chips，不必等流式吐字结束。
-    *             校验失败 / 附件上传失败都会提前 return false，不会触发它，
-    *             所以 chips 留着、用户可以直接重试。
-    * @returns 是否真正发起发送（false = 前置校验/附件上传失败，输入已还给用户）。
-    */
+   * @param files 可选。随消息发送的文档/视频附件：选中时已上传拿 id
+   *             （useImagePicker.uploadAttachment），这里对失败/未完成/临近过期的
+   *             做兜底重传，再以 attachmentIds 随本轮消息引用（不入向量库）。
+   * @param onComposerClear 可选。**前置校验 + 附件上传全部通过**时立刻回调一次：
+   *             用来清掉输入栏的图片/文件 chips，不必等流式吐字结束。
+   *             校验失败 / 附件上传失败都会提前 return false，不会触发它，
+   *             所以 chips 留着、用户可以直接重试。
+   * @returns 是否真正发起发送（false = 前置校验/附件上传失败，输入已还给用户）。
+   */
   const handleSend = async (
     overrideText?: string,
     images: string[] = [],
@@ -975,7 +998,7 @@ export function useChatManager() {
     // 老调用方（images: string[]）仍按原路走，这里与 attachments 里的图片合并。
     const imageUris = [
       ...images,
-      ...attachments.filter((a) => a.kind === 'image').map((a) => a.uri),
+      ...attachments.filter((a) => a.kind === 'image').map((a) => a.uri)
     ]
     const files = attachments.filter((a) => a.kind !== 'image')
     // 图片附件 → 它在 imageUris / uploadedImageUrls 里的下标。
@@ -988,11 +1011,7 @@ export function useChatManager() {
     })
 
     // 文字 / 图片 / 附件至少给一样（后端：query 和文件至少要提供一样）
-    if (
-      !textToSend.trim() &&
-      imageUris.length === 0 &&
-      files.length === 0
-    ) {
+    if (!textToSend.trim() && imageUris.length === 0 && files.length === 0) {
       return false
     }
 
