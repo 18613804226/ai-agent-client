@@ -266,7 +266,17 @@ export function useChatManager() {
         const sessions: any = await api.getSessions()
         if (cancelled) return
         if (sessions && sessions.length > 0) {
-          setConversations(sessions)
+          // ⚠️ 列表接口不返回 messages —— 直接 setConversations(sessions) 会把
+          // 缓存里那份消息冲掉，当前会话瞬间变空 → 掉进欢迎语。
+          // 所以把缓存里的消息合并回去，让这次覆盖对当前会话**不可见**。
+          setConversations(
+            sessions.map((s: any) => {
+              const cachedConv = cached?.list?.find((c) => c.id === s.id)
+              return cachedConv?.messages?.length
+                ? { ...s, messages: cachedConv.messages }
+                : s
+            })
+          )
           // 缓存里记的上次活跃会话如果还在，就接着用它；否则回到列表第一个
           const restoreId =
             cachedActiveId && sessions.some((s: any) => s.id === cachedActiveId)
