@@ -7,6 +7,7 @@ import {
   refreshDeviceSnapshot,
   refreshMyDevice
 } from '../services/api'
+import { chatCache } from '../services/chatCache'
 
 /** 唯一消息 id：Date.now 单独用会在同一毫秒内重复（用户消息 + thinking 占位） */
 const makeId = (prefix = 'm') =>
@@ -217,6 +218,8 @@ export function useChatManager() {
   // 上次已加载会话的 deviceId：切角色只换 token、deviceId 不变，
   // 此时无需重拉（会把当前会话重置回第一个、消息重新加载 = 聊天窗口刷新）
   const lastLoadedDeviceIdRef = useRef<string | null>(null)
+  /** 初始化跑完过没有：没跑完不写缓存（否则会把空列表写进去覆盖掉好缓存） */
+  const didInitRef = useRef(false)
   useEffect(() => {
     let cancelled = false
     const initChatData = async () => {
@@ -228,39 +231,81 @@ export function useChatManager() {
         // 保持当前会话与消息不动，避免聊天窗口被重置刷新
         const device = await getDevice()
         const deviceId = device?.deviceId ?? null
-        if (deviceId && deviceId === lastLoadedDeviceIdRef.current) return
+        if (deviceId && deviceId === lastLoadedDeviceIdRef.current) {
+          didInitRef.current = true
+          return
+        }
         lastLoadedDeviceIdRef.current = deviceId
+
+        // ① 先渲染本地缓存（stale-while-revalidate）：首屏立刻有内容，网络只负责刷新
+        const cached = deviceId ? await chatCache.readAll(deviceId) : null
+        /** 缓存是否已经把「要展示的那个会话」的内容渲染出来了。
+         *  是 → 下面那次网络拉取就是**静默刷新**，不该再叠 loading；
+         *  否（首次安装 / 缓存里没消息 / 目标会话变了）→ 按老路走，显示 loading。 */
+        let cachedActiveId: string | null = null
+        let hadCacheContent = false
+        if (!cancelled && cached && cached.list.length > 0) {
+          const activeId =
+            cached.activeId && cached.list.some((c) => c.id === cached.activeId)
+              ? cached.activeId
+              : cached.list[0].id
+          cachedActiveId = activeId
+          setConversations(cached.list)
+          setActiveId(activeId)
+          const cachedMessages = cached.list.find((c) => c.id === activeId)?.messages
+          if (cachedMessages && cachedMessages.length > 0) {
+            hadCacheContent = true
+            setConversations((prev) =>
+              prev.map((c) => (c.id === activeId ? { ...c, messages: cachedMessages } : c))
+            )
+          }
+          setHistoryLoadingId(null)
+        }
+
+        // ② 再拉网络，静默覆盖
         const sessions: any = await api.getSessions()
         if (cancelled) return
         if (sessions && sessions.length > 0) {
           setConversations(sessions)
-          const firstId = sessions[0].id
-          setActiveId(firstId)
-          setHistoryLoadingId(firstId)
+          // 缓存里记的上次活跃会话如果还在，就接着用它；否则回到列表第一个
+          const restoreId =
+            cachedActiveId && sessions.some((s: any) => s.id === cachedActiveId)
+              ? cachedActiveId
+              : sessions[0].id
+          setActiveId(restoreId)
+          // 缓存已经把这个会话渲染出来了 → 静默刷新，别再盖一个转圈
+          if (!hadCacheContent || restoreId !== cachedActiveId) {
+            setHistoryLoadingId(restoreId)
+          }
 
-          const detail: any = await api.getSessionDetail(firstId)
+          const detail: any = await api.getSessionDetail(restoreId)
           if (cancelled) return
           setConversations((prev) =>
             prev.map((c) =>
-              c.id === firstId
+              c.id === restoreId
                 ? { ...c, messages: normalizeMessages(detail.messages || []) }
                 : c
             )
           )
           setHistoryLoadingId((current) =>
-            current === firstId ? null : current
+            current === restoreId ? null : current
           )
+          didInitRef.current = true
           return
         }
         setConversations([])
         setActiveId('')
+        didInitRef.current = true
       } catch (error) {
         // 401 是旧 token 过期的预期失败（会自动续期+onTokenChange 重拉），不刷错
         const status =
           (error as any)?.response?.status ?? (error as any)?.status
         if (!cancelled && status !== 401)
           console.error('初始化后端会话失败:', error)
-        if (!cancelled) setHistoryLoadingId(null)
+        if (!cancelled) {
+          setHistoryLoadingId(null)
+          didInitRef.current = true
+        }
       }
     }
     initChatData()
@@ -282,6 +327,17 @@ export function useChatManager() {
 
   const currentChat =
     conversations.find((c) => c.id === activeId) || conversations[0]
+
+  /**
+   * 缓存写盘：会话列表 / 当前会话变化，或流式结束（isGenerating 由 true→false）时写。
+   * ⚠️ 流式期间不写 —— 每个 token 都写会把 AsyncStorage 写爆；
+   *    didInitRef 之前也不写（否则空列表会覆盖掉好缓存）。
+   */
+  useEffect(() => {
+    const deviceId = lastLoadedDeviceIdRef.current
+    if (!deviceId || !didInitRef.current || isGenerating) return
+    chatCache.write(deviceId, conversations, activeId, currentChat?.messages)
+  }, [isGenerating, conversations, activeId, currentChat])
 
   /**
    * 判断会话是否为「空白新会话」：
