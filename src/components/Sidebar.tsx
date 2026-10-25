@@ -1055,7 +1055,9 @@ export default function Sidebar({
             <View
               style={[
                 styles.appearanceOptions,
-                { backgroundColor: theme.bgApp }
+                // 用 inputBg（暗色 #1E1F20）而不是 bgApp：抽屉底色现在 = bgApp，
+                // 再用 bgApp 会跟抽屉同色、分不开。
+                { backgroundColor: theme.inputBg }
               ]}
             >
               {(
@@ -1134,7 +1136,8 @@ const selected = effectiveRole === value
             <View
               style={[
                 styles.appearanceOptions,
-                { backgroundColor: theme.bgApp }
+                // 同上：抽屉底色 = bgApp，切换器容器得用更亮的 inputBg 才分得开
+                { backgroundColor: theme.inputBg }
               ]}
             >
               {(

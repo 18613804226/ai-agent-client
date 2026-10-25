@@ -38,7 +38,8 @@ export default function DrawerLayout() {
       screenOptions={{
         headerShown: false,
         drawerType: 'slide',
-        overlayColor: 'rgba(0, 0, 0, 0.5)',
+        // 遮罩颜色走主题：暗色下用深灰（内容底色也是黑，不加深就分不开抽屉和内容）
+        overlayColor: theme.drawerOverlay,
         swipeMinDistance: 30,
         swipeEdgeWidth: 45,
         // 👇 Drawer 场景容器涂上主题底色，Stack 侧滑转场时不会露出白底

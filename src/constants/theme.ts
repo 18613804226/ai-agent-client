@@ -9,7 +9,12 @@ export const isMobileWebWidth = (width: number) => width <= PC_WEB_BREAKPOINT;
 
 export const darkTheme = {
   bgApp: '#000',
-  bgSidebar: '#1E1F20',
+  // ⚠️ 抽屉底色与 bgApp 完全一致：抽屉滑动时，这两个底色之间**不能有颜色接缝**，
+  //    否则 Android 上会露成残影（亮色下 #fff / #F0F4F9 差 15 级才看不出来）。
+  //    抽屉与内容的层次交给 drawerOverlay（遮罩）去区分，不靠底色差。
+  bgSidebar: '#000',
+  /** 抽屉打开时盖在内容上的遮罩：暗色下用深灰，让「黑抽屉」和「被遮罩的内容」分得开 */
+  drawerOverlay: 'rgba(30,30,30,0.75)',
   border: '#2A2B2D',
   textMain: '#E3E3E3',
   textMuted: '#8E918F',
@@ -33,7 +38,9 @@ export const darkTheme = {
 
 export const lightTheme = {
   bgApp: '#fff',
-  bgSidebar: '#F0F4F9',
+  // 与暗色同理：抽屉底色 = 内容底色，层次靠遮罩
+  bgSidebar: '#fff',
+  drawerOverlay: 'rgba(0,0,0,0.5)',
   border: '#D8DEE4',
   textMain: '#1F1F1F',
   textMuted: '#5E5E5E',
