@@ -185,11 +185,10 @@ function SidebarLongPressItem({
   onLongPressAt?: (offsetX: number, offsetY: number) => void
   children: React.ReactNode
 }) {
-  // 📱 H5/OPPO：条目上启用输入层压制。
-  // ⚠️ 不能用 blockTouch: true —— 它会在 touchstart 上 preventDefault，
-  //    而 preventDefault on touchstart 会掐掉浏览器派发的兼容鼠标事件和 click，
-  //    表现为「条目点不动」。长按菜单改由容器级 attachCalloutSuppress 拦（见 Sidebar）。
-  const callout = useSuppressBrowserCallout(itemKey)
+  // 📱 H5/OPPO：条目上启用输入层压制（touchstart preventDefault）—— 这是压住
+  //    国产浏览器长按系统菜单的唯一有效手段（它们不认 contextmenu 拦截）。
+  //    useSuppressBrowserCallout 内部会在**短按时补回一个 click**，所以点击不受影响。
+  const callout = useSuppressBrowserCallout(itemKey, { blockTouch: true })
   return (
     <HoverTouchable
       ref={(el: any) => {

@@ -45,9 +45,35 @@ export function useSuppressBrowserCallout(
     // 国产浏览器不认 contextmenu 拦截，这是唯一有效的一层。
     // 不影响 RNW 按压/长按：responder 走合成事件，preventDefault 不阻断传播。
     let killTouch: ((e: Event) => void) | undefined;
+    let restoreClick: ((e: Event) => void) | undefined;
+    let touchDownAt = 0;
     if (blockTouch) {
-      killTouch = (e: Event) => e.preventDefault();
+      // 掐掉长按菜单：preventDefault on touchstart。
+      // ⚠️ 代价：浏览器不再派发兼容鼠标事件和 click —— 而 RNW 的 Pressable
+      //    在部分浏览器上依赖 click，于是「点不动」。所以短按时手动补一个 click 回去；
+      //    长按（>350ms）不补，那时本来就该是长按菜单。
+      killTouch = (e: Event) => {
+        touchDownAt = Date.now();
+        e.preventDefault();
+      };
+      restoreClick = (e: Event) => {
+        if (Date.now() - touchDownAt >= 350) return;
+        const target = e.target as HTMLElement | null;
+        if (target && typeof target.dispatchEvent === 'function') {
+          target.dispatchEvent(
+            new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+            }),
+          );
+        }
+      };
       el.addEventListener('touchstart', killTouch, {
+        capture: true,
+        passive: false,
+      } as any);
+      el.addEventListener('touchend', restoreClick, {
         capture: true,
         passive: false,
       } as any);
@@ -60,6 +86,11 @@ export function useSuppressBrowserCallout(
       el.removeEventListener('dragstart', kill, { capture: true } as any);
       if (killTouch) {
         el.removeEventListener('touchstart', killTouch, {
+          capture: true,
+        } as any);
+      }
+      if (restoreClick) {
+        el.removeEventListener('touchend', restoreClick, {
           capture: true,
         } as any);
       }
