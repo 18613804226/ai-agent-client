@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import { Platform } from 'react-native';
 import { Drawer } from 'expo-router/drawer';
 import { MobileDrawer } from '../../src/components/MobileDrawer';
 import { useChat, useTheme } from '../../src/context/appContexts';
@@ -45,7 +46,13 @@ export default function DrawerLayout() {
         // 👇 Drawer 场景容器涂上主题底色，Stack 侧滑转场时不会露出白底
         sceneStyle: { backgroundColor: theme.bgApp },
         drawerStyle: {
-          width: 280,
+          // ⚠️ 宽度要分平台给：
+          //  · web：给**字符串** '280px'。getDrawerWidthWeb 对字符串原样返回；
+          //    而它的默认值是 `min(calc(100% - 56px), 360px)`（百分比）——
+          //    一旦没生效就退回百分比，不同浏览器视口宽不同 → 侧边栏宽度不同。
+          //  · 原生：必须给**数字** 280。getDrawerWidthNative 对字符串会退回默认值
+          //    （334/360），给数字才原样用。
+          width: (Platform.OS === 'web' ? '280px' : 280) as any,
           backgroundColor: theme.bgSidebar,
           borderRightColor: 'transparent',
           borderRightWidth: 0,
