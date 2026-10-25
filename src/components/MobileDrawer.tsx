@@ -48,9 +48,15 @@ export function MobileDrawer({
 
   return (
     <View
+      // 📱 H5：给侧边栏根挂个 class，供 _layout 注入的 CSS 压住长按 callout 菜单
+      //    （RNW 不支持 -webkit-touch-callout，样式表里写没用；className 走 style 透传）
       style={[
         styles.container,
-        { borderColor: theme.border, backgroundColor: theme.bgSidebar },
+        {
+          borderColor: theme.border,
+          backgroundColor: theme.bgSidebar,
+          className: 'mobile-sidebar',
+        } as any,
       ]}
     >
       <Sidebar

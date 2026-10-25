@@ -133,7 +133,11 @@ export default function RootLayout() {
       document.createElement('style');
     el.id = id;
     el.textContent =
-      'html, body { height: 100% !important; overflow: hidden !important; margin: 0 !important; }';
+      'html, body { height: 100% !important; overflow: hidden !important; margin: 0 !important; }' +
+      // 📱 侧边栏：压住移动端浏览器（OPPO/ColorOS 等）的长按 callout 菜单。
+      //    RNW 不支持 -webkit-touch-callout，样式表里写 WebkitTouchCallout 会被丢掉，
+      //    所以只能在这里直接注入 CSS。user-select 一并禁掉（侧边栏是导航，不需要选中）。
+      '.mobile-sidebar, .mobile-sidebar * { -webkit-touch-callout: none !important; user-select: none !important; }';
     if (!el.parentElement) document.head.appendChild(el);
   }, []);
 
