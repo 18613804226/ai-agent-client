@@ -1,26 +1,52 @@
 diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
-index f463263..1b767a6 100644
+index f463263..64ac3b7 100644
 --- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
 +++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
-@@ -326,7 +326,7 @@ export function Drawer({
+@@ -326,7 +326,8 @@ export function Drawer({
                }) : null]
              }), /*#__PURE__*/_jsx(Animated.View, {
                animatedProps: drawerContentAnimatedProps,
 -              removeClippedSubviews: Platform.OS !== 'ios',
 +              removeClippedSubviews: false,
++              renderToHardwareTextureAndroid: true,
                style: [styles.drawer, {
                  width: drawerWidth,
                  position: drawerType === 'permanent' ? 'relative' : 'absolute'
+@@ -358,9 +359,7 @@ const styles = StyleSheet.create({
+       // FIXME: We need to hide `overflowX` on Web so the translated content doesn't show offscreen.
+       // But adding `overflowX: 'hidden'` prevents content from collapsing the URL bar.
+       web: null,
+-      default: {
+-        overflow: 'hidden'
+-      }
++      default: null
+     })
+   }
+ });
 diff --git a/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx b/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
-index 0c3e038..7d4173c 100644
+index 0c3e038..5868203 100644
 --- a/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
 +++ b/node_modules/react-native-drawer-layout/src/views/Drawer.native.tsx
-@@ -521,7 +521,7 @@ export function Drawer({
+@@ -521,7 +521,8 @@ export function Drawer({
                </Animated.View>
                <Animated.View
                  animatedProps={drawerContentAnimatedProps}
 -                removeClippedSubviews={Platform.OS !== 'ios'}
 +                removeClippedSubviews={false}
++                renderToHardwareTextureAndroid
                  style={[
                    styles.drawer,
                    {
+@@ -562,7 +563,11 @@ const styles = StyleSheet.create({
+       // FIXME: We need to hide `overflowX` on Web so the translated content doesn't show offscreen.
+       // But adding `overflowX: 'hidden'` prevents content from collapsing the URL bar.
+       web: null,
+-      default: { overflow: 'hidden' },
++      // LOCAL PATCH: do not clip on native. `overflow: 'hidden'` combined with a
++      // Reanimated-driven translateX leaves a background trail on Android (the
++      // vacated region is not repainted). The closed drawer is already off-screen,
++      // so the window bounds clip it anyway.
++      default: null,
+     }),
+   },
+ });

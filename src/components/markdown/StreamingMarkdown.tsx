@@ -101,16 +101,11 @@ function splitTailSegments(text: string): TailSeg[] {
   const lines = text.split('\n')
   const buf: string[] = []
   const flush = () => {
-    // 文本段末尾的空行只是「光标停在空行上」/ 与下一块的分隔符；最终渲染里
-    // 它们是段落边界、不产生空行。不裁掉的话尾巴会凭空多出空行，等它升级成
-    // 稳定块时又消失 → 高度跳一下。
-    // 段**内**的空行同理：最终渲染里 body 把连续段落合并进同一个 <Text>，
-    // 段落之间只有一个 `\n`（见 markdownRules 的 paragraph 规则），
-    // 所以 `A\n\nB` 必须按 `A\nB` 渲染，否则会多出一行、等切点落定又消失。
-    const t = buf
-      .join('\n')
-      .replace(/\n+$/, '')
-      .replace(/\n{2,}/g, '\n')
+    // 段**内**的空行必须原样保留：模型用空行分段是有意的语义（见 markdownRules
+    // 的 paragraph 规则 —— 块之间用 `\n\n`）。之前这里把它压成 `\n`，导致流式期
+    // 和最终态都把段落挤成一行，看起来就是「空白行被吃掉了」。
+    // 只有**末尾**的空行要裁：那只是「光标停在空行上」，最终渲染里也不产生空行。
+    const t = buf.join('\n').replace(/\n+$/, '')
     buf.length = 0
     if (t) segs.push({ kind: 'text', text: t })
   }
@@ -145,16 +140,40 @@ function splitTailSegments(text: string): TailSeg[] {
   return segs
 }
 
+/**
+ * 块之间的空行分隔符：一个独立的空行 <Text>（行高必须与正文一致，否则高度对不上）。
+ *
+ * 为什么需要它：最终渲染里 `body` 规则把连续的段落/标题/列表合并进**同一个**
+ * `<Text>`，块间距由它们的 `node.index > 0` 补 `\n\n` 实现。而流式侧的块是
+ * **各自独立的节点**（`StableMarkdown` / `TailText`），不补的话块间会被压成
+ * 一行 —— 等切点落定、或吐字结束切成最终态时又跳一次。
+ */
+const BlockSeparator = () => <Text style={styles.tail}>{'\n'}</Text>
+
+/** 稳定块/尾巴首段在最终渲染里**不会**补块间空行的情形：
+ *  代码块（fence/code_block → View）和分割线（hr → View）—— body 规则会把
+ *  View 从文本 run 里切出去，run 之前自然没有空行。流式侧必须同样不补，
+ *  否则两边行数对不上 → 切点落定/吐字结束时跳一下。
+ *  （引用块现在由 body 统一补空行，所以这里不再排除 `>`。） */
+const needsNoSeparator = (text: string) =>
+  /^\s*(```|~~~|([-*_])\s*(\2\s*){2,})/.test(text)
+
 const TailText = memo(function TailText({
   text,
   selectable,
   color,
-  style
+  style,
+  leadingSeparator = false
 }: {
   text: string
   selectable: boolean
   color: string
   style: any
+  /** 尾巴前面还有已落定的稳定块 → 补一个空行。
+   *  最终渲染里段落/标题/列表在 `index > 0` 时会补 `\n\n`，而流式侧的块是
+   *  **各自独立的节点**，不自己补的话块间会被压成一行，等切点落定/吐字结束
+   *  又跳一次。仅当尾巴的第一段是文本段时才补（代码块/分割线在最终渲染里不补）。 */
+  leadingSeparator?: boolean
 }) {
   // 不做节流：每 token 直接切。
   // ① 之前节流带来的「显示文本 vs 块结构」两个时钟，正是段落边界那一抽的根因；
@@ -179,6 +198,9 @@ const TailText = memo(function TailText({
 
   return (
     <View>
+      {leadingSeparator &&
+        tailSegs[0]?.kind === 'text' &&
+        !needsNoSeparator(tailSegs[0].text) && <BlockSeparator />}
       {tailSegs.map((seg, i) => {
         if (seg.kind === 'fence') {
           // 栅栏刚打开、还没吐到任何代码行：把起始行按**普通文本**渲染。
@@ -216,12 +238,12 @@ const TailText = memo(function TailText({
             : null
         // ⚠️ 这里必须用 styles.tail（= body 的字号/行高），**不能**用
         // style.paragraph：最终渲染里 body 规则会把连续段落合并进同一个 <Text>，
-        // 段落退化成内联子节点，`paragraph.marginBottom` 在那条链上不生效，
-        // 只有段前 `\n` 生效。尾巴若带上 marginBottom，升级成稳定块时会凭空
-        // 多出 8px —— 这正是「出代码块时抽一下」的来源之一。
-        // ⚠️ 也**不能**在段首补 `\n`：最终渲染里那个 `\n` 是同一个 <Text> 里的
-        // 换行，而尾巴是**另一个** <Text>，再补一个 `\n` 就凭空多一个空行
-        //（+24px），等尾巴升级成稳定块时又消失 —— 高度跳一下。
+        // 段落退化成内联子节点，`paragraph.marginBottom` 在那条链上不生效。
+        // 尾巴若带上 marginBottom，升级成稳定块时会凭空多出 8px —— 这正是
+        //「出代码块时抽一下」的来源之一。
+        // ⚠️ 段间空行也不能在**段首**内联补 `\n`：最终渲染里那个 `\n\n` 在同一个
+        // <Text> 里，而尾巴是**另一个** <Text>，内联补会造成行数对不上。
+        // 块间空行由外层的 <BlockSeparator /> 统一补（一个独立的空行 Text）。
         return (
           <Text
             key={`t${i}`}
@@ -329,18 +351,21 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   return (
     <View>
       {blocks.map((block, i) => (
-        <StableMarkdown
-          key={`md-${i}`}
-          text={block}
-          style={style}
-          rules={rules}
-        />
+        <React.Fragment key={`md-${i}`}>
+          {i > 0 && !needsNoSeparator(block) && <BlockSeparator />}
+          <StableMarkdown
+            text={block}
+            style={style}
+            rules={rules}
+          />
+        </React.Fragment>
       ))}
       <TailText
         text={tail}
         selectable={selectable}
         color={color}
         style={style}
+        leadingSeparator={blocks.length > 0}
       />
     </View>
   )
