@@ -59,7 +59,7 @@
     "android": "expo run:android",
     "android:release": "node scripts/android-release.mjs",
     "android:cloud": "eas build --platform android --profile production",
-    "ota": "eas update --channel production --environment production",
+    "ota": "eas update --channel production --environment production --auto --non-interactive",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "postinstall": "patch-package && node scripts/trim-icon-fonts.mjs"
