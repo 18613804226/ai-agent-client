@@ -22,11 +22,11 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useFrameCallback,
-  runOnUI,
   withTiming,
   Easing,
   scrollTo as scrollToWorklet
 } from 'react-native-reanimated'
+import { scheduleOnUI } from 'react-native-worklets'
 import { FlashList, type FlashListRef } from '@shopify/flash-list'
 import { useChat } from '../context/appContexts'
 import { useStreamingRenderMsg } from '../context/appContexts'
@@ -621,22 +621,30 @@ export default function ChatArea({
             0,
             pinTargetBaseRef.current + (expanding ? height : -height)
           )
-          runOnUI((sv: any, target: number) => {
-            'worklet'
-            if (sv.value < 0) return
-            sv.value = withTiming(target, {
-              duration: 250,
-              easing: Easing.bezier(0.25, 0.1, 0.5, 1)
-            })
-          })(pinTargetSV, pinTargetBaseRef.current)
+          scheduleOnUI(
+            (sv: any, target: number) => {
+              'worklet'
+              if (sv.value < 0) return
+              sv.value = withTiming(target, {
+                duration: 250,
+                easing: Easing.bezier(0.25, 0.1, 0.5, 1)
+              })
+            },
+            pinTargetSV,
+            pinTargetBaseRef.current
+          )
         }
       } else if (!expanding) {
         // 下方折叠：内容在动画末尾才缩 H，先立即补 H 留白防 maxScroll 掉到 target 以下
         manualSpacerBaseRef.current += height
-        runOnUI((sv: any, m: number) => {
-          'worklet'
-          sv.value = m
-        })(manualSpacerSV, manualSpacerBaseRef.current)
+        scheduleOnUI(
+          (sv: any, m: number) => {
+            'worklet'
+            sv.value = m
+          },
+          manualSpacerSV,
+          manualSpacerBaseRef.current
+        )
       }
 
       // 动画结束后只做一次原子汇总：重算目标 + 把 manual 折算进精确 spacer
@@ -660,11 +668,17 @@ export default function ChatArea({
             manualSpacerBaseRef.current = 0
             pinTargetSV.value = target
             pinTargetBaseRef.current = target
-            runOnUI((msp: any, ssp: any, m: number, s: number) => {
-              'worklet'
-              msp.value = m
-              ssp.value = s
-            })(manualSpacerSV, spacerSV, 0, exact)
+            scheduleOnUI(
+              (msp: any, ssp: any, m: number, s: number) => {
+                'worklet'
+                msp.value = m
+                ssp.value = s
+              },
+              manualSpacerSV,
+              spacerSV,
+              0,
+              exact
+            )
           } else {
             pinTargetSV.value = target
             pinTargetBaseRef.current = target
@@ -873,10 +887,14 @@ export default function ChatArea({
 
   /** 「回到底部」（UI 线程）：滚到真实 maxScroll，animated=true 才有平滑动画 */
   const scrollToBottomUI = useCallback(() => {
-    runOnUI((animatedRef: any, maxSV: any) => {
-      'worklet'
-      scrollToWorklet(animatedRef, 0, Math.max(0, maxSV.value), true)
-    })(scrollViewRef, outerMaxSV)
+    scheduleOnUI(
+      (animatedRef: any, maxSV: any) => {
+        'worklet'
+        scrollToWorklet(animatedRef, 0, Math.max(0, maxSV.value), true)
+      },
+      scrollViewRef,
+      outerMaxSV
+    )
   }, [scrollViewRef, outerMaxSV])
 
   /** FlashList 只在这些值变化时需要重算 cell；流式内容通过 data 本身更新 */
