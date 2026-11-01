@@ -112,14 +112,6 @@ export const chatMessageStyles = StyleSheet.create({
     fontStyle: 'italic',
     opacity: 0.6
   },
-  /**
-   * 气泡的纵向容器。
-   * 气泡自身的 alignSelf 决定左右归属（用户右、AI 左），这里只负责竖排。
-   */
-  bubbleColumn: {
-    flexDirection: 'column',
-    maxWidth: '100%' as const
-  }
 })
 
 /**
