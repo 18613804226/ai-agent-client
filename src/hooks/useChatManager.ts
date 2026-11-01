@@ -92,6 +92,8 @@ export function useChatManager() {
    * enqueue 也不会再唤醒），表现就是新消息一直「思考中...」。
    */
   const streamEpochRef = useRef(0)
+  /** 本轮流式开始时间戳：用于消息下方的「耗时」展示 */
+  const streamStartedAtRef = useRef(0)
   /** handleSend 轮次令牌：旧轮的 finally 不允许覆盖新一轮的状态 */
   const sendRunRef = useRef(0)
   /**
@@ -477,7 +479,13 @@ export function useChatManager() {
   const updateAiMessageFields = useCallback(
     (
       msgId: string,
-      fields: { content?: string; thought?: string; systemNote?: boolean }
+      fields: {
+        content?: string
+        thought?: string
+        systemNote?: boolean
+        tokens?: number
+        durationMs?: number
+      }
     ) => {
       setConversations((prev) =>
         prev.map((conv) => {
@@ -559,11 +567,13 @@ export function useChatManager() {
 
         const thought = currentThoughtRef.current
         const content = currentContentRef.current
+        const durationMs = Date.now() - streamStartedAtRef.current
 
         if (thought || content) {
           updateAiMessageFields(targetMsgId, {
             thought: thought || undefined,
-            content
+            content,
+            durationMs
           })
         } else {
           // 空回复必须写成一条系统标记行，不能留空 content：
@@ -572,7 +582,8 @@ export function useChatManager() {
           // 只回 thought、subject$.error 等情况都会走到这里）。
           updateAiMessageFields(targetMsgId, {
             content: '（模型未返回内容）',
-            systemNote: true
+            systemNote: true,
+            durationMs
           })
         }
 
@@ -743,6 +754,14 @@ export function useChatManager() {
         setStreamingRenderMsg(null)
         streamFinishedRef.current = true
         return
+      } else if (payload.type === 'done') {
+        // 本轮结束：把 token / 模型挂到消息上（耗时在吐字收尾时统一算）
+        const tokens =
+          typeof payload.tokens === 'number' ? payload.tokens : undefined
+        updateAiMessageFields(currentStreamingMsgIdRef.current, {
+          ...(tokens !== undefined ? { tokens } : {})
+        })
+        return
       } else if (payload.type === 'sources') {
         return // 引用来源帧：暂不渲染
       } else {
@@ -770,6 +789,7 @@ export function useChatManager() {
     // 重置状态
     resetTypewriter()
     currentStreamingMsgIdRef.current = thinkingMsgId
+    streamStartedAtRef.current = Date.now()
     setStreamingRenderMsg(null)
 
     // 本轮流的世代号：中途被中止/被新一轮顶替后，旧流残片一律丢弃，

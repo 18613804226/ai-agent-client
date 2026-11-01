@@ -15,6 +15,10 @@ export interface Message {
    * 历史会话重载后端不返回该字段，行自然消失（本地会话期内有效）。
    */
   attachments?: PickedAttachment[];
+  /** 本轮消耗的 token 数（来自服务端 done 事件；拿不到时不展示） */
+  tokens?: number;
+  /** 本轮耗时（毫秒，客户端从发送到流结束计时） */
+  durationMs?: number;
 }
 
 export interface ThemeType {

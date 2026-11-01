@@ -18,6 +18,17 @@ import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageIte
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
 
+/** 耗时格式化：<1s 显示 ms，<60s 显示 X.Xs，否则 m:ss */
+function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)}s`
+  const m = Math.floor(s / 60)
+  const sec = Math.round(s % 60)
+  return `${m}m${sec}s`
+}
+
 // ===================== ChatMessageItem =====================
 const ChatMessageItem = memo(
   ({
@@ -181,6 +192,21 @@ const ChatMessageItem = memo(
         ? normalizeInlineEmphasis(item.content.trimEnd())
         : ''
 
+    /**
+     * 气泡下方小字：耗时 · tokens。
+     * 任一侧有值才展示（拿不到 tokens 的老后端只显示耗时，反之只显示 tokens）。
+     */
+    const metaText = (() => {
+      if (isUser) return ''
+      const parts: string[] = []
+      if (item.durationMs != null) {
+        const d = formatDurationMs(item.durationMs)
+        if (d) parts.push(`耗时 ${d}`)
+      }
+      if (item.tokens != null) parts.push(`${item.tokens} tokens`)
+      return parts.join(' · ')
+    })()
+
     const bubbleStyle = useMemo(
       () => [
         chatMessageStyles.bubble,
@@ -326,107 +352,123 @@ const ChatMessageItem = memo(
               ) : null}
             </View>
           ) : (
-            <View style={bubbleStyle}>
-              {isThinking ? (
-                <View style={chatMessageStyles.thinkingContainer}>
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.textMuted}
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text
-                    style={[
-                      chatMessageStyles.messageText,
-                      { color: theme.textMuted, fontStyle: 'italic' }
-                    ]}
-                  >
-                    思考中...
-                  </Text>
-                </View>
-              ) : isUser ? (
-                item.content ? (
-                  <Text
-                    selectable={textSelectable}
-                    style={[
-                      chatMessageStyles.messageText,
-                      { color: theme.bubbleUserText }
-                    ]}
-                  >
-                    {item.content}
-                  </Text>
-                ) : null
-              ) : (
-                <View>
-                  {hasThought ? (
-                    <ThoughtCollapsible
-                      thought={item.thought!}
-                      theme={theme}
-                       isStreaming={isStreaming}
-                       onToggle={
-                         onThoughtToggle
-                           ? (expanding, height) =>
-                               onThoughtToggle(item.id, expanding, height)
-                           : undefined
-                       }
-                     />
-                  ) : null}
-
-                  {/* 流式正文：两端统一用**段落级增量 markdown**（StreamingMarkdown）——
-                    已成形的段落被 StableMarkdown memo 住，每帧只有「还在长的那一段尾巴」
-                    重新解析 + 重排，所以成本是有界的；而且与结束后用的是同一套
-                    markdown 渲染 + 同一套样式 ⇒
-                      ① 吐字期就能看到粗体/代码块/列表/表格，不再是 `**原文**`、
-                        未被识别的 ``` 围栏；
-                      ② 吐字结束不再「换渲染器 + 行高 22→24」地跳高度。
-                    原生端之所以过去走纯 Text，是怕「JS 线程解析 markdown + 重建节点」
-                    拖慢吐字（那时还要靠贴底补帧，掉一帧就看得见）。现在 inverted 布局下
-                    底部是自动的、不需要任何滚动命令，这份成本只影响吐字流畅度本身，
-                    且有 memo 兜底，所以在原生上也直接渲染 markdown。 */}
-                  {isStreaming ? (
-                    // 月球自转是正文 <Text> 末尾的月相 emoji 内联节点（见 StreamingMarkdown），
-                    // 纯文本不依赖 transform → 安卓也稳，且严格贴着最后一个字、随文字换行。
-                    <StreamingMarkdown
-                      content={item.content || ''}
-                      style={dynamicMarkdownStyles}
-                      selectable={textSelectable}
-                      rules={
-                        // 与「结束后」保持同一套规则：风格不变、选中能力也不变
-                        Platform.OS === 'web'
-                          ? webMarkdownRules
-                          : textSelectable
-                            ? selectableMarkdownRules
-                            : nonSelectableMarkdownRules
-                      }
+            <View style={chatMessageStyles.bubbleColumn}>
+              <View style={bubbleStyle}>
+                {isThinking ? (
+                  <View style={chatMessageStyles.thinkingContainer}>
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.textMuted}
+                      style={{ marginRight: 8 }}
                     />
-                  ) : (
-                    <Markdown
-                      style={dynamicMarkdownStyles}
-                      rules={
-                        // Web：用自定义规则（含复制按钮）；原生：沿用单一可选文本树
-                        Platform.OS === 'web'
-                          ? webMarkdownRules
-                          : textSelectable
-                            ? selectableMarkdownRules
-                            : nonSelectableMarkdownRules
-                      }
+                    <Text
+                      style={[
+                        chatMessageStyles.messageText,
+                        { color: theme.textMuted, fontStyle: 'italic' }
+                      ]}
                     >
-                      {renderContent}
-                    </Markdown>
-                  )}
-                </View>
-              )}
+                      思考中...
+                    </Text>
+                  </View>
+                ) : isUser ? (
+                  item.content ? (
+                    <Text
+                      selectable={textSelectable}
+                      style={[
+                        chatMessageStyles.messageText,
+                        { color: theme.bubbleUserText }
+                      ]}
+                    >
+                      {item.content}
+                    </Text>
+                  ) : null
+                ) : (
+                  <View>
+                    {hasThought ? (
+                      <ThoughtCollapsible
+                        thought={item.thought!}
+                        theme={theme}
+                        isStreaming={isStreaming}
+                        onToggle={
+                          onThoughtToggle
+                            ? (expanding, height) =>
+                                onThoughtToggle(item.id, expanding, height)
+                            : undefined
+                        }
+                      />
+                    ) : null}
 
-              {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动 */}
-              {!isUser && hasContent && (
-                <MessageActions
-                  content={item.content}
-                  messageId={item.id}
-                  theme={theme}
-                  isPlaying={isPlaying}
-                  onPlayingChange={setPlayingMsgId}
-                  ready={!isStreaming}
-                />
-              )}
+                    {/* 流式正文：两端统一用**段落级增量 markdown**（StreamingMarkdown）——
+                      已成形的段落被 StableMarkdown memo 住，每帧只有「还在长的那一段尾巴」
+                      重新解析 + 重排，所以成本是有界的；而且与结束后用的是同一套
+                      markdown 渲染 + 同一套样式 ⇒
+                        ① 吐字期就能看到粗体/代码块/列表/表格，不再是 `**原文**`、
+                          未被识别的 ``` 围栏；
+                        ② 吐字结束不再「换渲染器 + 行高 22→24」地跳高度。
+                      原生端之所以过去走纯 Text，是怕「JS 线程解析 markdown + 重建节点」
+                      拖慢吐字（那时还要靠贴底补帧，掉一帧就看得见）。现在 inverted 布局下
+                      底部是自动的、不需要任何滚动命令，这份成本只影响吐字流畅度本身，
+                      且有 memo 兜底，所以在原生上也直接渲染 markdown。 */}
+                    {isStreaming ? (
+                      // 月球自转是正文 <Text> 末尾的月相 emoji 内联节点（见 StreamingMarkdown），
+                      // 纯文本不依赖 transform → 安卓也稳，且严格贴着最后一个字、随文字换行。
+                      <StreamingMarkdown
+                        content={item.content || ''}
+                        style={dynamicMarkdownStyles}
+                        selectable={textSelectable}
+                        rules={
+                          // 与「结束后」保持同一套规则：风格不变、选中能力也不变
+                          Platform.OS === 'web'
+                            ? webMarkdownRules
+                            : textSelectable
+                              ? selectableMarkdownRules
+                              : nonSelectableMarkdownRules
+                        }
+                      />
+                    ) : (
+                      <Markdown
+                        style={dynamicMarkdownStyles}
+                        rules={
+                          // Web：用自定义规则（含复制按钮）；原生：沿用单一可选文本树
+                          Platform.OS === 'web'
+                            ? webMarkdownRules
+                            : textSelectable
+                              ? selectableMarkdownRules
+                              : nonSelectableMarkdownRules
+                        }
+                      >
+                        {renderContent}
+                      </Markdown>
+                    )}
+                  </View>
+                )}
+
+                {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动 */}
+                {!isUser && hasContent && (
+                  <MessageActions
+                    content={item.content}
+                    messageId={item.id}
+                    theme={theme}
+                    isPlaying={isPlaying}
+                    onPlayingChange={setPlayingMsgId}
+                    ready={!isStreaming}
+                  />
+                )}
+              </View>
+
+              {/* 气泡下方小字：耗时 · tokens（任一侧有值才展示） */}
+              {metaText ? (
+                <View style={chatMessageStyles.metaRow}>
+                  <Text
+                    style={[
+                      chatMessageStyles.metaText,
+                      { color: theme.textMuted }
+                    ]}
+                  >
+                    {metaText}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           )}
         </View>
@@ -441,6 +483,8 @@ const ChatMessageItem = memo(
     prev.isStreaming === next.isStreaming &&
     prev.isLast === next.isLast &&
     prev.item.systemNote === next.item.systemNote &&
+    prev.item.tokens === next.item.tokens &&
+    prev.item.durationMs === next.item.durationMs &&
     prev.isPlaying === next.isPlaying &&
     prev.onPreviewImage === next.onPreviewImage &&
     prev.onPreviewFile === next.onPreviewFile &&
