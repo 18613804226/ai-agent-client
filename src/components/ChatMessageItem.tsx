@@ -452,23 +452,10 @@ const ChatMessageItem = memo(
                     isPlaying={isPlaying}
                     onPlayingChange={setPlayingMsgId}
                     ready={!isStreaming}
+                    metaText={metaText}
                   />
                 )}
               </View>
-
-              {/* 气泡下方小字：耗时 · tokens（任一侧有值才展示） */}
-              {metaText ? (
-                <View style={chatMessageStyles.metaRow}>
-                  <Text
-                    style={[
-                      chatMessageStyles.metaText,
-                      { color: theme.textMuted }
-                    ]}
-                  >
-                    {metaText}
-                  </Text>
-                </View>
-              ) : null}
             </View>
           )}
         </View>

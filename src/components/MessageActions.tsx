@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Platform,
   StyleSheet,
+  Text,
   View,
 } from 'react-native';
 import { HoverTouchable } from './HoverTouchable';
@@ -31,6 +32,8 @@ interface MessageActionsProps {
   onPlayingChange: (id: string | null) => void;
   /** 吐字未完成时为 false：只占位不响应点击，避免布局跳动 */
   ready?: boolean;
+  /** 操作行左侧的小字（耗时 / tokens）；为空则不占位 */
+  metaText?: string;
 }
 
 const CopyIcon = ({ color, size = 14 }: { color: string; size?: number }) => (
@@ -82,6 +85,7 @@ const MessageActions = memo(
     isPlaying = false,
     onPlayingChange,
     ready = true,
+    metaText,
   }: MessageActionsProps) {
     // 三个视觉状态：
     //   喇叭（未读） → 点击后「转圈」（正在请求/合成，还没出声）→ 「停止」（第一个音频真的开播）。
@@ -150,6 +154,18 @@ const MessageActions = memo(
           { pointerEvents: ready ? 'auto' : 'none' },
         ]}
       >
+        {/* 耗时 / tokens：靠左，把右侧两个按钮顶到行尾 */}
+        {metaText ? (
+          <View style={styles.meta}>
+            <Text
+              numberOfLines={1}
+              style={[styles.metaText, { color: theme.textMuted }]}
+            >
+              {metaText}
+            </Text>
+          </View>
+        ) : null}
+
         {/* 复制：hover 底色由 HoverTouchable 统一处理；颜色固定 textMuted */}
         <View style={styles.item}>
           <HoverTouchable
@@ -206,7 +222,8 @@ const MessageActions = memo(
     prev.messageId === next.messageId &&
     prev.theme === next.theme &&
     prev.isPlaying === next.isPlaying &&
-    prev.ready === next.ready,
+    prev.ready === next.ready &&
+    prev.metaText === next.metaText,
 );
 
 export default MessageActions;
@@ -220,6 +237,16 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   hidden: { opacity: 0 },
+  /** 左侧小字容器：auto 右外边距把按钮组顶到行尾，长文本可收缩 */
+  meta: {
+    marginRight: 'auto' as const,
+    flexShrink: 1,
+    paddingRight: 8,
+  },
+  metaText: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
   item: { marginLeft: 4 },
   btn: {
     width: ACTION_BTN_SIZE,

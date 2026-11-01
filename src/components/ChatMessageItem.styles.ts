@@ -113,25 +113,12 @@ export const chatMessageStyles = StyleSheet.create({
     opacity: 0.6
   },
   /**
-   * 气泡 + 气泡下方小字（耗时 / tokens）的纵向容器。
+   * 气泡的纵向容器。
    * 气泡自身的 alignSelf 决定左右归属（用户右、AI 左），这里只负责竖排。
    */
   bubbleColumn: {
     flexDirection: 'column',
     maxWidth: '100%' as const
-  },
-  /** 气泡下方的「耗时 · tokens」小字行 */
-  metaRow: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 1
-  },
-  metaText: {
-    fontSize: 11,
-    lineHeight: 16,
-    opacity: 0.7
   }
 })
 
