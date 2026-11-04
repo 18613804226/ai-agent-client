@@ -725,9 +725,24 @@ function ChatInputBar({
           styles.inputBar,
           {
             backgroundColor: theme.bgApp,
-            borderColor: theme.isDark
-              ? 'rgba(255,255,255,0.14)'
-              : 'rgba(0,0,0,0.12)',
+            // Web：输入栏底色与页面底色相同，边框必须更高对比，
+            // 否则整条输入框会「融进背景」看不出边界。
+            borderColor: isWeb
+              ? theme.isDark
+                ? 'rgba(255,255,255,0.22)'
+                : 'rgba(0,0,0,0.22)'
+              : theme.isDark
+                ? 'rgba(255,255,255,0.14)'
+                : 'rgba(0,0,0,0.12)',
+            // Web 再加一圈极轻的投影，白底上勾勒"浮起"的边界；
+            // 原生端不要投影（见 styles.inputBar 注释：白底+阴影显脏）。
+            ...(isWeb
+              ? {
+                  boxShadow: theme.isDark
+                    ? '0 2px 8px rgba(0,0,0,0.45)'
+                    : '0 2px 8px rgba(0,0,0,0.08)'
+                }
+              : null),
             marginBottom: INPUT_BAR.pillPanelGap
           }
         ]}

@@ -14,15 +14,18 @@ import { Animated, Easing } from 'react-native'
  */
 
 /** 墨晕覆盖的字数 */
-export const INK_TAIL = 5
+export const INK_TAIL = 10
 /** 墨晕起始半径（收干到 0） */
 const INK_RADIUS = 8
 /** 墨晕起始透明度（随收干衰减） */
 const INK_ALPHA = 0.45
-/** 淡入起点：文字从多"虚"开始（0=完全透明，1=全实） */
-const INK_OPACITY_FROM = 0.1
+/** 淡入起点：文字颜色的 alpha（0=全透明，1=实色）
+ *  ⚠️ 必须用颜色的 alpha 而不是 style.opacity：
+ *  Android 的内联 Text span 不支持 opacity/textShadow，
+ *  只有 color 是逐 span 生效的三端通用属性。 */
+const INK_COLOR_ALPHA_FROM = 0.12
 /** 淡入时长 */
-const INK_DURATION = 200
+const INK_DURATION = 240
 
 function parseRgb(color: string): [number, number, number] {
   const m6 = /^#([0-9a-f]{6})$/i.exec(color)
@@ -76,12 +79,16 @@ const InkTail = ({
       selectable={selectable}
       style={[
         baseStyle,
-        { color },
         {
-          opacity: progress.interpolate({
+          // 主体：颜色 alpha 从"淡墨"收成实色（Android 内联 span 唯一可靠通道）
+          color: progress.interpolate({
             inputRange: [0, 1],
-            outputRange: [INK_OPACITY_FROM, 1]
+            outputRange: [
+              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${INK_COLOR_ALPHA_FROM})`,
+              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},1)`
+            ]
           }),
+          // 辅助：iOS/Web 上额外的湿墨晕（Android 忽略，不影响主效果）
           textShadowRadius: progress.interpolate({
             inputRange: [0, 1],
             outputRange: [INK_RADIUS, 0]

@@ -43,13 +43,25 @@ console.log(`[release] EXPO_PUBLIC_API_URL=${process.env.EXPO_PUBLIC_API_URL}`);
 
 if (process.argv.includes('--dry-run')) process.exit(0);
 
-run('npx', ['expo', 'prebuild', '--clean', '--platform', 'android', '--no-install']);
+// 快构建：SKIP_PREBUILD=1 时复用现有 android/，不重新生成原生工程。
+// 纯 JS 改动不需要 prebuild；只有改了 app.json、插件、原生依赖时才要跑。
+// （prebuild --clean 会删掉 android/，让所有原生缓存失效，是重复打包最大的一笔开销）
+const skipPrebuild =
+  process.env.SKIP_PREBUILD === '1' && fs.existsSync(path.join(root, 'android'));
+
+if (skipPrebuild) {
+  console.log('[release] SKIP_PREBUILD=1 → 复用现有 android/');
+} else {
+  run('npx', ['expo', 'prebuild', '--clean', '--platform', 'android', '--no-install']);
+}
 run('node', ['scripts/ensure-android-sdk.mjs']);
 fs.copyFileSync('release.keystore', path.join('android', 'app', 'release.keystore'));
 run('node', ['scripts/patch-android-signing.mjs']);
+
 run(
   // ".\" 前缀必需:NoDefaultCurrentDirectoryInExePath=1 时 cmd 不从当前目录解析裸 gradlew.bat
+  // 不再用 --no-daemon：每次 fork 一个一次性 JVM 会白付配置/预热成本，且失去增量编译。
   isWindows ? '.\\gradlew.bat' : './gradlew',
-  ['assembleRelease', '--no-daemon', '-PreactNativeArchitectures=arm64-v8a'],
+  ['assembleRelease', '-PreactNativeArchitectures=arm64-v8a'],
   { cwd: path.join(root, 'android') },
 );
