@@ -1312,9 +1312,11 @@ export function useChatManager() {
           bumpLocalUsage()
           refreshMyDevice()
         }
-        // 吐字结束的轻触提示：100ms 在多数安卓机上是明显的「重震」，
-        // 收到 15ms 左右只剩一个很轻的 tick（iOS 忽略时长参数，仍为系统默认震动）。
-        Vibration.vibrate(Platform.OS === 'android' ? 15 : 0)
+        // 吐字结束的轻触提示：Android 无振幅控制，只能靠缩短时长调轻。
+        // 100ms 是明显重震；15ms 已是短 tick，但部分机型默认强度仍偏强，
+        // 收窄到 8ms（再低到 5ms 部分机型会直接忽略）。
+        // iOS 忽略时长参数、走系统默认震动（要更轻需 expo-haptics，原生依赖只随包生效）。
+        Vibration.vibrate(Platform.OS === 'android' ? 8 : 0)
       }
     }
     return true

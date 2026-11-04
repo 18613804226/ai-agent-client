@@ -15,15 +15,15 @@ import Animated, {
  */
 
 /** 墨晕覆盖的字数 */
-export const INK_TAIL = 5
+export const INK_TAIL = 10
 /** 墨晕起始半径（收干到 0） */
-const INK_RADIUS = 8
+const INK_RADIUS = 9
 /** 墨晕起始透明度（随收干衰减） */
 const INK_ALPHA = 0.45
 /** 淡入起点：文字从多"虚"开始（0=完全透明，1=全实） */
 const INK_OPACITY_FROM = 0.1
 /** 淡入时长 */
-const INK_DURATION = 200
+const INK_DURATION = 260
 
 function parseRgb(color: string): [number, number, number] {
   const m6 = /^#([0-9a-f]{6})$/i.exec(color)
