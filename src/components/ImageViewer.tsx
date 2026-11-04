@@ -17,7 +17,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { InputBarIcon } from './InputBarIcon';
 import {
   Gesture,
   GestureDetector,
@@ -425,7 +425,7 @@ export default function ImageViewer({
                 Platform.OS === "web" ? ({ cursor: "pointer" } as any) : null,
               ]}
             >
-              <Feather name="x" size={20} color="#ffffff" />
+              <InputBarIcon name="x" size={20} color="#ffffff" />
             </Pressable>
           </View>
 

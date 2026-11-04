@@ -133,7 +133,11 @@ export default function RootLayout() {
       document.createElement('style');
     el.id = id;
     el.textContent =
-      'html, body { height: 100% !important; overflow: hidden !important; margin: 0 !important; font-family: "PingFang SC", "Microsoft YaHei", "微软雅黑", Arial, sans-serif !important; }' +
+      'html, body { height: 100% !important; overflow: hidden !important; margin: 0 !important; }' +
+      // ⚠️ 全局默认字体不能加 !important：图标字体（feather / material-design-icons）
+      //    由 @expo/vector-icons 以 inline fontFamily 写在 <Text> 上，
+      //    !important 会压过 inline 样式 → 图标渲染成「?」/ 豆腐块。
+      'html, body { font-family: "PingFang SC", "Microsoft YaHei", "微软雅黑", Arial, sans-serif; }' +
       // 📱 侧边栏：压住移动端浏览器（OPPO/ColorOS 等）的长按 callout 菜单。
       //    RNW 不支持 -webkit-touch-callout，样式表里写 WebkitTouchCallout 会被丢掉，
       //    所以只能在这里直接注入 CSS。user-select 一并禁掉（侧边栏是导航，不需要选中）。

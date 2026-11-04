@@ -24,6 +24,7 @@ import Animated, {
   Easing
 } from 'react-native-reanimated'
 import type { ThemeType } from '../types/chat'
+import { InkTailText } from './markdown/inkTail'
 
 interface ThoughtCollapsibleProps {
   thought: string
@@ -245,7 +246,16 @@ const ThoughtCollapsible = memo(
                     { color: theme.textMuted, marginTop: 4 }
                   ]}
                 >
-                  {thought}
+                  {/* 流式期间：末尾挂「墨洇」，与正文一致；结束落定后回退纯文本 */}
+                  {isStreaming ? (
+                    <InkTailText
+                      text={thought}
+                      color={theme.textMuted}
+                      baseStyle={styles.thoughtContent}
+                    />
+                  ) : (
+                    thought
+                  )}
                 </Text>
               </Animated.View>
             </GestureDetector>

@@ -53,4 +53,11 @@ export interface ChatAreaProps {
   keyboardHeightSV?: any;
   /** 键盘进度 0..1（UI 线程），用于补偿底部小字折叠的高度 */
   keyboardProgressSV?: any;
+  /**
+   * 输入栏悬浮层高度（px）。列表内容一直铺到屏幕底边（不再给悬浮层预留位置），
+   * 所以悬浮元素（如「回到底部」按钮）要自己抬高到这个高度之上才不会被遮住。
+   */
+  bottomInset?: number;
+  /** 作为 FlashList 底部内容占位的悬浮栏高度，不改变列表视口尺寸。 */
+  bottomContentInset?: number;
 }

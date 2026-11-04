@@ -1,10 +1,11 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 import Markdown, { RenderRules } from 'react-native-markdown-display'
-import {
+import Animated, {
   cancelAnimation,
   Easing,
   useAnimatedReaction,
+  useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming
@@ -18,6 +19,7 @@ import {
   type InlineSeg
 } from '../../utils/emphasisSplit'
 import { MONO_FONT, CodeCopyButton } from './markdownRules'
+import { InkTailText } from './inkTail'
 
 /**
  * 已成形段落：props 只有字符串 + 两个稳定引用，内容不变时 memo 直接跳过，
@@ -38,6 +40,35 @@ const StableMarkdown = memo(function StableMarkdown({
     </Markdown>
   )
 })
+
+/**
+ * 段落落定浮现（②）：tail 升级成稳定块的**那一刻**首次挂载，播一次短淡入。
+ * 之后内容不再变化 → 内部 StableMarkdown 靠 memo 跳过后续重渲染，
+ * 外层淡入也只在挂载时跑一次（effect 只依赖 p），不随每 token 重播。
+ */
+function BlockFadeIn({
+  text,
+  style,
+  rules
+}: {
+  text: string
+  style: any
+  rules: RenderRules
+}) {
+  const p = useSharedValue(0)
+  useEffect(() => {
+    p.value = withTiming(1, {
+      duration: 150,
+      easing: Easing.out(Easing.quad)
+    })
+  }, [p])
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: p.value }))
+  return (
+    <Animated.View style={fadeStyle}>
+      <StableMarkdown text={text} style={style} rules={rules} />
+    </Animated.View>
+  )
+}
 
 /** 月相序列：一轮「新→满→新」，视觉上是月球自转、暗面逐片扫过 */
 const PHASES = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘']
@@ -71,6 +102,15 @@ const InlineMoonPhase = memo(function InlineMoonPhase() {
 
   return <Text style={styles.inlineMoon}>{PHASES[i]}</Text>
 })
+
+/**
+ * 尾部「墨洇」新字（共享实现见 ./inkTail）：
+ * 只包住流式尾巴的最后几个字，随长度变化换 key 重挂，每次挂载播一段
+ * 由虚到实的淡入 + 墨晕收敛（textShadow 半径/透明度 → 0）。
+ * 前缀保持普通字符串子节点不动，整个流式期间多出来的动画节点始终只有这几字符。
+ * ⚠️ textShadow 颜色取「文字色」的低透明度晕（墨还没干透的感觉），
+ *    不取背景色：本项目深浅两套主题，气泡底色在 markdown 这一层拿不到。
+ */
 
 /**
  * 流式尾巴切块：文本段 / 代码栅栏段。
@@ -236,6 +276,17 @@ const TailText = memo(function TailText({
           hasInlineMarkup(seg.text) && seg.text
             ? splitInlineSegments(seg.text)
             : null
+        // 纯文本尾巴挂「墨洇新字」淡入（①）；内联强调段保持原样（style 是从
+        // markdown 规则里来的，拆字动画只做在无样式叶子上，避免动 strong/em）
+        const plainBody = !segInline ? (
+          <InkTailText
+            text={seg.text}
+            color={color}
+            baseStyle={styles.tail}
+            selectable={selectable}
+            segIndex={i}
+          />
+        ) : null
         // ⚠️ 这里必须用 styles.tail（= body 的字号/行高），**不能**用
         // style.paragraph：最终渲染里 body 规则会把连续段落合并进同一个 <Text>，
         // 段落退化成内联子节点，`paragraph.marginBottom` 在那条链上不生效。
@@ -252,7 +303,7 @@ const TailText = memo(function TailText({
           >
             {segInline
               ? segInline.map((s, j) => renderSeg(s, `s${i}.${j}`))
-              : seg.text}
+              : plainBody}
             {i === lastTextIdx && <InlineMoonPhase />}
           </Text>
         )
@@ -353,11 +404,7 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
       {blocks.map((block, i) => (
         <React.Fragment key={`md-${i}`}>
           {i > 0 && !needsNoSeparator(block) && <BlockSeparator />}
-          <StableMarkdown
-            text={block}
-            style={style}
-            rules={rules}
-          />
+          <BlockFadeIn text={block} style={style} rules={rules} />
         </React.Fragment>
       ))}
       <TailText

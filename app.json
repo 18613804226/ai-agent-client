@@ -18,6 +18,7 @@
     "android": {
       "softwareKeyboardLayoutMode": "pan",
       "package": "com.dietai.agent",
+      "versionCode": 8,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/icon-1024-padded.png"

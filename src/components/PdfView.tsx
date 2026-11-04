@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native'
-import { Feather } from '@expo/vector-icons'
+import { InputBarIcon } from './InputBarIcon'
 
 export interface PdfViewProps {
   /** 可用的 PDF 地址：原生是 file://（选中时拷贝进缓存的路径）或 https */
@@ -120,7 +120,7 @@ export default function PdfView({ src, title, theme }: PdfViewProps) {
   if (!pdf) {
     return (
       <View style={styles.center}>
-        <Feather name="alert-circle" size={52} color={theme.textMuted} />
+        <InputBarIcon name="alert-circle" size={52} color={theme.textMuted} />
         <Text style={[styles.errTitle, { color: theme.textMain }]}>
           当前版本未内置 PDF 预览
         </Text>
@@ -138,7 +138,7 @@ export default function PdfView({ src, title, theme }: PdfViewProps) {
   if (!path) {
     return (
       <View style={styles.center}>
-        <Feather name="file-text" size={52} color={theme.textMuted} />
+        <InputBarIcon name="file-text" size={52} color={theme.textMuted} />
         <Text style={[styles.hint, { color: theme.textMuted }]}>
           仅支持本地 PDF 预览
         </Text>
@@ -176,7 +176,7 @@ export default function PdfView({ src, title, theme }: PdfViewProps) {
       )}
       {state === 'error' && (
         <View style={[StyleSheet.absoluteFill, styles.center]}>
-          <Feather name="alert-circle" size={52} color={theme.textMuted} />
+          <InputBarIcon name="alert-circle" size={52} color={theme.textMuted} />
           <Text style={[styles.errTitle, { color: theme.textMain }]}>
             无法打开此 PDF
           </Text>

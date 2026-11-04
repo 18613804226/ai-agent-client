@@ -24,7 +24,9 @@ import {
   Linking,
   ActivityIndicator
 } from 'react-native'
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons'
+import { InputBarIcon } from './InputBarIcon'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
@@ -75,6 +77,19 @@ const FIELD_SIZING_SUPPORTED =
   typeof CSS.supports === 'function' &&
   CSS.supports('field-sizing', 'content')
 
+/**
+ * 悬浮输入栏占地常量：pill 高、pill 与提示区域间隙、提示区域高。
+ */
+export const INPUT_BAR = {
+  pillMinH: 56,
+  pillPanelGap: 0,
+  panelH: 18,
+  /** 渐变纱幕高度（不含安全区）：从 pill 中部（pillMinH/2 + panelH）开始
+   *              往下渐变为半透，到底部约 90% 不透明（接近全实，仍透一点）。 */
+  panelFadeH: 49,
+  sheetMargin: 17,
+} as const
+
 interface ChatInputBarProps {
   inputText: string
   setInputText: (text: string) => void
@@ -103,11 +118,7 @@ interface ChatInputBarProps {
   /** 需要函数式更新：上传成功/失败要按对象身份回填 uploadId / uploadError */
   setAttachments?: React.Dispatch<React.SetStateAction<PickedAttachment[]>>
   onPickImage?: () => void
-  /**
-   * Android（SDK 55+）专用：指向 BlurTargetView 的 ref。
-   * 不传则 blurMethod 回退为 'none'（只渲染半透明色块，不报错）。
-   */
-  blurTarget?: React.RefObject<View | null>
+  onOverlayHeightChange?: (height: number) => void
 }
 
 function ChatInputBar({
@@ -120,9 +131,9 @@ function ChatInputBar({
   isKeyboardUp = false,
   keyboardProgress = null,
   attachments = [],
-  setAttachments = () => {},
+  setAttachments = () => { },
   onPickImage,
-  blurTarget
+  onOverlayHeightChange
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isVoiceMode, setIsVoiceMode] = useState(false) // 语音/键盘模式
@@ -136,22 +147,28 @@ function ChatInputBar({
   const [previewFile, setPreviewFile] = useState<PickedAttachment | null>(null)
   const closeFilePreview = useCallback(() => setPreviewFile(null), [])
 
-  /** 小字行折叠：原生端直接读键盘 progress 共享值（UI 线程逐帧跟手，
-      不经过 JS bridge）；web 端库是 NOOP，回退走 isKeyboardUp 的 JS 动画。
-      1=展开(17px)，0=收起(留10px间隙)。 */
+  /** 键盘升起时淡出提示行：原生端直接读共享值，Web 端回退走 JS 动画。 */
   const footerProgress = useSharedValue(1)
   useEffect(() => {
     if (keyboardProgress) return // 原生：worklet 直读共享值，不走 JS
     footerProgress.value = withTiming(isKeyboardUp ? 0 : 1, { duration: 150 })
   }, [isKeyboardUp, keyboardProgress, footerProgress])
   const { width } = useWindowDimensions()
-  /** 折叠样式：高度 17→10（含 marginTop），透明度同步淡出。overflow hidden 裁掉收起中的文字。 */
+  /** 底部安全区：渐变纱幕要延伸进安全区（home indicator 浮在实色上） */
+  const insets = useSafeAreaInsets()
+  /** 纱幕颜色与 pill / 应用底色一致：底部实色时和输入框、背景无缝，
+   *  不会透出背后的光晕（否则下方会泛出蓝紫色）。 */
+  const panelGradColor = theme.bgApp
+  /** 纱幕要铺满整个屏幕宽度：wrapper 被居中内容列（maxWidth 850）限制，
+   *  宽屏上会比屏幕窄，这里按窗口宽度把两侧补齐，否则右侧会缺一块。 */
+  const panelLeft = -(width - Math.min(width, 850)) / 2
+  /** 提示行固定占高，键盘升起时仅淡出，避免悬浮层高度跟着键盘抖动。 */
   const footerWrapStyle = useAnimatedStyle(() => {
     // keyboardProgress: 0=键盘收起 → 小字展开；1=键盘升起 → 小字收起。
     // 原生分支取反 (1 - p) 与 JS 兜底 (isKeyboardUp ? 0 : 1) 语义对齐。
     const p = keyboardProgress ? 1 - keyboardProgress.value : footerProgress.value
     return {
-      height: 10 + p * 7,
+      height: 14,
       opacity: p,
       overflow: 'hidden' as const,
     }
@@ -202,7 +219,7 @@ function ChatInputBar({
       // = uuid.ext；裸 uploadId 会被 400「非法文件名」拒绝）；还在传/失败的没有
       // fileRef → 留给服务端 TTL / 30 天回收清
       else if (target.uploadFileRef) {
-        api.deleteChatAttachment(target.uploadFileRef).catch(() => {})
+        api.deleteChatAttachment(target.uploadFileRef).catch(() => { })
       }
       setAttachments(attachments.filter((_, i) => i !== index))
     },
@@ -258,7 +275,10 @@ function ChatInputBar({
         )
       })
     },
-    [setAttachments]
+    // ⚠️ 必须带上 attachments：setAttachments 是稳定的 state setter，
+    //    只写它的话这个回调永远停在首帧的闭包上（attachments 恒为 []），
+    //    图片缩略图就再也找不到自己的索引 → 掉进 Linking 报「无法预览」。
+    [attachments, setAttachments]
   )
 
   // ---- 语音结果：识别完成后直接发送到聊天区（不回填输入框）----
@@ -452,7 +472,12 @@ function ChatInputBar({
   }, [inputText, width, isVoiceMode])
 
   return (
-    <View style={styles.inputAreaWrapper}>
+    // 悬浮层：绝对定位贴在容器底部、不占布局流；box-none 让间隙区域的触摸穿透给消息列表。
+    <View
+      style={styles.inputAreaWrapper}
+      pointerEvents="box-none"
+      onLayout={(e) => onOverlayHeightChange?.(e.nativeEvent.layout.height)}
+    >
       {/* 附件预览：图片/文档/视频统一走同一条渲染逻辑 */}
       {hasAttachments && (
         <ScrollView
@@ -471,17 +496,17 @@ function ChatInputBar({
                   { backgroundColor: theme.btnBg, borderColor: theme.border },
                   // 🖥️ Web：悬停时整块缩略图轻微放大 + 投影
                   isWeb &&
-                    ({
-                      transitionProperty: 'transform, box-shadow',
-                      transitionDuration: '0.15s',
-                      transitionTimingFunction: 'ease'
-                    } as any),
+                  ({
+                    transitionProperty: 'transform, box-shadow',
+                    transitionDuration: '0.15s',
+                    transitionTimingFunction: 'ease'
+                  } as any),
                   isWeb && hoveredThumb === index
                     ? {
-                        transform: [{ scale: 1.05 }],
-                        zIndex: 2,
-                        boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.45)'
-                      }
+                      transform: [{ scale: 1.05 }],
+                      zIndex: 2,
+                      boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.45)'
+                    }
                     : null
                 ]}
               >
@@ -517,7 +542,7 @@ function ChatInputBar({
                       { backgroundColor: theme.btnBg, pointerEvents: 'none' }
                     ]}
                   >
-                    <Feather name="alert-circle" size={20} color="#ef4444" />
+                    <InputBarIcon name="alert-circle" size={20} color="#ef4444" />
                   </View>
                 ) : null}
                 <HoverTouchable
@@ -595,7 +620,7 @@ function ChatInputBar({
                       { backgroundColor: theme.btnBg, pointerEvents: 'none' }
                     ]}
                   >
-                    <Feather name="alert-circle" size={20} color="#ef4444" />
+                    <InputBarIcon name="alert-circle" size={20} color="#ef4444" />
                     <Text style={styles.uploadMaskErrorText}>重试</Text>
                   </View>
                 ) : null}
@@ -630,7 +655,7 @@ function ChatInputBar({
             }}
             style={styles.hintRetryBtn}
           >
-            <Feather name="alert-circle" size={12} color="#ef4444" />
+            <InputBarIcon name="alert-circle" size={12} color="#ef4444" />
             <Text style={[styles.fileHintText, { color: '#ef4444' }]}>
               附件上传失败，点此重试
             </Text>
@@ -654,17 +679,56 @@ function ChatInputBar({
         onClose={closeFilePreview}
       />
 
-      {/* 玻璃底由 GlassSurface 负责：Web=backdrop-filter，原生=BlurView(+Android scrim)。
-            这里只保留输入栏本体的布局与描边（浮起感靠亮边框，不靠 elevation）。 */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.bottomPanel,
+          {
+            height: INPUT_BAR.panelFadeH + insets.bottom,
+            left: panelLeft,
+            width
+          }
+        ]}
+      >
+        {/* 渐进纱幕：纯渐变，不用 BlurView（均匀模糊会让顶部发雾、
+            且模糊层上边缘会露出一条硬边）。从 pill 中部开始往下渐变，
+             到底部约 90% 不透明（接近全实，仍透一点）。 */}
+        {/* ⚠️ Svg 必须显式给 width/height：react-native-svg 只在
+            position !== 'absolute' 时才默认 100%，否则会缩成默认 ~300px 宽，
+            面板右侧就盖不住（露出背后的光晕）。 */}
+        <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+          <Defs>
+            <LinearGradient id="inputPanelGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={panelGradColor} stopOpacity={0} />
+              <Stop offset="0.15" stopColor={panelGradColor} stopOpacity={0.12} />
+              <Stop offset="0.3" stopColor={panelGradColor} stopOpacity={0.3} />
+              <Stop offset="0.5" stopColor={panelGradColor} stopOpacity={0.5} />
+              <Stop offset="0.7" stopColor={panelGradColor} stopOpacity={0.68} />
+              <Stop offset="0.85" stopColor={panelGradColor} stopOpacity={0.82} />
+              <Stop offset="1" stopColor={panelGradColor} stopOpacity={0.9} />
+            </LinearGradient>
+          </Defs>
+          <Rect
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            fill="url(#inputPanelGrad)"
+          />
+        </Svg>
+      </View>
+
+      {/* 输入框单独悬浮在聊天视窗上，使用不透明底色；外围不铺背景。 */}
       <GlassSurface
         theme={theme}
-        blurTarget={blurTarget}
         style={[
           styles.inputBar,
           {
+            backgroundColor: theme.bgApp,
             borderColor: theme.isDark
               ? 'rgba(255,255,255,0.14)'
-              : 'rgba(0,0,0,0.12)'
+              : 'rgba(0,0,0,0.12)',
+            marginBottom: INPUT_BAR.pillPanelGap
           }
         ]}
       >
@@ -677,7 +741,7 @@ function ChatInputBar({
             disabled={isGenerating}
             activeOpacity={0.6}
           >
-            <Feather name="plus" size={20} color={theme.textMuted} />
+            <InputBarIcon name="plus" size={20} color={theme.textMuted} />
           </HoverTouchable>
         )}
 
@@ -707,19 +771,19 @@ function ChatInputBar({
                 { backgroundColor: theme.historyActiveBg },
                 // 🖥️ Web：悬停青色提亮（与按钮青色描边同色系）
                 isWeb &&
-                  ({
-                    transitionProperty: 'background-color, border-color',
-                    transitionDuration: '0.15s',
-                    transitionTimingFunction: 'ease',
-                    cursor: 'pointer'
-                  } as any),
+                ({
+                  transitionProperty: 'background-color, border-color',
+                  transitionDuration: '0.15s',
+                  transitionTimingFunction: 'ease',
+                  cursor: 'pointer'
+                } as any),
                 isWeb && isVoiceHover && !isRecording
                   ? {
-                      backgroundColor: theme.isDark
-                        ? 'rgba(0, 229, 255, 0.12)'
-                        : 'rgba(0, 120, 150, 0.08)',
-                      borderColor: 'rgba(0, 229, 255, 0.5)'
-                    }
+                    backgroundColor: theme.isDark
+                      ? 'rgba(0, 229, 255, 0.12)'
+                      : 'rgba(0, 120, 150, 0.08)',
+                    borderColor: 'rgba(0, 229, 255, 0.5)'
+                  }
                   : null
               ]}
               onPressIn={handlePressIn}
@@ -793,13 +857,13 @@ function ChatInputBar({
             activeOpacity={0.6}
           >
             {isVoiceMode ? (
-              <MaterialCommunityIcons
-                name="keyboard-outline"
+              <InputBarIcon
+                name="keyboard"
                 size={22}
                 color={theme.textMuted}
               />
             ) : (
-              <Feather name="mic" size={20} color={theme.textMuted} />
+              <InputBarIcon name="mic" size={20} color={theme.textMuted} />
             )}
           </HoverTouchable>
         )}
@@ -820,7 +884,7 @@ function ChatInputBar({
             onPress={handleSendOrStop}
             disabled={isSendDisabled}
           >
-            <Feather
+            <InputBarIcon
               name={isStopMode ? 'square' : 'arrow-up'}
               size={20}
               color="#FFFFFF"
@@ -850,7 +914,7 @@ function ChatInputBar({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
           >
-            <Feather
+            <InputBarIcon
               name={isStopMode ? 'square' : 'arrow-up'}
               size={20}
               color="#FFFFFF"
@@ -859,28 +923,41 @@ function ChatInputBar({
         )}
       </GlassSurface>
 
-      {/* 键盘起→平滑折叠收起(17→10，留10px间隙贴键盘)，键盘收→平滑展开。小字包在 overflow:hidden
-          容器里，高度+透明度一起做动画，所以不"弹"，只是顺滑下滑/上移。 */}
-      <Reanimated.View style={footerWrapStyle}>
-        <Text
-          numberOfLines={1}
-          style={[styles.footerTip, { color: theme.textMuted, opacity: 0.6 }]}
-        >
-          {isDesktopWeb
-            ? 'AI 智能体可能会产生错误信息。支持直接粘贴截图。'
-            : 'AI 智能体可能会产生错误信息。'}
-        </Text>
-      </Reanimated.View>
+      {/* 外围保持透明，仅显示提示文字；底部安全区不放文字。 */}
+      <View
+        style={{ height: INPUT_BAR.panelH + insets.bottom }}
+        pointerEvents="none"
+      >
+        <View style={[styles.panelTipZone, { height: INPUT_BAR.panelH }]}>
+          <Reanimated.View style={footerWrapStyle}>
+            <Text
+              numberOfLines={1}
+              style={[styles.footerTip, { color: theme.textMuted, opacity: 0.6 }]}
+            >
+              {isDesktopWeb
+                ? 'AI 智能体可能会产生错误信息。支持直接粘贴截图。'
+                : 'AI 智能体可能会产生错误信息。'}
+            </Text>
+          </Reanimated.View>
+        </View>
+      </View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   inputAreaWrapper: {
-    paddingHorizontal: 16,
-    // 贴键盘：底部留白收小。键盘回弹不跳靠 footerTip 高度恒定保证，不靠大 padding。
-    paddingBottom: 4,
-    paddingTop: 8
+    // 悬浮层：绝对定位贴在容器底部、不占布局流，消息从输入框/条带底下滚过。
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16
+  },
+  bottomPanel: {
+    position: 'absolute',
+    bottom: 0,
+    overflow: 'hidden'
   },
   previewContainer: {
     maxHeight: 80,
@@ -974,8 +1051,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingLeft: 8,
     paddingRight: 8,
-    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.15)'
-    // elevation 永久拿掉：安卓上它生成额外原生层，半透明底下透出白条（已实锤）
+    // 不做投影：白色主题下白底 + 深色阴影显得脏，浅色描边已足够勾勒浮起感。
+    // elevation 也永久拿掉：安卓上它生成额外原生层，半透明底下透出白条（已实锤）
+  },
+  panelTipZone: {
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   attachButton: {
     width: 40,
@@ -1086,10 +1167,10 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   footerTip: {
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 9,
+    lineHeight: 12,
     textAlign: 'center',
-    marginTop: 3
+    marginTop: 0
   },
   fileHintRow: {
     marginBottom: 4

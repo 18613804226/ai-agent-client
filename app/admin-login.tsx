@@ -12,7 +12,7 @@ import {
 } from 'react-native'
 import { Redirect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Feather } from '@expo/vector-icons'
+import { InputBarIcon } from '../src/components/InputBarIcon'
 import { useAdminPreview, useAuth, useTheme } from '../src/context/appContexts'
 import { MyToast } from '../src/components/GlobalToast'
 
@@ -89,7 +89,7 @@ export default function AdminLoginScreen() {
         ]}
       >
         <View style={styles.backButtonRow}>
-          <Feather
+          <InputBarIcon
             name="arrow-left"
             size={16}
             color={theme.textMuted}

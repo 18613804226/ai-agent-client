@@ -20,8 +20,7 @@ import { useDrawerStatus } from 'expo-router/drawer'
 import Sidebar from '../../src/components/Sidebar'
 import ChatArea from '../../src/components/ChatArea'
 import ChatGlowBackground from '../../src/components/ChatGlowBackground'
-import ChatInputBar from '../../src/components/ChatInputBar'
-import { BlurTargetView } from 'expo-blur'
+import ChatInputBar, { INPUT_BAR } from '../../src/components/ChatInputBar'
 import { MobileHeader } from '../../src/components/MobileHeader'
 import Reanimated from 'react-native-reanimated'
 
@@ -122,9 +121,21 @@ export default function ChatScreen() {
   const drawerStatus = useDrawerStatus()
   const isDrawerOpen = drawerStatus === 'open'
 
-  // Android（SDK 55+）BlurView 真模糊的目标层：把输入栏背后的光晕背景包成
-  // BlurTargetView，再把这个 ref 透传给 ChatInputBar 的 BlurView.blurTarget。
-  const inputBarBlurTargetRef = useRef<View | null>(null)
+  const [inputOverlayH, setInputOverlayH] = useState<number | null>(null)
+  const handleInputOverlayHeight = useCallback((height: number) => {
+    setInputOverlayH((current) => (current === height ? current : height))
+  }, [])
+  const chatBottomSpacer =
+    inputOverlayH ??
+    INPUT_BAR.pillMinH + INPUT_BAR.pillPanelGap + INPUT_BAR.panelH + insets.bottom
+
+  // + 号菜单卡片底边：悬在输入框正上方（沿用旧版相对 pill 顶 17px 的间距）
+  const sheetBottom =
+    INPUT_BAR.pillMinH +
+    INPUT_BAR.pillPanelGap +
+    INPUT_BAR.panelH +
+    INPUT_BAR.sheetMargin +
+    insets.bottom
 
   const handleSendWithImages = useCallback(async (overrideText?: string) => {
     const knowledgeFileIds = uploadedFiles
@@ -155,10 +166,10 @@ export default function ChatScreen() {
 
   // 💡 针对三端各自配置不同的悬浮菜单坐标样式
   const sheetPositionStyle = isPCWeb
-    ? { bottom: 94, left: 'calc(50% - 270px)' } // 🖥️ PC 网页端：依据居中输入框进行精确定位
+    ? { bottom: sheetBottom, left: 'calc(50% - 270px)' } // 🖥️ PC 网页端：依据居中输入框进行精确定位
     : isMobileWeb
-      ? { bottom: 94, left: 16 } // 📱 手机 H5 端：依据移动网页的 + 号定位
-      : { bottom: 94, left: 20 }
+      ? { bottom: sheetBottom, left: 16 } // 📱 手机 H5 端：依据移动网页的 + 号定位
+      : { bottom: sheetBottom, left: 20 }
 
   const openDrawer = () => {
     if (!isPCWeb) {
@@ -290,18 +301,11 @@ export default function ChatScreen() {
           <Reanimated.View
             style={[styles.chatMainWrapper, keyboardHeightStyle]}
           >
-            {/* 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面。
-                Android 上包一层 BlurTargetView 作为输入栏 BlurView 的模糊目标，
-                否则 blurMethod='dimezisBlurView' 会回退为 none（只显示半透明色块）。 */}
-            <BlurTargetView
-              ref={inputBarBlurTargetRef}
+            <View
               style={styles.chatBlurTarget}
+              pointerEvents="box-none"
             >
-              {/* 模糊目标必须有【不透明】底色：expo-blur 会把 BlurTargetView
-                  子树裁成位图再模糊，且以 window 背景（浅色）填补透明区。
-                  光晕本身背景透明 → 暗色主题下输入栏会被"透"成白色。
-                  垫一层主题底色（与 container 的 bgApp 同色，视觉无变化）后，
-                  模糊拿到的就是不透明深色底，暗色主题不再发白。 */}
+              {/* 不透明底色 + 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面 */}
               <View
                 style={[
                   StyleSheet.absoluteFill,
@@ -309,75 +313,88 @@ export default function ChatScreen() {
                 ]}
               />
               <ChatGlowBackground isDark={isDarkMode} />
-            </BlurTargetView>
-            <View style={styles.chatCenterContainer}>
-              {/* 🌐 全局知识库上传进度条：抽屉关闭时也能看到 */}
-              {isUploadingKnowledge && (
-                <View
-                  style={[
-                    styles.uploadBanner,
-                    {
-                      backgroundColor: isDarkMode
-                        ? 'rgba(40,40,40,0.95)'
-                        : 'rgba(255,255,255,0.97)',
-                      borderColor: theme.border
-                    }
-                  ]}
-                >
-                  <Text
-                    style={[styles.uploadBannerText, { color: theme.textMain }]}
+              <View style={styles.chatCenterContainer}>
+                {/* 🌐 全局知识库上传进度条：抽屉关闭时也能看到 */}
+                {isUploadingKnowledge && (
+                  <View
+                    style={[
+                      styles.uploadBanner,
+                      {
+                        backgroundColor: isDarkMode
+                          ? 'rgba(40,40,40,0.95)'
+                          : 'rgba(255,255,255,0.97)',
+                        borderColor: theme.border
+                      }
+                    ]}
                   >
-                    📁 知识库处理中 {knowledgeUploadPercent}%
-                  </Text>
-                  <View style={styles.uploadBannerTrack}>
-                    <View
-                      style={[
-                        styles.uploadBannerFill,
-                        {
-                          width: `${knowledgeUploadPercent}%`,
-                          backgroundColor: theme.sendBtnActive || '#3b82f6'
-                        }
-                      ]}
-                    />
+                    <Text
+                      style={[styles.uploadBannerText, { color: theme.textMain }]}
+                    >
+                      📁 知识库处理中 {knowledgeUploadPercent}%
+                    </Text>
+                    <View style={styles.uploadBannerTrack}>
+                      <View
+                        style={[
+                          styles.uploadBannerFill,
+                          {
+                            width: `${knowledgeUploadPercent}%`,
+                            backgroundColor: theme.sendBtnActive || '#3b82f6'
+                          }
+                        ]}
+                      />
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
 
-              <ChatArea
-                key={activeId}
-                messages={currentChat?.messages ?? []}
-                theme={theme}
-                isMobile={!isPCWeb}
-                isKeyboardUp={isKeyboardUp}
-                activeId={activeId}
-                isHistoryLoading={isHistoryLoading}
-                autoRead={autoRead}
-                keyboardHeightSV={keyboardHeight}
-                keyboardProgressSV={keyboardProgress}
-                isDrawerOpen={isDrawerOpen}
-              />
-              <ChatInputBar
-                inputText={inputText}
-                setInputText={setInputText}
-                onSend={handleSendWithImages}
-                theme={theme}
-                onStop={handleStopGeneration}
-                isGenerating={isGenerating}
-                isKeyboardUp={isKeyboardUp}
-                keyboardProgress={keyboardProgress}
-                attachments={selectedAttachments} // 👈 统一附件列表（图片/文档/视频）
-                setAttachments={setSelectedAttachments} // 👈 传入修改方法
-                onPickImage={handlePickImage} // 👈 绑定在这里
-                blurTarget={inputBarBlurTargetRef} // 👈 Android 真模糊目标（BlurTargetView）
-              />
-              <CustomActionSheet
-                visible={isSheetVisible} // 传显隐状态
-                onClose={() => setIsSheetVisible(false)} // 传关闭方法
-                isDarkMode={isDarkMode}
-                theme={theme}
-                items={menuItems}
-                positionStyle={sheetPositionStyle}
-              />
+                {/* 列表保留悬浮输入栏的底部占位，使最后一条消息停在胶囊上方 */}
+                <View style={styles.chatReserveWrap}>
+                  <ChatArea
+                    key={activeId}
+                    messages={currentChat?.messages ?? []}
+                    theme={theme}
+                    isMobile={!isPCWeb}
+                    isKeyboardUp={isKeyboardUp}
+                    activeId={activeId}
+                    isHistoryLoading={isHistoryLoading}
+                    autoRead={autoRead}
+                    keyboardHeightSV={keyboardHeight}
+                    keyboardProgressSV={keyboardProgress}
+                    isDrawerOpen={isDrawerOpen}
+                    bottomInset={chatBottomSpacer}
+                    bottomContentInset={chatBottomSpacer}
+                  />
+                </View>
+              </View>
+            </View>
+            {/* 悬浮输入栏层：绝对覆盖在聊天区之上，box-none 让间隙的触摸穿透给消息列表 */}
+            <View style={styles.chatOverlayLayer} pointerEvents="box-none">
+              <View
+                style={styles.chatCenterContainer}
+                pointerEvents="box-none"
+              >
+                <ChatInputBar
+                  inputText={inputText}
+                  setInputText={setInputText}
+                  onSend={handleSendWithImages}
+                  theme={theme}
+                  onStop={handleStopGeneration}
+                  isGenerating={isGenerating}
+                  isKeyboardUp={isKeyboardUp}
+                  keyboardProgress={keyboardProgress}
+                  attachments={selectedAttachments} // 👈 统一附件列表（图片/文档/视频）
+                  setAttachments={setSelectedAttachments} // 👈 传入修改方法
+                  onPickImage={handlePickImage} // 👈 绑定在这里
+                  onOverlayHeightChange={handleInputOverlayHeight}
+                />
+                <CustomActionSheet
+                  visible={isSheetVisible} // 传显隐状态
+                  onClose={() => setIsSheetVisible(false)} // 传关闭方法
+                  isDarkMode={isDarkMode}
+                  theme={theme}
+                  items={menuItems}
+                  positionStyle={sheetPositionStyle}
+                />
+              </View>
             </View>
             </Reanimated.View>
         </View>
@@ -415,11 +432,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     overflow: 'hidden'
   },
-  // 输入栏 BlurView 的模糊目标层：铺满聊天 wrapper，垫在消息区/输入栏之下
   chatBlurTarget: {
     ...StyleSheet.absoluteFill,
-    overflow: 'hidden',
-    pointerEvents: 'none'
+    overflow: 'hidden'
+  },
+  // 悬浮输入栏层：与聊天区完全重合的透明覆盖层（box-none 穿透触摸）
+  chatOverlayLayer: {
+    ...StyleSheet.absoluteFill
   },
   chatCenterContainer: {
     flex: 1,
@@ -427,6 +446,10 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
     flexDirection: 'column'
+  },
+  /** 消息列表占满聊天视口；悬浮输入栏不参与列表布局 */
+  chatReserveWrap: {
+    flex: 1
   },
   uploadBanner: {
     position: 'absolute',

@@ -138,7 +138,7 @@ export function useChatManager() {
    * ×7 → ≈0.14s（等同于不延迟）。
    * 想更不延迟就调大（10 → ≈0.1s），代价是单帧增量变大、台阶更容易看见。
    */
-  const CATCH_UP_RAMP = 7
+  const CATCH_UP_RAMP = 10
   /** 追赶速度上限（字/秒）：防止高速流下越追越猛。 */
   const MAX_CATCH_UP_SPEED = 1600
   /**
@@ -254,11 +254,15 @@ export function useChatManager() {
           cachedActiveId = activeId
           setConversations(cached.list)
           setActiveId(activeId)
-          const cachedMessages = cached.list.find((c) => c.id === activeId)?.messages
+          const cachedMessages = cached.list.find(
+            (c) => c.id === activeId
+          )?.messages
           if (cachedMessages && cachedMessages.length > 0) {
             hadCacheContent = true
             setConversations((prev) =>
-              prev.map((c) => (c.id === activeId ? { ...c, messages: cachedMessages } : c))
+              prev.map((c) =>
+                c.id === activeId ? { ...c, messages: cachedMessages } : c
+              )
             )
           }
           setHistoryLoadingId(null)
@@ -1308,7 +1312,9 @@ export function useChatManager() {
           bumpLocalUsage()
           refreshMyDevice()
         }
-        Vibration.vibrate(100)
+        // 吐字结束的轻触提示：100ms 在多数安卓机上是明显的「重震」，
+        // 收到 15ms 左右只剩一个很轻的 tick（iOS 忽略时长参数，仍为系统默认震动）。
+        Vibration.vibrate(Platform.OS === 'android' ? 15 : 0)
       }
     }
     return true

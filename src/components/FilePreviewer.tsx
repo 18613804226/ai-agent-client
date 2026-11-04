@@ -13,7 +13,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { InputBarIcon } from './InputBarIcon'
 import { formatFileSize, type PickedAttachment } from '../hooks/useImagePicker';
 import { MONO_FONT } from './markdown/markdownRules';
 import {
@@ -93,7 +93,11 @@ export function extOf(name?: string, mime?: string): string {
 export function classifyFile(att: PickedAttachment): FilePreviewKind {
   const mime = (att.mime ?? '').toLowerCase();
   const ext = rawExt(att.name);
-  if (mime.startsWith('image/') || IMAGE_EXTS.has(ext)) return 'image';
+  // 相册/拍照选出来的图片没有 name/mime（只有 uri + kind），
+  // 只看 mime/扩展名会判成 unknown → 点缩略图掉进 Linking 报「无法预览」。
+  if (att.kind === 'image' || mime.startsWith('image/') || IMAGE_EXTS.has(ext)) {
+    return 'image';
+  }
   if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
   // ⚠️ 必须排在下面 includes('xml') 之前：openxmlformats（docx/xlsx）的 mime 含 "xml" 子串
   if (
@@ -504,7 +508,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
   /** 原生端没有渲染器（项目未引入 WebView / 文件系统库）时的兜底面板 */
   const externalPanel = (
     <View style={styles.centered}>
-      <Feather name="file" size={56} color={theme.textMuted} />
+      <InputBarIcon name="file" size={56} color={theme.textMuted} />
       <Text
         numberOfLines={1}
         style={[styles.panelName, { color: theme.textMain }]}
@@ -515,7 +519,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
         此格式暂不支持应用内预览，可交给系统应用打开
       </Text>
       <Pressable onPress={handleOpenExternally} style={panelBtnStyle}>
-        <Feather name="external-link" size={15} color={theme.textMain} />
+        <InputBarIcon name="external-link" size={15} color={theme.textMain} />
         <Text style={[styles.actionText, { color: theme.textMain }]}>
           用其他应用打开
         </Text>
@@ -526,7 +530,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
   /** 浏览器渲染不了的格式（docx/xlsx/zip…）：如实告知 + 下载 */
   const unknownPanel = (
     <View style={styles.centered}>
-      <Feather name="file" size={56} color={theme.textMuted} />
+      <InputBarIcon name="file" size={56} color={theme.textMuted} />
       <Text
         numberOfLines={1}
         style={[styles.panelName, { color: theme.textMain }]}
@@ -544,7 +548,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
         onPress={isWeb ? handleDownload : handleOpenExternally}
         style={panelBtnStyle}
       >
-        <Feather
+        <InputBarIcon
           name={isWeb ? 'download' : 'external-link'}
           size={15}
           color={theme.textMain}
@@ -559,13 +563,13 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
   /** 文本读取的三种异常态面板 */
   const textPanel = (node: React.ReactNode) => (
     <View style={styles.centered}>
-      <Feather name="file-text" size={56} color={theme.textMuted} />
+      <InputBarIcon name="file-text" size={56} color={theme.textMuted} />
       <Text style={[styles.panelHint, { color: theme.textMuted }]}>{node}</Text>
       <Pressable
         onPress={isWeb ? handleDownload : handleOpenExternally}
         style={panelBtnStyle}
       >
-        <Feather
+        <InputBarIcon
           name={isWeb ? 'download' : 'external-link'}
           size={15}
           color={theme.textMain}
@@ -580,12 +584,12 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
   /** Office 解析失败的兜底面板（可下载后本地打开） */
   const officeErrorPanel = (
     <View style={styles.centered}>
-      <Feather name="alert-circle" size={56} color={theme.textMuted} />
+      <InputBarIcon name="alert-circle" size={56} color={theme.textMuted} />
       <Text style={[styles.panelHint, { color: theme.textMuted }]}>
         文档解析失败，可下载后用本地应用查看
       </Text>
       <Pressable onPress={handleDownload} style={panelBtnStyle}>
-        <Feather name="download" size={15} color={theme.textMain} />
+        <InputBarIcon name="download" size={15} color={theme.textMain} />
         <Text style={[styles.actionText, { color: theme.textMain }]}>
           下载文件
         </Text>
@@ -822,7 +826,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
     if (checkState === 'error') {
       return (
         <View style={styles.checkLoading}>
-          <Feather name="alert-circle" size={40} color={theme.textMuted} />
+          <InputBarIcon name="alert-circle" size={40} color={theme.textMuted} />
           <Text style={[styles.panelHint, { color: theme.textMuted }]}>
             {checkError}
           </Text>
@@ -846,7 +850,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
         </Text>
         {s.total === 0 ? (
           <View style={styles.checkEmpty}>
-            <Feather name="check-circle" size={40} color="#22c55e" />
+            <InputBarIcon name="check-circle" size={40} color="#22c55e" />
             <Text style={[styles.panelHint, { color: theme.textMuted }]}>
               各工作表检查通过
             </Text>
@@ -893,7 +897,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
           pressed && isWeb && { opacity: 0.65 },
         ]}
       >
-        <Feather
+        <InputBarIcon
           name={isError ? 'x-circle' : 'alert-triangle'}
           size={15}
           color={isError ? '#ef4444' : '#f59e0b'}
@@ -986,7 +990,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
                   <ActivityIndicator size="small" color={theme.textMuted} />
                 ) : (
                   <>
-                    <Feather
+                    <InputBarIcon
                       name="search"
                       size={13}
                       color={checkResult ? '#4b92ee' : theme.textMuted}
@@ -1012,7 +1016,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
                   pressed && { backgroundColor: 'rgba(128,128,128,0.18)' },
                 ]}
               >
-                <Feather name="download" size={17} color={theme.textMuted} />
+                <InputBarIcon name="download" size={17} color={theme.textMuted} />
               </Pressable>
             )}
             <Pressable
@@ -1023,7 +1027,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
                 pressed && { backgroundColor: 'rgba(128,128,128,0.18)' },
               ]}
             >
-              <Feather name="x" size={18} color={theme.textMain} />
+              <InputBarIcon name="x" size={18} color={theme.textMain} />
             </Pressable>
           </View>
 
@@ -1061,7 +1065,7 @@ export function FilePreviewer({ att, theme, onClose }: FilePreviewerProps) {
                       pressed && { backgroundColor: 'rgba(128,128,128,0.18)' },
                     ]}
                   >
-                    <Feather name="chevron-down" size={18} color={theme.textMuted} />
+                    <InputBarIcon name="chevron-down" size={18} color={theme.textMuted} />
                   </Pressable>
                 </View>
                 {renderCheckBody()}

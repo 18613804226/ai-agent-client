@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useMemo, useState } from 'react'
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
 import Markdown from 'react-native-markdown-display'
-import { Feather } from '@expo/vector-icons'
+import { InputBarIcon } from './InputBarIcon'
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -141,7 +141,7 @@ const ChatMessageItem = memo(
                     { backgroundColor: theme.bubbleUserText + '12' },
                   ]}
                 >
-                  <Feather
+                  <InputBarIcon
                     name={isVideo ? 'film' : 'file-text'}
                     size={16}
                     color={theme.bubbleUserText}
@@ -168,12 +168,13 @@ const ChatMessageItem = memo(
                     </Text>
                   ) : null}
                 </View>
-                <Feather
-                  name="chevron-right"
-                  size={15}
-                  color={theme.bubbleUserText}
-                  style={{ opacity: 0.6 }}
-                />
+                <View style={{ opacity: 0.6 }}>
+                  <InputBarIcon
+                    name="chevron-right"
+                    size={15}
+                    color={theme.bubbleUserText}
+                  />
+                </View>
               </TouchableOpacity>
             );
           })
