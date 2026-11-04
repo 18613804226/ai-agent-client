@@ -43,6 +43,39 @@ export default function RootLayout() {
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const userChangedTheme = useRef(false);
 
+  // Web(H5)：① 禁止用户缩放/双指放大；② 取消 iOS Safari 输入框聚焦时的自动放大。
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const doc = (globalThis as any).document;
+    if (!doc) return;
+
+    // ① viewport：禁缩放（iOS Safari 对 user-scalable=no 支持有限，
+    //    maximum-scale=1 + touch-action 兜底）
+    let meta = doc.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = doc.createElement('meta');
+      meta.setAttribute('name', 'viewport');
+      doc.head.appendChild(meta);
+    }
+    meta.setAttribute(
+      'content',
+      'width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover'
+    );
+
+    // ② iOS Safari：表单控件 font-size < 16px 时聚焦会自动放大页面。
+    //    统一强制 16px（!important 覆盖 RN Web 写入的内联样式）。
+    const styleId = 'no-zoom-web';
+    if (!doc.getElementById(styleId)) {
+      const style = doc.createElement('style');
+      style.id = styleId;
+      style.textContent =
+        'html{touch-action:manipulation;-webkit-text-size-adjust:100%}' +
+        'body{touch-action:pan-x pan-y}' +
+        'input,textarea,select{font-size:16px !important}';
+      doc.head.appendChild(style);
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     AsyncStorage.getItem(THEME_MODE_KEY)

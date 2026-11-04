@@ -1,13 +1,5 @@
-import React, {
-  memo,
-  useEffect,
-  useState,
-  useCallback,
-  useMemo,
-  useRef
-} from 'react'
+import React, { memo, useEffect, useState, useCallback, useRef } from 'react'
 import {
-  Platform,
   StyleSheet,
   Text,
   View,
@@ -15,12 +7,10 @@ import {
   TouchableOpacity
 } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
-import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withDecay,
   Easing
 } from 'react-native-reanimated'
 import type { ThemeType } from '../types/chat'
@@ -47,131 +37,36 @@ const ThoughtCollapsible = memo(
     const contentHeightRef = useRef(0)
     const progress = useSharedValue(1)
 
-    // ── 自定义滚动（不用原生嵌套 ScrollView）────────────────────────────
-    // 安卓默认 ScrollView 不是 NestedScrollingParent：外层会在同一帧抢走内层手势，
-    // 贴边还会联动外层；走 JS 的 scrollEnabled 方案要等一次 JS 往返，吐字期赶不及。
-    // 这里用 gesture-handler 的 Pan（原生线程仲裁）在根视图层吃掉触摸，外层拿不到事件。
+    // ── 思考框内层滚动：原生嵌套滚动（不用自定义 Pan）────────────────────────
+    // 内层 ScrollView 用原生滚动（scrollEnabled=内容超高才开）；
+    // 外层 FlashList 已开 nestedScrollEnabled → Android 形成「先内后外」的手势交接，
+    // 内层贴边继续同方向拖就会自动带动外层气泡。Web 端同理交 DOM 原生处理。
     const THOUGHT_SCROLL_MAX = 200
-    const contentH = useSharedValue(0)
-    const scrollY = useSharedValue(0)
-    const startY = useSharedValue(0)
-    const startAbsY = useSharedValue(0)
-    const dragging = useSharedValue(false)
-    const followThoughtBottom = useSharedValue(true)
     const [scrollable, setScrollable] = useState(false)
+    /** 是否停留在内容底部：流式增长时若在底部则自动贴底 */
+    const followThoughtBottom = useRef(true)
     const scrollViewportRef = useRef<any>(null)
 
-    const pan = useMemo(
-      () =>
-        Gesture.Pan()
-          .enabled(scrollable)
-          // 手动仲裁：内层还能滚才 activate；已经贴边、且继续往该方向拖 → fail()
-          // 把这次手势让给外层聊天列表（否则「只在思考框里滑，拖不动气泡」）。
-          .manualActivation(true)
-          .shouldCancelWhenOutside(false)
-          .onBegin((e) => {
-            startY.value = scrollY.value
-            startAbsY.value = e.absoluteY
-            dragging.value = true
-          })
-          .onTouchesMove((e: any, manager: any) => {
-            const t = e.allTouches?.[0]
-            if (!t) return
-            const dy = t.absoluteY - startAbsY.value
-            if (Math.abs(dy) < 4) return
-            const min = Math.min(0, THOUGHT_SCROLL_MAX - contentH.value)
-            const atTop = scrollY.value >= -0.5
-            const atBottom = scrollY.value <= min + 0.5
-            // 继续往下拖(内容到顶) / 继续往上拖(内容到底)：内层没得滚了，交给外层
-            if ((dy > 0 && atTop) || (dy < 0 && atBottom)) {
-              dragging.value = false
-              manager.fail()
-              return
-            }
-            manager.activate()
-          })
-          .onUpdate((e) => {
-            const min = Math.min(0, THOUGHT_SCROLL_MAX - contentH.value)
-            // 用 absoluteY（屏幕坐标）算位移：外层滚动会让本视图移动，
-            // 若用 translationY 会被自身移动污染，形成自激
-            const desired = startY.value + (e.absoluteY - startAbsY.value)
-            const clamped = Math.max(min, Math.min(0, desired))
-            scrollY.value = clamped
-            followThoughtBottom.value = clamped <= min + 1
-          })
-          .onEnd((e) => {
-            const min = Math.min(0, THOUGHT_SCROLL_MAX - contentH.value)
-            scrollY.value = withDecay({
-              velocity: e.velocityY * 0.6,
-              clamp: [min, 0],
-              deceleration: 0.997
-            })
-          })
-          .onFinalize(() => {
-            dragging.value = false
-          }),
-      [scrollable, followThoughtBottom]
-    )
-
-    const scrollStyle = useAnimatedStyle(() => ({
-      transform: [{ translateY: scrollY.value }]
-    }))
-
-    // 内容重新布局：更新「是否需要内层滚动」；吐字期自动贴底
+    // 内容重新布局：更新「是否需要内层滚动」；吐字期若停在底部则自动贴底
     const handleContentSize = useCallback(
       (h: number) => {
-        contentH.value = h
         contentHeightRef.current = h
         const canScroll = h > THOUGHT_SCROLL_MAX + 1
         setScrollable((prev) => (prev === canScroll ? prev : canScroll))
-        if (isStreaming && followThoughtBottom.value && !dragging.value) {
-          scrollY.value = Math.min(0, THOUGHT_SCROLL_MAX - h)
-        } else if (!canScroll) {
-          scrollY.value = 0
-        } else {
-          scrollY.value = Math.max(
-            Math.min(0, THOUGHT_SCROLL_MAX - h),
-            Math.min(0, scrollY.value)
-          )
+        if (isStreaming && followThoughtBottom.current) {
+          scrollViewportRef.current?.scrollToEnd?.({ animated: false })
         }
       },
-      [isStreaming, followThoughtBottom]
+      [isStreaming]
     )
 
-    const handleWebWheel = useCallback(
-      (event: WheelEvent) => {
-        if (!isOpen || !scrollable) return
-        event.preventDefault?.()
-        event.stopPropagation?.()
-        const min = Math.min(0, THOUGHT_SCROLL_MAX - contentH.value)
-        const nextY = Math.max(
-          min,
-          Math.min(0, scrollY.value - (event.deltaY ?? 0))
-        )
-        scrollY.value = nextY
-        followThoughtBottom.value = nextY <= min + 1
-      },
-      [isOpen, scrollable, followThoughtBottom]
-    )
-
-    useEffect(() => {
-      if (Platform.OS !== 'web') return
-      const scrollView = scrollViewportRef.current
-      const node =
-        (typeof scrollView?.getScrollableNode === 'function' &&
-          scrollView.getScrollableNode()) ||
-        (typeof scrollView?.getInnerViewNode === 'function' &&
-          scrollView.getInnerViewNode()) ||
-        null
-      if (!node) return
-
-      node.addEventListener('wheel', handleWebWheel, {
-        capture: true,
-        passive: false
-      })
-      return () =>
-        node.removeEventListener('wheel', handleWebWheel, { capture: true })
-    }, [handleWebWheel])
+    const handleThoughtScroll = useCallback((e: any) => {
+      const y = e.nativeEvent.contentOffset?.y ?? 0
+      const h = e.nativeEvent.contentSize?.height ?? 0
+      const vh = Math.max(e.nativeEvent.layoutMeasurement?.height ?? 0, 1)
+      // 在底部（或内容还没超高）保持跟随；用户往上读 → 停在原位、不再自动贴底
+      followThoughtBottom.current = y + vh >= h - 2 || y <= 0.5
+    }, [])
 
     const animateTo = (open: boolean) => {
       progress.value = withTiming(open ? 1 : 0, {
@@ -250,32 +145,32 @@ const ThoughtCollapsible = memo(
         <Animated.View style={bodyAnimatedStyle}>
           <ScrollView
             ref={scrollViewportRef}
-            scrollEnabled={false}
+            scrollEnabled={scrollable}
+            // Android：参与嵌套滚动（内层滚到头自动交接给外层）
+            nestedScrollEnabled
             showsVerticalScrollIndicator={false}
             style={{ maxHeight: THOUGHT_SCROLL_MAX }}
             onContentSizeChange={(_w, h) => handleContentSize(h)}
+            onScroll={handleThoughtScroll}
+            scrollEventThrottle={16}
           >
-            <GestureDetector gesture={pan}>
-              <Animated.View style={scrollStyle}>
-                <Text
-                  style={[
-                    styles.thoughtContent,
-                    { color: theme.textMuted, marginTop: 4 }
-                  ]}
-                >
-                  {/* 流式期间：末尾挂「墨洇」，与正文一致；结束落定后回退纯文本 */}
-                  {isStreaming ? (
-                    <InkTailText
-                      text={thought}
-                      color={theme.textMuted}
-                      baseStyle={styles.thoughtContent}
-                    />
-                  ) : (
-                    thought
-                  )}
-                </Text>
-              </Animated.View>
-            </GestureDetector>
+            <Text
+              style={[
+                styles.thoughtContent,
+                { color: theme.textMuted, marginTop: 4 }
+              ]}
+            >
+              {/* 流式期间：末尾挂「墨洇」，与正文一致；结束落定后回退纯文本 */}
+              {isStreaming ? (
+                <InkTailText
+                  text={thought}
+                  color={theme.textMuted}
+                  baseStyle={styles.thoughtContent}
+                />
+              ) : (
+                thought
+              )}
+            </Text>
           </ScrollView>
         </Animated.View>
       </View>

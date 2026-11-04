@@ -1,5 +1,11 @@
-import React, { type ComponentRef, useRef, useState } from 'react'
+import React, {
+  type ComponentRef,
+  useCallback,
+  useRef,
+  useState
+} from 'react'
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,7 +16,7 @@ import {
   View,
   useWindowDimensions
 } from 'react-native'
-import { Redirect, useRouter } from 'expo-router'
+import { Redirect, useFocusEffect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { InputBarIcon } from '../src/components/InputBarIcon'
 import { useAdminPreview, useAuth, useTheme } from '../src/context/appContexts'
@@ -30,10 +36,20 @@ export default function AdminLoginScreen() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const passwordInputRef = useRef<ComponentRef<typeof TextInput>>(null)
 
+  // 离开登录页（点返回 / 系统返回 / 手势侧滑）时先收起键盘：
+  // 否则底层聊天列表会经历「视口随键盘缩小→offset 被 clamp→恢复」，返回后位置错乱。
+  // 在 blur 时收起，键盘恢复发生在登录卡片仍盖着的阶段，聊天露出时布局已稳定。
+  useFocusEffect(
+    useCallback(() => {
+      return () => Keyboard.dismiss()
+    }, [])
+  )
+
   if (isAdminPreview && !isRedirecting) return <Redirect href="/admin" />
 
   /** 侧滑返回上一屏（聊天页）；无上级栈时兜底 replace 回首页 */
   const goBackToChat = () => {
+    Keyboard.dismiss()
     if (router.canGoBack()) {
       router.back()
     } else {

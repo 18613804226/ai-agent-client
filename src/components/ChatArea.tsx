@@ -126,7 +126,26 @@ export default function ChatArea({
     bottomContentInset
   })
 
-  // 自动朗读（播放状态同时驱动消息气泡的喇叭 icon）
+  // Web：聊天列表滚动条默认隐藏，鼠标移入才显示（Firefox scrollbar-color /
+  // Chromium webkit-scrollbar 双写）。nativeID="chat-scroll" 落在可滚动节点上。
+  useEffect(() => {
+    if (Platform.OS !== 'web') return
+    const doc = (globalThis as any).document
+    if (!doc || doc.getElementById('chat-scroll-hover-bar')) return
+    const style = doc.createElement('style')
+    style.id = 'chat-scroll-hover-bar'
+    style.textContent = `
+      #chat-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+      #chat-scroll:hover { scrollbar-color: rgba(128,128,128,0.5) transparent; }
+      #chat-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+      #chat-scroll::-webkit-scrollbar-track { background: transparent; }
+      #chat-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+      #chat-scroll:hover::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.45); }
+      #chat-scroll::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.65); }
+    `
+    doc.head.appendChild(style)
+  }, [])
+
   const { playingMsgId, handlePlayingChange } = useAutoRead({
     activeId,
     autoRead,
@@ -257,8 +276,11 @@ export default function ChatArea({
                 if (pinnedMsgIdRef.current) recomputePinSpacer()
               }}
               // Android 12+ 默认的「边缘拉伸」会在滚到顶/底时把内容拽回来弹一下，
-              // 和 alwaysBounceVertical={false} 的意图一致，直接关掉
-              {...Platform.OS === 'android' ? { overScrollMode: 'never' } : null}
+              // 和 alwaysBounceVertical={false} 的意图一致，直接关掉；
+              // nestedScrollEnabled：思考框内层 ScrollView 滚到头后，手势能交接过来继续滚列表
+              {...Platform.OS === 'android'
+                ? { overScrollMode: 'never', nestedScrollEnabled: true }
+                : null}
             />
             </ListFadeIn>
           )}

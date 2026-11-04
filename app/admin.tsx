@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  ActivityIndicator,
   Pressable,
   Platform,
   ScrollView,
@@ -411,6 +412,14 @@ export default function AdminDashboardScreen() {
           </Text>
         </View>
       </ScrollView>
+      {/* 进入设备页 / 翻页加载时的全屏 loading：遮住数据到达前的闪屏 */}
+      {loading ? (
+        <View
+          style={[styles.loadingOverlay, { backgroundColor: theme.bgApp }]}
+        >
+          <ActivityIndicator size="large" color={theme.sendBtnActive} />
+        </View>
+      ) : null}
     </View>
   )
 }
@@ -891,6 +900,16 @@ function EmptyState({ theme }: { theme: any }) {
 const styles = StyleSheet.create({
   page: {
     flex: 1
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10
   },
   scroll: {
     flex: 1,

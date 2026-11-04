@@ -49,19 +49,27 @@ const StableMarkdown = memo(function StableMarkdown({
 function BlockFadeIn({
   text,
   style,
-  rules
+  rules,
+  fade = true
 }: {
   text: string
   style: any
   rules: RenderRules
+  /** 流式中新段落落定 → 淡入；整条吐字结束（streaming=false）的最后一段
+   *  已作为 TailText 可见，必须直接全实挂载，否则会「消失再淡入」闪一下 */
+  fade?: boolean
 }) {
-  const p = useSharedValue(0)
+  const p = useSharedValue(fade ? 0 : 1)
   useEffect(() => {
+    if (!fade) {
+      p.value = 1
+      return
+    }
     p.value = withTiming(1, {
       duration: 150,
       easing: Easing.out(Easing.quad)
     })
-  }, [p])
+  }, [fade, p])
   const fadeStyle = useAnimatedStyle(() => ({ opacity: p.value }))
   return (
     <Animated.View style={fadeStyle}>
@@ -425,7 +433,12 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
       {finalBlocks.map((block, i) => (
         <React.Fragment key={`md-${i}`}>
           {i > 0 && !needsNoSeparator(block) && <BlockSeparator />}
-          <BlockFadeIn text={block} style={style} rules={rules} />
+          <BlockFadeIn
+            text={block}
+            style={style}
+            rules={rules}
+            fade={streaming}
+          />
         </React.Fragment>
       ))}
       <TailText
