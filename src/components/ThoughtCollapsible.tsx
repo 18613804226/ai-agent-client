@@ -1,5 +1,6 @@
 import React, { memo, useEffect, useState, useCallback, useRef } from 'react'
 import {
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -75,22 +76,67 @@ const ThoughtCollapsible = memo(
       })
     }
 
+    /** 折叠补偿高度：用「展开态实测的 body 高度」（含滚动视口、margin），
+     *  比只算正文内容更准 —— 钉顶补偿若少算，动画期间内容净高偏小，
+     *  maxScroll 短暂低于钉顶目标 → 视口会被 clamp 小抖一下。 */
+    const openBodyHRef = useRef(0)
+
     const toggleOpen = () => {
       const nextState = !isOpen
+      const measured = openBodyHRef.current
       const expandedH =
-        contentHeightRef.current > 0
-          ? Math.min(contentHeightRef.current, THOUGHT_SCROLL_MAX)
-          : THOUGHT_SCROLL_MAX
+        measured > 0
+          ? measured
+          : contentHeightRef.current > 0
+            ? Math.min(contentHeightRef.current, THOUGHT_SCROLL_MAX)
+            : THOUGHT_SCROLL_MAX
       onToggle?.(nextState, expandedH)
       setIsOpen(nextState)
       animateTo(nextState)
     }
 
-    // 默认展开、不自动折叠：吐字结束不再收起思考框 → 高度不自动变化，
-// 也就不会触发外层滚动的 clamp / 跳动（这正是之前"跳一下"的根源）。
-// 用户可以手动点标题栏收起。
+    // ── 吐字结束自动折叠 ──────────────────────────────────────────────
+    // 只在「流式中 → 结束」的边界触发一次（历史消息挂载时 isStreaming=false，不触发）。
+    // ⚠️ 必须走 toggleOpen() 带上 onToggle 补偿：钉顶模式下 handleThoughtToggle
+    //    会立刻把 expandedH 补进底部留白 → 动画期间内容总高不减 → 不触发 clamp；
+    //    直接改 progress 绕过补偿 = 视口被拽一下（历史上的「跳一下」就是这么来的）。
+    // 延迟 400ms：错开「落定帧」（尾巴升格成稳定块、光标/墨洇摘除都挤在
+    // streaming→false 的那一帧），视觉是「答完 → 片刻 → 思考框收起」。
+    const AUTO_COLLAPSE_DELAY_MS = 400
+    const wasStreamingRef = useRef(isStreaming)
+    const autoCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const isOpenRef = useRef(isOpen)
+    isOpenRef.current = isOpen
+    const toggleOpenRef = useRef(toggleOpen)
+    toggleOpenRef.current = toggleOpen
+
+    useEffect(() => {
+      const was = wasStreamingRef.current
+      wasStreamingRef.current = isStreaming
+      if (was && !isStreaming) {
+        if (autoCollapseTimerRef.current) clearTimeout(autoCollapseTimerRef.current)
+        autoCollapseTimerRef.current = setTimeout(() => {
+          autoCollapseTimerRef.current = null
+          // 延迟窗口内用户已手动收起 → 尊重当前状态，不重复动作
+          if (isOpenRef.current) toggleOpenRef.current()
+        }, AUTO_COLLAPSE_DELAY_MS)
+      } else if (isStreaming && autoCollapseTimerRef.current) {
+        // 重新开始吐字（重新生成）：取消还没触发的折叠
+        clearTimeout(autoCollapseTimerRef.current)
+        autoCollapseTimerRef.current = null
+      }
+      return () => {
+        // 依赖只有 isStreaming：普通重渲染不会重跑本 effect，不会误杀定时器；
+        // 只在 isStreaming 变化 / 卸载时清理（防卸载后 setState）
+        if (autoCollapseTimerRef.current) {
+          clearTimeout(autoCollapseTimerRef.current)
+          autoCollapseTimerRef.current = null
+        }
+      }
+    }, [isStreaming])
 
     // 思考内容流式增长时自动贴到底部（见 handleContentSize：内容重排时贴底）
+    // 手动点标题栏可随时展开/收起；自动折叠后想再看就点一下展开。
 
     const bodyAnimatedStyle = useAnimatedStyle(() => ({
       opacity: progress.value,
@@ -142,36 +188,73 @@ const ThoughtCollapsible = memo(
             </Animated.View>
           </View>
         </TouchableOpacity>
-        <Animated.View style={bodyAnimatedStyle}>
-          <ScrollView
-            ref={scrollViewportRef}
-            scrollEnabled={scrollable}
-            // Android：参与嵌套滚动（内层滚到头自动交接给外层）
-            nestedScrollEnabled
-            showsVerticalScrollIndicator={false}
-            style={{ maxHeight: THOUGHT_SCROLL_MAX }}
-            onContentSizeChange={(_w, h) => handleContentSize(h)}
-            onScroll={handleThoughtScroll}
-            scrollEventThrottle={16}
-          >
-            <Text
-              style={[
-                styles.thoughtContent,
-                { color: theme.textMuted, marginTop: 4 }
-              ]}
+        <Animated.View
+          style={bodyAnimatedStyle}
+          onLayout={(e) => {
+            // 只记「展开态」的实测高度：折叠动画期间 isOpen 已为 false，跳过；
+            // 展开/流式增长过程中逐次上报，最后一次就是折叠前的高度。
+            if (!isOpen) return
+            const h = e.nativeEvent.layout.height
+            if (h > 0) openBodyHRef.current = h
+          }}
+        >
+          {Platform.OS === 'web' && !scrollable ? (
+            // Web：内容不需要滚动时直接渲染文本，不套 overflow:hidden 的
+            // ScrollView —— 否则触摸拖到这里带不动外层聊天列表。
+            // onLayout 负责测量：流式增长超过阈值后翻成 ScrollView。
+            <View
+              onLayout={(e) =>
+                handleContentSize(e.nativeEvent.layout.height)
+              }
             >
-              {/* 流式期间：末尾挂「墨洇」，与正文一致；结束落定后回退纯文本 */}
-              {isStreaming ? (
-                <InkTailText
-                  text={thought}
-                  color={theme.textMuted}
-                  baseStyle={styles.thoughtContent}
-                />
-              ) : (
-                thought
-              )}
-            </Text>
-          </ScrollView>
+              <Text
+                style={[
+                  styles.thoughtContent,
+                  { color: theme.textMuted, marginTop: 4 }
+                ]}
+              >
+                {isStreaming ? (
+                  <InkTailText
+                    text={thought}
+                    color={theme.textMuted}
+                    baseStyle={styles.thoughtContent}
+                  />
+                ) : (
+                  thought
+                )}
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              ref={scrollViewportRef}
+              scrollEnabled={scrollable}
+              // Android：参与嵌套滚动（内层滚到头自动交接给外层）
+              nestedScrollEnabled
+              showsVerticalScrollIndicator={false}
+              style={{ maxHeight: THOUGHT_SCROLL_MAX }}
+              onContentSizeChange={(_w, h) => handleContentSize(h)}
+              onScroll={handleThoughtScroll}
+              scrollEventThrottle={16}
+            >
+              <Text
+                style={[
+                  styles.thoughtContent,
+                  { color: theme.textMuted, marginTop: 4 }
+                ]}
+              >
+                {/* 流式期间：末尾挂「墨洇」，与正文一致；结束落定后回退纯文本 */}
+                {isStreaming ? (
+                  <InkTailText
+                    text={thought}
+                    color={theme.textMuted}
+                    baseStyle={styles.thoughtContent}
+                  />
+                ) : (
+                  thought
+                )}
+              </Text>
+            </ScrollView>
+          )}
         </Animated.View>
       </View>
     )

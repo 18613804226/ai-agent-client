@@ -13,7 +13,7 @@ import { Animated, Easing } from 'react-native'
  *    RN legacy Animated 对「Text 内嵌套 Text」的属性动画在原生 + Web 都是成熟路径。
  */
 
-/** 墨晕覆盖的字数 */
+/** 墨晕覆盖的字数：6*/
 export const INK_TAIL = 6
 /** 墨晕起始半径（收干到 0） */
 const INK_RADIUS = 8
@@ -22,12 +22,14 @@ const INK_ALPHA = 0.45
 /** 淡入起点：文字颜色的 alpha（0=全透明，1=实色）
  *  ⚠️ 必须用颜色的 alpha 而不是 style.opacity：
  *  Android 的内联 Text span 不支持 opacity/textShadow，
- *  只有 color 是逐 span 生效的三端通用属性。 */
-const INK_COLOR_ALPHA_FROM = 0.12
+ *  只有 color 是逐 span 生效的三端通用属性。
+ *  只做 1 个字时从接近全透明起，让"最新字浮现"更明显。 */
+const INK_COLOR_ALPHA_FROM = 0.1
 /** 淡入时长 */
-const INK_DURATION = 240
+const INK_DURATION = 180
 
-function parseRgb(color: string): [number, number, number] {
+/** 把 #rrggbb / #rgb / rgb() 解析成 [r,g,b]（供 Android 整段湿墨阴影复用） */
+export function parseRgb(color: string): [number, number, number] {
   const m6 = /^#([0-9a-f]{6})$/i.exec(color)
   if (m6) {
     const n = parseInt(m6[1], 16)

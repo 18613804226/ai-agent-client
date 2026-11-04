@@ -43,6 +43,8 @@ export default function AdminDashboardScreen() {
   const [page, setPage] = useState(1)
   const pageSize = 20
   const [loading, setLoading] = useState(true)
+  // 首次进入是否已完成加载：只有首次用全屏 loading，翻页保留顶部小提示
+  const [initialLoaded, setInitialLoaded] = useState(false)
   const [query, setQuery] = useState('')
   const [draftLimits, setDraftLimits] = useState<Record<string, string>>({})
   const [notice, setNotice] = useState('')
@@ -69,6 +71,7 @@ export default function AdminDashboardScreen() {
       setNotice(String(msg))
     } finally {
       setLoading(false)
+      setInitialLoaded(true)
     }
   }, [])
 
@@ -412,8 +415,8 @@ export default function AdminDashboardScreen() {
           </Text>
         </View>
       </ScrollView>
-      {/* 进入设备页 / 翻页加载时的全屏 loading：遮住数据到达前的闪屏 */}
-      {loading ? (
+      {/* 进入设备页首次加载的全屏 loading（翻页只用顶部小提示，不遮整屏） */}
+      {loading && !initialLoaded ? (
         <View
           style={[styles.loadingOverlay, { backgroundColor: theme.bgApp }]}
         >
