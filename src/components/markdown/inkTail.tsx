@@ -14,7 +14,7 @@ import { Animated, Easing } from 'react-native'
  */
 
 /** 墨晕覆盖的字数 */
-export const INK_TAIL = 10
+export const INK_TAIL = 5
 /** 墨晕起始半径（收干到 0） */
 const INK_RADIUS = 8
 /** 墨晕起始透明度（随收干衰减） */
