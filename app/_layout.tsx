@@ -103,7 +103,6 @@ export default function RootLayout() {
     if (Platform.OS !== 'android') return;
     SystemUI.setBackgroundColorAsync(theme.bgApp).catch(() => {});
     try {
-      StatusBar.setBackgroundColor(theme.bgApp, true);
       StatusBar.setBarStyle(isDarkMode ? 'light-content' : 'dark-content', true);
     } catch {}
   }, [theme.bgApp, isDarkMode]);
@@ -165,7 +164,7 @@ export default function RootLayout() {
                 <GestureHandlerRootView
                  style={{ flex: 1, backgroundColor: theme.bgApp }}
                >
-                <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={theme.bgApp} translucent={false} />
+                <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
                 {/* 👇 根 Stack：聊天主界面（内嵌 Drawer）+ admin 页面。
                      admin 页面通过 push/back 进出，侧滑转场中内容全程保持挂载 */}
                  <Stack

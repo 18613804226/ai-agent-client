@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react'
+import React, { type ComponentRef, useRef, useState } from 'react'
 import {
   KeyboardAvoidingView,
   Platform,
@@ -28,7 +28,7 @@ export default function AdminLoginScreen() {
   const [loading, setLoading] = useState(false)
   // 登录跳转进行中：保持本屏内容挂载到转场结束，避免 <Redirect/> 提前清空内容
   const [isRedirecting, setIsRedirecting] = useState(false)
-  const passwordInputRef = useRef<TextInput>(null)
+  const passwordInputRef = useRef<ComponentRef<typeof TextInput>>(null)
 
   if (isAdminPreview && !isRedirecting) return <Redirect href="/admin" />
 
