@@ -65,13 +65,30 @@ const ThoughtCollapsible = memo(
       () =>
         Gesture.Pan()
           .enabled(scrollable)
-          // 激活阈值低于安卓 touchSlop，确保在根视图层先于外层 ScrollView 抢到手势
-          .activeOffsetY([-4, 4])
+          // 手动仲裁：内层还能滚才 activate；已经贴边、且继续往该方向拖 → fail()
+          // 把这次手势让给外层聊天列表（否则「只在思考框里滑，拖不动气泡」）。
+          .manualActivation(true)
           .shouldCancelWhenOutside(false)
           .onBegin((e) => {
             startY.value = scrollY.value
             startAbsY.value = e.absoluteY
             dragging.value = true
+          })
+          .onTouchesMove((e: any, manager: any) => {
+            const t = e.allTouches?.[0]
+            if (!t) return
+            const dy = t.absoluteY - startAbsY.value
+            if (Math.abs(dy) < 4) return
+            const min = Math.min(0, THOUGHT_SCROLL_MAX - contentH.value)
+            const atTop = scrollY.value >= -0.5
+            const atBottom = scrollY.value <= min + 0.5
+            // 继续往下拖(内容到顶) / 继续往上拖(内容到底)：内层没得滚了，交给外层
+            if ((dy > 0 && atTop) || (dy < 0 && atBottom)) {
+              dragging.value = false
+              manager.fail()
+              return
+            }
+            manager.activate()
           })
           .onUpdate((e) => {
             const min = Math.min(0, THOUGHT_SCROLL_MAX - contentH.value)
