@@ -203,12 +203,15 @@ const TailText = memo(function TailText({
   selectable,
   color,
   style,
+  streaming = true,
   leadingSeparator = false
 }: {
   text: string
   selectable: boolean
   color: string
   style: any
+  /** 流式期才挂月亮光标 + 墨洇尾字；落定后走纯文本（保证结束态零重排） */
+  streaming?: boolean
   /** 尾巴前面还有已落定的稳定块 → 补一个空行。
    *  最终渲染里段落/标题/列表在 `index > 0` 时会补 `\n\n`，而流式侧的块是
    *  **各自独立的节点**，不自己补的话块间会被压成一行，等切点落定/吐字结束
@@ -255,7 +258,7 @@ const TailText = memo(function TailText({
                 style={[styles.tail, { color }]}
               >
                 {seg.marker}
-                {i === lastTextIdx && <InlineMoonPhase />}
+                {streaming && i === lastTextIdx && <InlineMoonPhase />}
               </Text>
             )
           }
@@ -278,14 +281,20 @@ const TailText = memo(function TailText({
             : null
         // 纯文本尾巴挂「墨洇新字」淡入（①）；内联强调段保持原样（style 是从
         // markdown 规则里来的，拆字动画只做在无样式叶子上，避免动 strong/em）
+        // 落定后（streaming=false）不挂墨洇、直接吐纯文本：保持 content 相同的
+        // 情况下树结构零变化，是「结束不跳」的前提。
         const plainBody = !segInline ? (
-          <InkTailText
-            text={seg.text}
-            color={color}
-            baseStyle={styles.tail}
-            selectable={selectable}
-            segIndex={i}
-          />
+          streaming ? (
+            <InkTailText
+              text={seg.text}
+              color={color}
+              baseStyle={styles.tail}
+              selectable={selectable}
+              segIndex={i}
+            />
+          ) : (
+            seg.text
+          )
         ) : null
         // ⚠️ 这里必须用 styles.tail（= body 的字号/行高），**不能**用
         // style.paragraph：最终渲染里 body 规则会把连续段落合并进同一个 <Text>，
@@ -304,11 +313,11 @@ const TailText = memo(function TailText({
             {segInline
               ? segInline.map((s, j) => renderSeg(s, `s${i}.${j}`))
               : plainBody}
-            {i === lastTextIdx && <InlineMoonPhase />}
+            {streaming && i === lastTextIdx && <InlineMoonPhase />}
           </Text>
         )
       })}
-      {lastTextIdx < 0 && <InlineMoonPhase />}
+      {streaming && lastTextIdx < 0 && <InlineMoonPhase />}
     </View>
   )
 })
@@ -351,11 +360,15 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   content,
   style,
   rules,
+  streaming = true,
   selectable = true
 }: {
   content: string
   style: any
   rules: RenderRules
+  /** 流式期（默认）：尾巴近似渲染 + 光标/墨洇；
+   *  落定后把「没空行收尾的最后一段」升格为稳定块（完整 markdown），并撤掉光标。 */
+  streaming?: boolean
   selectable?: boolean
 }) {
   // 已成形段落也过一遍强调归一化（`** xx **` → `**xx**`）：这些段落会走
@@ -399,20 +412,29 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   }, [content])
   const color = style.body?.color ?? '#000'
 
+  // 落定（streaming=false）：把「没有空行收尾的最后一段」也升格成稳定块，
+  // 走与流式段落升级完全相同的 StableMarkdown 渲染 + 样式（含 BlockFadeIn 淡入），
+  // TailText 清空。于是结束态与最后一帧只差「尾段升格 + 光标消失」，
+  // 其余块 key/文本不变 → memo 命中 → 零重排，不再有整棵树卸载重挂的跳动。
+  const finalBlocks =
+    !streaming && tail ? [...blocks, tail] : blocks
+  const finalTail = streaming ? tail : ''
+
   return (
     <View>
-      {blocks.map((block, i) => (
+      {finalBlocks.map((block, i) => (
         <React.Fragment key={`md-${i}`}>
           {i > 0 && !needsNoSeparator(block) && <BlockSeparator />}
           <BlockFadeIn text={block} style={style} rules={rules} />
         </React.Fragment>
       ))}
       <TailText
-        text={tail}
+        text={finalTail}
         selectable={selectable}
         color={color}
         style={style}
-        leadingSeparator={blocks.length > 0}
+        streaming={streaming}
+        leadingSeparator={finalBlocks.length > 0}
       />
     </View>
   )

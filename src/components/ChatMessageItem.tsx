@@ -1,6 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from 'react'
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
-import Markdown from 'react-native-markdown-display'
 import { InputBarIcon } from './InputBarIcon'
 import Animated, {
   useSharedValue,
@@ -189,9 +188,9 @@ const ChatMessageItem = memo(
      *    不能是空白，否则整段当字面量、加粗不生效，而模型很爱输出带空格版。
      */
     const renderContent =
-      !isStreaming && item.content
-        ? normalizeInlineEmphasis(item.content.trimEnd())
-        : ''
+      isStreaming || !item.content
+        ? item.content || ''
+        : normalizeInlineEmphasis(item.content.trimEnd())
 
     /**
      * 气泡下方小字：耗时 · tokens。
@@ -409,37 +408,22 @@ const ChatMessageItem = memo(
                     拖慢吐字（那时还要靠贴底补帧，掉一帧就看得见）。现在 inverted 布局下
                     底部是自动的、不需要任何滚动命令，这份成本只影响吐字流畅度本身，
                     且有 memo 兜底，所以在原生上也直接渲染 markdown。 */}
-                  {isStreaming ? (
-                    // 月球自转是正文 <Text> 末尾的月相 emoji 内联节点（见 StreamingMarkdown），
-                    // 纯文本不依赖 transform → 安卓也稳，且严格贴着最后一个字、随文字换行。
-                    <StreamingMarkdown
-                      content={item.content || ''}
-                      style={dynamicMarkdownStyles}
-                      selectable={textSelectable}
-                      rules={
-                        // 与「结束后」保持同一套规则：风格不变、选中能力也不变
-                        Platform.OS === 'web'
-                          ? webMarkdownRules
-                          : textSelectable
-                            ? selectableMarkdownRules
-                            : nonSelectableMarkdownRules
-                      }
-                    />
-                  ) : (
-                    <Markdown
-                      style={dynamicMarkdownStyles}
-                      rules={
-                        // Web：用自定义规则（含复制按钮）；原生：沿用单一可选文本树
-                        Platform.OS === 'web'
-                          ? webMarkdownRules
-                          : textSelectable
-                            ? selectableMarkdownRules
-                            : nonSelectableMarkdownRules
-                      }
-                    >
-                      {renderContent}
-                    </Markdown>
-                  )}
+                  {/* 正文：统一走 StreamingMarkdown —— 流式期段落级增量；结束时不切换渲染器
+                  （否则整棵树卸载重挂 → 布局跳一下），只把最后一段升格为稳定块，
+                  其余块 memo 命中零重排。rules/style 流式与结束完全一致。 */}
+                <StreamingMarkdown
+                  content={renderContent}
+                  streaming={isStreaming}
+                  style={dynamicMarkdownStyles}
+                  selectable={textSelectable}
+                  rules={
+                    Platform.OS === 'web'
+                      ? webMarkdownRules
+                      : textSelectable
+                        ? selectableMarkdownRules
+                        : nonSelectableMarkdownRules
+                  }
+                />
                 </View>
               )}
 

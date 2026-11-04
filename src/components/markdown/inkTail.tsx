@@ -1,29 +1,28 @@
-import React, { useEffect, useMemo } from 'react'
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  Easing
-} from 'react-native-reanimated'
+import React, { useEffect, useMemo, useRef } from 'react'
+import { Animated, Easing } from 'react-native'
 
 /**
  * 流式文本「墨洇」尾部（从虚到实）。
  * 只包最后几个字：随文本长度换 key 重挂，挂载时播一段淡入 + 墨晕收敛。
  * 前缀保持普通字符串子节点不动 → 长文本也只多一个微型动画节点。
  *
- * 文本色解析：跑到 JS 层算好 rgb，worklet 里只做数字插值（避免在 UI 线程跑正则）。
+ * ⚠️ 为什么用 RN legacy Animated 而不是 Reanimated：
+ *    Reanimated（Fabric 新架构）对**嵌套在 <Text> 内部的 Animated.Text**
+ *    逐帧更新 opacity / textShadowRadius 这类 shadowNode 文本属性支持不完整，
+ *    实测 Android/iOS 上动画不生效（Web 走 DOM/CSS 正常）。
+ *    RN legacy Animated 对「Text 内嵌套 Text」的属性动画在原生 + Web 都是成熟路径。
  */
 
 /** 墨晕覆盖的字数 */
 export const INK_TAIL = 10
 /** 墨晕起始半径（收干到 0） */
-const INK_RADIUS = 9
+const INK_RADIUS = 8
 /** 墨晕起始透明度（随收干衰减） */
 const INK_ALPHA = 0.45
 /** 淡入起点：文字从多"虚"开始（0=完全透明，1=全实） */
 const INK_OPACITY_FROM = 0.1
 /** 淡入时长 */
-const INK_DURATION = 260
+const INK_DURATION = 200
 
 function parseRgb(color: string): [number, number, number] {
   const m6 = /^#([0-9a-f]{6})$/i.exec(color)
@@ -56,27 +55,47 @@ const InkTail = ({
   color: string
   baseStyle: any
 }) => {
-  const p = useSharedValue(0)
+  // 0 = 刚出现（最虚、最洇），1 = 干透（全实、无晕）
+  const progress = useRef(new Animated.Value(0)).current
   const rgb = useMemo(() => parseRgb(color), [color])
+
   useEffect(() => {
-    p.value = withTiming(1, {
+    progress.setValue(0)
+    Animated.timing(progress, {
+      toValue: 1,
       duration: INK_DURATION,
-      easing: Easing.out(Easing.quad)
-    })
-  }, [p])
-  const inkStyle = useAnimatedStyle(() => {
-    const wet = 1 - p.value
-    return {
-      opacity: INK_OPACITY_FROM + (1 - INK_OPACITY_FROM) * p.value,
-      textShadowRadius: wet * INK_RADIUS,
-      textShadowColor: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${wet * INK_ALPHA})`,
-      textShadowOffset: { width: 0, height: 0 }
-    }
-  })
+      easing: Easing.out(Easing.quad),
+      // textShadow* 不是原生驱动支持的属性，只能 JS 驱动；
+      // 节点只有几个字、且整条链路本来就是 JS 侧按帧更新文本，开销可忽略。
+      useNativeDriver: false
+    }).start()
+  }, [progress])
+
   return (
     <Animated.Text
       selectable={selectable}
-      style={[baseStyle, { color }, inkStyle]}
+      style={[
+        baseStyle,
+        { color },
+        {
+          opacity: progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [INK_OPACITY_FROM, 1]
+          }),
+          textShadowRadius: progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [INK_RADIUS, 0]
+          }),
+          textShadowColor: progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [
+              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${INK_ALPHA})`,
+              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`
+            ]
+          }),
+          textShadowOffset: { width: 0, height: 0 }
+        }
+      ]}
     >
       {text}
     </Animated.Text>
