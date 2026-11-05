@@ -39,6 +39,18 @@ export const APP_PIN_USER_MESSAGE = Platform.OS !== 'web';
 export const THOUGHT_EDGE_SCROLL_ENABLED = false;
 
 /**
+ * 思考框展开/折叠动画的时长与缓动曲线（Easing.bezier 的四个控制点）。
+ *
+ * ⚠️ 两处必须共用、且完全一致：
+ *  - ThoughtCollapsible：maxHeight / opacity / 箭头；
+ *  - useChatPinScroll：钉顶补偿（pinTarget、manualSpacer 的 withTiming）。
+ * 钉顶补偿按「整段高度 + 同一条时间轴」推算，任一侧的时长或曲线不同，
+ * 动画期间内容总高就对不上 → 视口被 clamp 拽动。要调节奏只改这里。
+ */
+export const THOUGHT_ANIM_MS = 250;
+export const THOUGHT_ANIM_BEZIER: [number, number, number, number] = [0.25, 0.1, 0.5, 1];
+
+/**
  * 翻转视图用的 transform。
  * Android 与 RN 自带实现保持一致用 `scale: -1`（X/Y 都翻，两层叠加即抵消水平方向），
  * iOS 用 `scaleY: -1`。

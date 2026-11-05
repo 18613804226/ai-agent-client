@@ -19,7 +19,11 @@ import Animated, {
 } from 'react-native-reanimated'
 import { scheduleOnUI } from 'react-native-worklets'
 import { useChat } from '../../context/appContexts'
-import { APP_PIN_USER_MESSAGE } from '../../utils/chatScroll'
+import {
+  APP_PIN_USER_MESSAGE,
+  THOUGHT_ANIM_MS,
+  THOUGHT_ANIM_BEZIER
+} from '../../utils/chatScroll'
 import { useChatScroll } from '../../hooks/useChatScroll'
 import { PIN_TOP_GAP, FOOTER_COLLAPSE, mergeRefs } from './chatAreaConstants'
 import type { Message, StreamingRenderMsg } from '../../types/chat'
@@ -109,6 +113,13 @@ export function useChatPinScroll({
 
   /** 视口是否已测量（只用于决定留白占位是否渲染；精确高度走 viewportHRef） */
   const [hasViewport, setHasViewport] = useState(false)
+  /**
+   * 历史贴底跟随是否进行中：为 true 时「回到底部」按钮一律不显示。
+   * 冷启动/切会话时列表会先停在顶部/估算位置，再由帧回调程序化贴底；这段滚动
+   * 不是用户上滑，按钮不该出现。用户一碰列表（onTouchStart/onScrollBeginDrag）
+   * 或发送消息（pinUserMessage）即结束跟随，按钮恢复按距离判定。
+   */
+  const [historyFollowActive, setHistoryFollowActive] = useState(false)
   /**
    * 流式期间底部常驻「一屏高」留白（参考 Gemini/元宝）：
    * 它和 messages 在同一个 commit 就存在 → 滚到任意消息顶部永远合法 →
@@ -344,6 +355,7 @@ export function useChatPinScroll({
   /** 立即收手（用户触摸 / 发送消息时） */
   const endHistoryBottom = useCallback(() => {
     historyBottomSV.value = 0
+    setHistoryFollowActive(false)
   }, [historyBottomSV])
 
   /**
@@ -355,6 +367,7 @@ export function useChatPinScroll({
     if (!APP_PIN_USER_MESSAGE) return
     // 只置标记：真正的「贴底滚动」由 UI 线程帧回调执行（列表可能还停在顶部，
     // 且内容会继续长高）。
+    setHistoryFollowActive(true)
     historyBottomSV.value = 1
     pendingFollowSV.value = 1
   }, [historyBottomSV, pendingFollowSV])
@@ -565,32 +578,44 @@ export function useChatPinScroll({
             pinTargetBaseRef.current + (expanding ? height : -height)
           )
           scheduleOnUI(
-            (sv: any, target: number) => {
+            (sv: any, target: number, ms: number, b: number[]) => {
               'worklet'
               if (sv.value < 0) return
               sv.value = withTiming(target, {
-                duration: 250,
-                easing: Easing.bezier(0.25, 0.1, 0.5, 1)
+                duration: ms,
+                easing: Easing.bezier(b[0], b[1], b[2], b[3])
               })
             },
             pinTargetSV,
-            pinTargetBaseRef.current
+            pinTargetBaseRef.current,
+            THOUGHT_ANIM_MS,
+            THOUGHT_ANIM_BEZIER
           )
         }
       } else if (!expanding) {
-        // 下方折叠：内容在动画末尾才缩 H，先立即补 H 留白防 maxScroll 掉到 target 以下
+        // 下方折叠：留白与 ThoughtCollapsible 的折叠动画「同时长同曲线」补高，
+        // 动画期间「正文高度 + 留白」恒等于折叠前总高 → maxScroll 不会掉到
+        // target 以下被 clamp，也不会出现留白先跳一截的顿挫。
+        // 时长/曲线由 utils/chatScroll 的 THOUGHT_ANIM_* 单点定义，显式传进 worklet。
         manualSpacerBaseRef.current += height
         scheduleOnUI(
-          (sv: any, m: number) => {
+          (sv: any, m: number, ms: number, b: number[]) => {
             'worklet'
-            sv.value = m
+            sv.value = withTiming(m, {
+              duration: ms,
+              easing: Easing.bezier(b[0], b[1], b[2], b[3])
+            })
           },
           manualSpacerSV,
-          manualSpacerBaseRef.current
+          manualSpacerBaseRef.current,
+          THOUGHT_ANIM_MS,
+          THOUGHT_ANIM_BEZIER
         )
       }
 
-      // 动画结束后只做一次原子汇总：重算目标 + 把 manual 折算进精确 spacer
+      // 动画结束后只做一次原子汇总：重算目标 + 把 manual 折算进精确 spacer。
+      // 固定 300ms = THOUGHT_ANIM_MS(250) + 约 3 帧掉帧余量；刻意不写成
+      // THOUGHT_ANIM_MS + 50，避免调动画时长时顺带把收敛窗口也改掉。
       thoughtSettleRef.current = setTimeout(() => {
         const idx = pinnedIndexRef.current
         const ref = scrollViewRef.current as any
@@ -1029,7 +1054,9 @@ export function useChatPinScroll({
     lastUserIdForAnim,
     spacerVisible,
     hasViewport,
-    showScrollToBottom,
+    // 历史贴底跟随期间不显示「回到底部」：此时列表正被程序化贴底，
+    // 高 distance 是定位过程而非用户上滑，显示按钮属于误报。
+    showScrollToBottom: showScrollToBottom && !historyFollowActive,
     showWelcome,
     isEmptyConversation,
     scrollToBottomUI,

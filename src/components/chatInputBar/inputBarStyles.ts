@@ -150,6 +150,13 @@ export const inputBarStyles = StyleSheet.create({
         resize: 'none',
         overflowY: 'auto',
         height: 'auto',
+        // 锁定行盒：不写 line-height 时浏览器用 normal，它随字体度量变化 ——
+        // 汉字回退到系统 CJK 字体后 ascent/descent 更大，混排的 line box 会被
+        // 撑高 2~4px；field-sizing:content 直接把内容高度当 textarea 高度，于是
+        // 「一输入中文 pill 就变高一截」，纯英文/数字全程同一字体则不会。
+        // 22px 按 _layout 注入的 16px 计算字号配（transform scale 后视觉 ≈20.6px），
+        // 足以覆盖常见 CJK 字体的自然行盒，旧内核的 scrollHeight 兜底也一并稳定。
+        lineHeight: 22,
         fieldSizing: 'content'
       } as any
     })

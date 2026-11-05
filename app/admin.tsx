@@ -191,8 +191,11 @@ export default function AdminDashboardScreen() {
             backgroundColor: theme.bgSidebar,
             borderBottomColor: theme.border,
             paddingTop: Platform.OS === 'web' ? 0 : insets.top,
-            // APP 端头部加高（H5 保持 styles.topBar 的 62 不变）
-            ...(Platform.OS !== 'web' ? { minHeight: 72 } : null)
+            // APP 端头部加高（H5 保持 styles.topBar 的 62 不变）。
+            // ⚠️ 必须用 height 而不是 minHeight：RN 默认 border-box，paddingTop(insets.top)
+            //   也算进 minHeight，安全区 + 内容本来就超过 72 时 minHeight 完全失效（改了没反应）。
+            //   72 是「状态栏之下」那条头部的固定高度，安全区 padding 额外叠加。
+            ...(Platform.OS !== 'web' ? { height: 72 + insets.top } : null)
           }
         ]}
       >

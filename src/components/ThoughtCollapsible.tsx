@@ -16,17 +16,24 @@ import Animated, {
 } from 'react-native-reanimated'
 import type { ThemeType } from '../types/chat'
 import { InkTailText } from './markdown/inkTail'
+import {
+  THOUGHT_ANIM_MS,
+  THOUGHT_ANIM_BEZIER
+} from '../utils/chatScroll'
 
 interface ThoughtCollapsibleProps {
   thought: string
   theme: ThemeType
   /** 是否正在流式吐字：吐字结束自动收起思考框（兜底路径） */
   isStreaming?: boolean
-  /** 思考阶段是否已结束（正文开始吐字）—— 立即触发「秒收」 */
+  /** 思考阶段是否已结束（正文开始吐字）—— 立即触发带动画的收起 */
   thoughtDone?: boolean
   /** 思考框展开/折叠时回调：(expanding, height) —— 用于外层留白同步补偿 */
   onToggle?: (expanding: boolean, height: number) => void
 }
+
+/** 时长与曲线参数来自 utils/chatScroll（与钉顶补偿单点定义），这里只把曲线对象缓存一次 */
+const THOUGHT_EASING = Easing.bezier(...THOUGHT_ANIM_BEZIER)
 
 // ===================== ThoughtCollapsible =====================
 const ThoughtCollapsible = memo(
@@ -72,10 +79,10 @@ const ThoughtCollapsible = memo(
       followThoughtBottom.current = y + vh >= h - 2 || y <= 0.5
     }, [])
 
-    const animateTo = (open: boolean, duration = 250) => {
+    const animateTo = (open: boolean) => {
       progress.value = withTiming(open ? 1 : 0, {
-        duration,
-        easing: Easing.bezier(0.25, 0.1, 0.5, 1)
+        duration: THOUGHT_ANIM_MS,
+        easing: THOUGHT_EASING
       })
     }
 
@@ -84,9 +91,14 @@ const ThoughtCollapsible = memo(
      *  maxScroll 短暂低于钉顶目标 → 视口会被 clamp 小抖一下。 */
     const openBodyHRef = useRef(0)
 
-    /** @param instant true = 秒收/秒开（0ms 动画）。仍走 onToggle 补偿 ——
-     *  钉顶的留白同帧补高，瞬时折叠也不会让视口被 clamp 拽动。 */
-    const toggleOpen = (instant = false) => {
+    /** 同一份实测高度的 UI 线程副本：折叠时按真实高度收。
+     *  固定 maxHeight(旧实现是 300) 会在动画前 1/3 出现「只淡不收」的死区，
+     *  收尾阶段才猛地一缩 —— 这就是「一下锁起来」的来源。 */
+    const bodyHSV = useSharedValue(300)
+
+    /** 展开/折叠。总是走 onToggle 补偿：钉顶的留白与折叠动画同帧起步，
+     *  动画期间内容总高不变 → 不会被 clamp 拽动。 */
+    const toggleOpen = () => {
       const nextState = !isOpen
       const measured = openBodyHRef.current
       const expandedH =
@@ -97,14 +109,15 @@ const ThoughtCollapsible = memo(
             : THOUGHT_SCROLL_MAX
       onToggle?.(nextState, expandedH)
       setIsOpen(nextState)
-      animateTo(nextState, instant ? 0 : 250)
+      animateTo(nextState)
     }
 
     // ── 吐字结束自动折叠 ──────────────────────────────────────────────
     // 只在「流式中 → 结束」的边界触发一次（历史消息挂载时 isStreaming=false，不触发）。
     // ⚠️ 必须走 toggleOpen() 带上 onToggle 补偿：钉顶模式下 handleThoughtToggle
-    //    会立刻把 expandedH 补进底部留白 → 动画期间内容总高不减 → 不触发 clamp；
-    //    直接改 progress 绕过补偿 = 视口被拽一下（历史上的「跳一下」就是这么来的）。
+    //    会把 expandedH 按同一条时间轴补进底部留白 / 推进 pinTarget → 动画期间
+    //    内容总高恒定 → 不触发 clamp；直接改 progress 绕过补偿 = 视口被拽一下
+    //    （历史上的「跳一下」就是这么来的）。
     // 延迟 400ms：错开「落定帧」（尾巴升格成稳定块、光标/墨洇摘除都挤在
     // streaming→false 的那一帧），视觉是「答完 → 片刻 → 思考框收起」。
     const AUTO_COLLAPSE_DELAY_MS = 400
@@ -140,29 +153,35 @@ const ThoughtCollapsible = memo(
       }
     }, [isStreaming])
 
-    // ── 思考阶段结束（正文开始吐字）→ 立即秒收 ────────────────────────
+    // ── 思考阶段结束（正文开始吐字）→ 顺手收起 ────────────────────────
     // 流式层按 type: 'thought' | 'content' 分阶段推送；ChatMessageItem 传入的
     // thoughtDone =「正文已有内容」，第一个 content 片段到达即阶段边界。
-    // 此刻吐字还在继续、没有「落定帧」的布局合并，所以可以零延迟零动画直接收；
+    // 零延迟触发，但走正常时长动画（250ms）：正文刚开始吐字，折叠与补偿同步进行，
+    // 视觉上是「思考框退场、正文登场」，而不是被「啪」地锁上。
     // 兜底路径（thought-only/中断：正文始终没来）仍走上面的 isStreaming 400ms。
     const wasThoughtDoneRef = useRef(thoughtDone)
     useEffect(() => {
       const was = wasThoughtDoneRef.current
       wasThoughtDoneRef.current = thoughtDone
       if (!was && thoughtDone && isOpenRef.current) {
-        toggleOpenRef.current(true) // 秒收：0ms，但带 onToggle 补偿防视口跳动
+        toggleOpenRef.current()
       }
     }, [thoughtDone])
 
     // 思考内容流式增长时自动贴到底部（见 handleContentSize：内容重排时贴底）
     // 手动点标题栏可随时展开/收起；自动折叠后想再看就点一下展开。
 
-    const bodyAnimatedStyle = useAnimatedStyle(() => ({
-      opacity: progress.value,
-      transform: [{ translateY: (1 - progress.value) * -8 }],
-      maxHeight: progress.value * 300,
-      overflow: 'hidden' as const
-    }))
+    const bodyAnimatedStyle = useAnimatedStyle(() => {
+      const p = progress.value
+      return {
+        // 淡出与收高共用 p：文字透明度随时间轴同步衰减，不会「先裁一刀再消失」
+        opacity: p,
+        transform: [{ translateY: (1 - p) * -6 }],
+        // 按实测高度收（不再是固定 300 的死区），展开态给足余量不裁剪
+        maxHeight: p >= 1 ? 9999 : Math.max(0, p * bodyHSV.value),
+        overflow: 'hidden' as const
+      }
+    })
 
     const arrowAnimatedStyle = useAnimatedStyle(() => ({
       transform: [{ rotate: `${progress.value * 180}deg` }]
@@ -210,11 +229,15 @@ const ThoughtCollapsible = memo(
         <Animated.View
           style={bodyAnimatedStyle}
           onLayout={(e) => {
-            // 只记「展开态」的实测高度：折叠动画期间 isOpen 已为 false，跳过；
-            // 展开/流式增长过程中逐次上报，最后一次就是折叠前的高度。
-            if (!isOpen) return
+            // 只记「完全展开」的实测高度：折叠/展开动画期间量到的是被 maxHeight
+            // 裁剪出来的中间值，写进去会把动画高度带偏（越收越小）。
+            // 流式增长时 progress 停在 1，逐次上报，最后一次就是折叠前的高度。
+            if (!isOpen || progress.value < 0.99) return
             const h = e.nativeEvent.layout.height
-            if (h > 0) openBodyHRef.current = h
+            if (h > 0) {
+              openBodyHRef.current = h
+              bodyHSV.value = h
+            }
           }}
         >
           {Platform.OS === 'web' && !scrollable ? (
