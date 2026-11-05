@@ -18,7 +18,7 @@
 
 ### 前端（多端统一）
 
-* **React Native / Expo**：移动端跨平台开发, 基于 Expo Router 构建, 完美适配 Web 端, 移动端, 桌面端。
+* **React Native / Expo**：移动端跨平台开发, 基于 Expo Router 构建, 完美适配 Web 端, 移动端, 桌面端（当前 Expo SDK 58 / React Native 0.88）。
 * **流式通信**：SSE（Server-Sent Events）流式订阅, `ReadableStream` 实时流处理。
 * **交互体验**：多端 UI 自适应, 抽屉式侧边栏, 多格式文件解析上传。
 * **动效与键盘**：react-native-reanimated 4 驱动动效, react-native-keyboard-controller 原生逐帧键盘高度, 位移与折叠动画全部跑在 UI 线程。
@@ -29,7 +29,7 @@
 * **NestJS + TypeScript**：企业级高扩展性后端架构。
 * **PostgreSQL + PGVector**：高性能关系型与向量混合数据库。
 * **大模型与向量化**：阿里通义千问 Embedding 向量化模型 + 千问大模型文本生成。
-* **文档解析**：支持 `TXT`、`PDF` 等多格式私有文档解析（`DOCX` 待支持）。
+* **文档解析**：支持 `TXT`、`PDF`、`DOCX` 等格式的上传与预览（解析能力以后端实际支持为准）。
 
 ---
 
@@ -40,6 +40,9 @@
 ├── assets/               # 图片、图标等静态资源
 ├── src/
 │   ├── components/       # 页面与可复用 UI 组件
+│   │   ├── chat/         # 聊天区拆分：滚动/贴底/钉顶、预览、欢迎语、回到底部
+│   │   ├── chatInputBar/ # 输入栏拆分：样式、Web 辅助、附件预览、语音 UI
+│   │   └── sidebar/      # 侧边栏拆分：样式、长按项、操作菜单、确认弹窗
 │   ├── constants/        # 主题与应用常量
 │   ├── context/          # 全局状态与 Provider
 │   ├── hooks/            # 聊天、键盘等业务逻辑
@@ -95,7 +98,7 @@
 * **流式状态隔离**：`StreamingRenderMsgContext` 独立于 `ChatContext`，逐 token 更新只重渲染聊天区，输入栏、抽屉与侧边栏不受影响。
 * **增量 Markdown**：流式切块按「文本只增不减」缓存，稳定段落不重复解析，把每 token 的 O(n) 切分降到约 60ms / 8 字符一次，长回答避免 O(n²)。
 * **稳定 key**：用户消息、AI 占位与历史消息统一 `makeId` 生成，历史重复 ID 自动改写，杜绝 FlashList / React duplicate key。
-* **思考框不跳动**：默认展开、由用户手动折叠，避免吐字结束后自动收起造成列表高度突变与滚动 clamp。
+* **思考框不跳动**：思考内容到达即完整显示（不走打字机逐字揭示）；思考结束（正文开始吐字）时自动收起，避免列表高度突变与滚动 clamp；用户随时可手动展开/折叠。
 
 > 线程分工：JS 只负责测量（`onLayout` / `onContentSizeChange`）与 Markdown 解析；**所有滚动、位移、留白都在 UI 线程**。
 
@@ -103,7 +106,7 @@
 
 ## ⚙️ 系统核心流程（标准 RAG 架构）
 
-1. **用户上传文档**：支持 `TXT`、`PDF` 格式（`DOCX` 待支持）, 前端完成基础校验与大小过滤, 后端执行纯文本提取。
+1. **用户上传文档**：前端支持 `TXT`、`PDF`、`DOCX`、`MD`、代码文件等格式的选择与预览（解析能力以后端为准）, 前端完成基础校验与大小过滤, 后端执行纯文本提取。
 2. **文本切片与向量化**：长文本自动分块切片, 调用千问 Embedding 接口将其转换为高维稠密向量, 持久化存入 PGVector 向量数据库。
 3. **用户语义提问**：用户输入的查询问题同样经过向量化处理, 在向量库中通过余弦相似度精准检索出 Top 3 ~ Top 5 最相关的文档片段。
 4. **大模型分析整合**：向量库仅负责召回相关片段, 由千问大模型负责上下文分析, 推理, 信息整合, 组织最终答案, 并输出结构化的 CoT（Chain-of-Thought）思考过程。
@@ -176,6 +179,10 @@ npm run android:release
 
 这条命令固定执行：读取本地 `.env` / `.env.production` → 干净 `expo prebuild` → 补回 `android/local.properties` → 放入 `release.keystore` → 注入 release 签名 → arm64 release 构建。`EXPO_PUBLIC_API_URL` 会显式传给 Gradle，避免本地包回落到 `localhost`。**`app.json` 改过配置后必须走这条命令**，不要直接对祖传 `android/` 跑 gradle。
 
+> 纯 JS 改动可用 `SKIP_PREBUILD=1 npm run android:release` 复用现有 `android/`，跳过 prebuild（省掉原生工程重新生成与缓存失效，重复打包快很多）。
+>
+> Windows 注意：reanimated 的 C++ 编译镜像路径可能超过 260 字符上限（表现为 ninja `mkdir` 失败）。项目已把 Android SDK 的 `cmake/3.22.1/bin/ninja.exe` 替换为长路径感知的 1.12.1（原文件备份为 `ninja.exe.bak`）；若换机或重装 SDK 后复现，重新替换即可。
+
 签名信息放在项目根目录的 `keystore.properties`（已 gitignore）：
 
 ```properties
@@ -206,7 +213,7 @@ npm run ota -- --message "描述本次更新"
 - Android 端固定使用 `production` channel，App 启动时会检查并下载更新。
 - 下载完成后通过 `Updates.useUpdates()` 自动 `reloadAsync()`，不需要再手动冷启动两次。
 - 原生配置、签名、SDK 版本、新增原生依赖仍然必须重新打 APK；OTA 只覆盖 JS 和资源。
-- `patches/expo-updates+57.0.26.patch` 强制 manifest 请求使用 `gzip`，规避 Android 上 zstd 响应卡住 `Check` 的问题；`patch-package` 会在 `npm install` 后自动应用，不要删除。
+- `patches/expo-updates+57.0.26.patch` 强制 manifest 请求使用 `gzip`，规避 Android 上 zstd 响应卡住 `Check` 的问题；`patch-package` 会在 `npm install` 后自动应用，不要删除。（该补丁按 57.0.26 生成，当前 expo-updates 58.0.21 会自动套用，版本不匹配只会告警、不影响功能。）
 - 发布顺序：先确认安装包已包含当前原生配置，再发布 OTA。若先发 OTA 又重新打 APK，新 APK 自带最新 JS，启动时会显示无更新。
 
 验证更新是否生效：

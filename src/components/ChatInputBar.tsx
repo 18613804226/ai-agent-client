@@ -411,6 +411,9 @@ function ChatInputBar({
             onChangeText={setInputText}
             editable={!isGenerating}
             multiline
+            // Web：iOS Safari 要求表单控件计算字号 ≥16px 才不自动放大；
+            // _layout 注入的 CSS 用 #chat-input 只把这里的文字缩回 15px（transform 不参与布局）。
+            nativeID="chat-input"
             textAlignVertical="center"
             // @ts-ignore
             onKeyPress={(e: any) => {

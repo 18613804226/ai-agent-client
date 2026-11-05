@@ -22,6 +22,7 @@ import { isPCWebWidth } from '../src/constants/theme'
 import { api, type DeviceInfo, type AdminStats } from '../src/services/api'
 import { MyToast } from '../src/components/GlobalToast'
 import HoverTouchable from '../src/components/HoverTouchable'
+import { InputBarIcon } from '../src/components/InputBarIcon'
 import type { DeviceUsageRecord } from '../src/types/admin'
 
 const formatNumber = (value: number) => value.toLocaleString('en-US')
@@ -189,7 +190,9 @@ export default function AdminDashboardScreen() {
           {
             backgroundColor: theme.bgSidebar,
             borderBottomColor: theme.border,
-            paddingTop: Platform.OS === 'web' ? 0 : insets.top
+            paddingTop: Platform.OS === 'web' ? 0 : insets.top,
+            // APP 端头部加高（H5 保持 styles.topBar 的 62 不变）
+            ...(Platform.OS !== 'web' ? { minHeight: 72 } : null)
           }
         ]}
       >
@@ -199,9 +202,13 @@ export default function AdminDashboardScreen() {
             onPress={goBackToChat}
             style={styles.brand}
           >
-            <Text style={[styles.brandIcon, { color: theme.sendBtnActive }]}>
-              ◈
-            </Text>
+            {/* 返回图标（点击返回聊天页） */}
+            <InputBarIcon
+              name="arrow-left"
+              size={20}
+              color={theme.sendBtnActive}
+              style={styles.brandIcon}
+            />
             <Text style={[styles.brandName, { color: theme.textMain }]}>
               AI 管理后台
             </Text>
@@ -921,7 +928,7 @@ const styles = StyleSheet.create({
     minHeight: 0
   },
   topBar: {
-    minHeight: 72,
+    minHeight: 62,
     borderBottomWidth: 1,
     justifyContent: 'center',
     paddingBottom: 2

@@ -56,6 +56,13 @@ export function useChatScroll({
   } = useChat();
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const showScrollToBottomRef = useRef(false);
+  /**
+   * 冷启动首次贴底是否已完成：完成前「回到底部」按钮一律不显示。
+   * 历史刚落盘时列表先停在顶部/估算位置，程序化贴底（initialScrollIndex /
+   * 帧回调）触发的高 distance 滚动事件不是用户上滑——不设这道闸，
+   * 按钮会在冷启动时闪现一下再消失。
+   */
+  const initialBottomDoneRef = useRef(false);
 
   /**
    * 平滑贴底动画进行中的截止时间戳。
@@ -180,6 +187,16 @@ export function useChatScroll({
       const distanceFromBottom = !INVERTED_CHAT_LIST
         ? Math.max(0, chatDistanceFromBottom(event?.nativeEvent) - footerHeight)
         : chatDistanceFromBottom(event?.nativeEvent);
+
+      // 冷启动首次贴底完成前：高 distance 是程序化定位（不是用户上滑），
+      // 按钮不显示、也不把它当成脱钩依据；一旦到过底部一次即恢复正常判定。
+      if (!initialBottomDoneRef.current) {
+        if (distanceFromBottom <= 120) {
+          initialBottomDoneRef.current = true;
+        } else {
+          return;
+        }
+      }
 
       // 上滑超过 120px 才显示按钮；只在跨阈值时 setState，避免滚动中反复调度
       const shouldShow = distanceFromBottom > 120;

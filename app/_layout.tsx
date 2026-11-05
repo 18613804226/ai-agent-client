@@ -63,7 +63,11 @@ export default function RootLayout() {
     );
 
     // ② iOS Safari：表单控件 font-size < 16px 时聚焦会自动放大页面。
-    //    统一强制 16px（!important 覆盖 RN Web 写入的内联样式）。
+    //    所有表单控件的计算字号统一保持 16px（规避放大）。
+    //    聊天输入框的文字设计是 15px —— 对它单独用 transform:scale 缩回 15px：
+    //    textarea 本身透明（可见外壳是外层 GlassSurface），transform 只缩放
+    //    文字渲染、不参与布局，输入框尺寸/其他输入框完全不受影响。
+    //    （不能用 zoom：zoom 连布局一起缩，独立输入框会整个变小。）
     const styleId = 'no-zoom-web';
     if (!doc.getElementById(styleId)) {
       const style = doc.createElement('style');
@@ -71,7 +75,8 @@ export default function RootLayout() {
       style.textContent =
         'html{touch-action:manipulation;-webkit-text-size-adjust:100%}' +
         'body{touch-action:pan-x pan-y}' +
-        'input,textarea,select{font-size:16px !important}';
+        'input,textarea,select{font-size:16px !important}' +
+        '#chat-input{transform:scale(0.9375);transform-origin:left center}';
       doc.head.appendChild(style);
     }
   }, []);
