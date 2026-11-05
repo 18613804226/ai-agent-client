@@ -1,34 +1,31 @@
 import React, { useEffect, useMemo, useRef } from 'react'
-import { Animated, Easing } from 'react-native'
+import { Animated, Easing, Platform } from 'react-native'
 
 /**
  * 流式文本「墨洇」尾部（从虚到实）。
- * 只包最后几个字：随文本长度换 key 重挂，挂载时播一段淡入 + 墨晕收敛。
- * 前缀保持普通字符串子节点不动 → 长文本也只多一个微型动画节点。
+ * 只把最后几个字渲染成略低于正文的透明度，前缀保持普通字符串子节点。
  *
- * ⚠️ 为什么用 RN legacy Animated 而不是 Reanimated：
- *    Reanimated（Fabric 新架构）对**嵌套在 <Text> 内部的 Animated.Text**
- *    逐帧更新 opacity / textShadowRadius 这类 shadowNode 文本属性支持不完整，
- *    实测 Android/iOS 上动画不生效（Web 走 DOM/CSS 正常）。
- *    RN legacy Animated 对「Text 内嵌套 Text」的属性动画在原生 + Web 都是成熟路径。
+ * ⚠️ 关键设计（避免两个坑）：
+ * 1. 用 RN legacy Animated（useNativeDriver:false → setNativeProps）更新颜色，
+ *    不走 React 重渲染、不重建父 Text 的 spannable → 无重排、不闪。
+ *    （React 状态按帧驱动会在打字机每 ~50ms 一个新字时形成 20Hz 闪烁。）
+ * 2. 不按文本长度重挂节点（重挂会让淡入每次从头开始 → 尾字永远停在低透明度，
+ *    深底上像"末尾字符不显示"）。节点保持挂载，只在新字到达时把进度压回
+ *    「可读下限」再提亮到 1 —— 下限取 0.7，尾字任何时刻都看得清。
  */
 
-/** 墨晕覆盖的字数：6*/
-export const INK_TAIL = 6
-/** 墨晕起始半径（收干到 0） */
-const INK_RADIUS = 8
-/** 墨晕起始透明度（随收干衰减） */
-const INK_ALPHA = 0.45
-/** 淡入起点：文字颜色的 alpha（0=全透明，1=实色）
- *  ⚠️ 必须用颜色的 alpha 而不是 style.opacity：
- *  Android 的内联 Text span 不支持 opacity/textShadow，
- *  只有 color 是逐 span 生效的三端通用属性。
- *  只做 1 个字时从接近全透明起，让"最新字浮现"更明显。 */
-const INK_COLOR_ALPHA_FROM = 0.1
+/** 墨洇覆盖的字数（最后 N 个字） */
+export const INK_TAIL = 5
+/** 透明度下限：即使在动画起点也可读（修复"末尾字符不显示"）。
+ *  越小对比越强、湿墨越明显；0.5 是"明显但不会看不见"的平衡点。 */
+const INK_FLOOR = 0.4
 /** 淡入时长 */
-const INK_DURATION = 180
+const INK_DURATION = 220
+/** iOS / Web 的湿墨晕半径（Android 内联 span 不支持 textShadow，自动忽略） */
+const INK_RADIUS = 6
+const INK_SHADOW_ALPHA = 0.35
 
-/** 把 #rrggbb / #rgb / rgb() 解析成 [r,g,b]（供 Android 整段湿墨阴影复用） */
+/** 把 #rrggbb / #rgb / rgb() 解析成 [r,g,b] */
 export function parseRgb(color: string): [number, number, number] {
   const m6 = /^#([0-9a-f]{6})$/i.exec(color)
   if (m6) {
@@ -55,26 +52,28 @@ const InkTail = ({
   color,
   baseStyle
 }: {
+  /** 完整文本（不是只有尾部）：effect 依赖它的长度变化来触发淡入 */
   text: string
   selectable: boolean
   color: string
   baseStyle: any
 }) => {
-  // 0 = 刚出现（最虚、最洇），1 = 干透（全实、无晕）
   const progress = useRef(new Animated.Value(0)).current
   const rgb = useMemo(() => parseRgb(color), [color])
+  const tail = text.length > INK_TAIL ? text.slice(-INK_TAIL) : text
 
   useEffect(() => {
+    // 节点保持挂载、不重挂；新字到达时从「可读下限」提亮到 1。
+    // setNativeProps 路径，无 React 重渲染。
+    progress.stopAnimation()
     progress.setValue(0)
     Animated.timing(progress, {
       toValue: 1,
       duration: INK_DURATION,
       easing: Easing.out(Easing.quad),
-      // textShadow* 不是原生驱动支持的属性，只能 JS 驱动；
-      // 节点只有几个字、且整条链路本来就是 JS 侧按帧更新文本，开销可忽略。
       useNativeDriver: false
     }).start()
-  }, [progress])
+  }, [text.length, progress])
 
   return (
     <Animated.Text
@@ -82,56 +81,58 @@ const InkTail = ({
       style={[
         baseStyle,
         {
-          // 主体：颜色 alpha 从"淡墨"收成实色（Android 内联 span 唯一可靠通道）
+          // 主体：颜色 alpha 在 可读下限(0.7) → 1 之间淡入（三端通用）
           color: progress.interpolate({
             inputRange: [0, 1],
             outputRange: [
-              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${INK_COLOR_ALPHA_FROM})`,
+              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${INK_FLOOR})`,
               `rgba(${rgb[0]},${rgb[1]},${rgb[2]},1)`
             ]
           }),
-          // 辅助：iOS/Web 上额外的湿墨晕（Android 忽略，不影响主效果）
-          textShadowRadius: progress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [INK_RADIUS, 0]
-          }),
-          textShadowColor: progress.interpolate({
-            inputRange: [0, 1],
-            outputRange: [
-              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${INK_ALPHA})`,
-              `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`
-            ]
-          }),
-          textShadowOffset: { width: 0, height: 0 }
+          // 辅助：iOS/Web 的湿墨晕；Android 内联 span 不支持 textShadow，忽略
+          ...(Platform.OS === 'android'
+            ? null
+            : {
+              textShadowRadius: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [INK_RADIUS, 0]
+              }),
+              textShadowColor: progress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [
+                  `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${INK_SHADOW_ALPHA})`,
+                  `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`
+                ]
+              }),
+              textShadowOffset: { width: 0, height: 0 }
+            })
         }
       ]}
     >
-      {text}
+      {tail}
     </Animated.Text>
   )
 }
 
 /**
  * 把一段流式纯文本拆成「已落定前缀 + 墨洇尾部」并渲染（可嵌在 <Text> 内使用）。
- * 整段 ≤ INK_TAIL 时整段挂墨晕；否则前缀是普通字符串、只有尾部带动画。
+ * 整段 ≤ INK_TAIL 时整段用墨洇样式；否则前缀是普通字符串、只有尾部略湿。
+ * 不按文本长度重挂节点（避免淡入被反复重启）。
  */
 export function InkTailText({
   text,
   color,
   baseStyle,
-  selectable = false,
-  segIndex = 0
+  selectable = false
 }: {
   text: string
   color: string
   baseStyle: any
   selectable?: boolean
-  segIndex?: number
 }): React.ReactNode {
   if (text.length <= INK_TAIL) {
     return (
       <InkTail
-        key={`ink${segIndex}.${text.length}`}
         text={text}
         selectable={selectable}
         color={color}
@@ -140,14 +141,14 @@ export function InkTailText({
     )
   }
   return (
-    <React.Fragment key={`inkFrag${segIndex}.${text.length}`}>
+    <>
       {text.slice(0, text.length - INK_TAIL)}
       <InkTail
-        text={text.slice(-INK_TAIL)}
+        text={text}
         selectable={selectable}
         color={color}
         baseStyle={baseStyle}
       />
-    </React.Fragment>
+    </>
   )
 }

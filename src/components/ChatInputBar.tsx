@@ -730,19 +730,19 @@ function ChatInputBar({
             // 用 1.5px 边框 + 较强透明度 + 投影三层勾勒。
             ...(isWeb
               ? {
-                  borderWidth: 1.5,
-                  borderColor: theme.isDark
-                    ? 'rgba(255,255,255,0.30)'
-                    : 'rgba(0,0,0,0.40)',
-                  boxShadow: theme.isDark
-                    ? '0 2px 10px rgba(0,0,0,0.5)'
-                    : '0 2px 10px rgba(0,0,0,0.12)'
-                }
+                borderWidth: 1,
+                borderColor: theme.isDark
+                  ? 'rgba(255,255,255,0.30)'
+                  : 'rgba(0,0,0,0.40)',
+                boxShadow: theme.isDark
+                  ? '0 2px 10px rgba(0,0,0,0.5)'
+                  : '0 2px 10px rgba(0,0,0,0.12)'
+              }
               : {
-                  borderColor: theme.isDark
-                    ? 'rgba(255,255,255,0.14)'
-                    : 'rgba(0,0,0,0.12)'
-                }),
+                borderColor: theme.isDark
+                  ? 'rgba(255,255,255,0.14)'
+                  : 'rgba(0,0,0,0.12)'
+              }),
             marginBottom: INPUT_BAR.pillPanelGap
           }
         ]}
@@ -947,7 +947,7 @@ function ChatInputBar({
           <Reanimated.View style={footerWrapStyle}>
             <Text
               numberOfLines={1}
-              style={[styles.footerTip, { color: theme.textMuted, opacity: 0.6 }]}
+              style={[styles.footerTip, { color: theme.textMuted, opacity: 0.9 }]}
             >
               {isDesktopWeb
                 ? 'AI 智能体可能会产生错误信息。支持直接粘贴截图。'

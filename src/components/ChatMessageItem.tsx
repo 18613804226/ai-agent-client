@@ -388,6 +388,9 @@ const ChatMessageItem = memo(
                       thought={item.thought!}
                       theme={theme}
                       isStreaming={isStreaming}
+                      // 思考阶段边界：正文（answer）开始吐字 → 立即秒收思考框。
+                      // 流式期 content 由 ChatArea 合并进 item，空=还在思考。
+                      thoughtDone={!!(item.content && item.content.trim())}
                       onToggle={
                         onThoughtToggle
                           ? (expanding, height) =>

@@ -20,8 +20,10 @@ import { InkTailText } from './markdown/inkTail'
 interface ThoughtCollapsibleProps {
   thought: string
   theme: ThemeType
-  /** 是否正在流式吐字：吐字结束自动收起思考框 */
+  /** 是否正在流式吐字：吐字结束自动收起思考框（兜底路径） */
   isStreaming?: boolean
+  /** 思考阶段是否已结束（正文开始吐字）—— 立即触发「秒收」 */
+  thoughtDone?: boolean
   /** 思考框展开/折叠时回调：(expanding, height) —— 用于外层留白同步补偿 */
   onToggle?: (expanding: boolean, height: number) => void
 }
@@ -32,6 +34,7 @@ const ThoughtCollapsible = memo(
     thought,
     theme,
     isStreaming = false,
+    thoughtDone = false,
     onToggle
   }: ThoughtCollapsibleProps) {
     const [isOpen, setIsOpen] = useState(true)
@@ -69,9 +72,9 @@ const ThoughtCollapsible = memo(
       followThoughtBottom.current = y + vh >= h - 2 || y <= 0.5
     }, [])
 
-    const animateTo = (open: boolean) => {
+    const animateTo = (open: boolean, duration = 250) => {
       progress.value = withTiming(open ? 1 : 0, {
-        duration: 250,
+        duration,
         easing: Easing.bezier(0.25, 0.1, 0.5, 1)
       })
     }
@@ -81,7 +84,9 @@ const ThoughtCollapsible = memo(
      *  maxScroll 短暂低于钉顶目标 → 视口会被 clamp 小抖一下。 */
     const openBodyHRef = useRef(0)
 
-    const toggleOpen = () => {
+    /** @param instant true = 秒收/秒开（0ms 动画）。仍走 onToggle 补偿 ——
+     *  钉顶的留白同帧补高，瞬时折叠也不会让视口被 clamp 拽动。 */
+    const toggleOpen = (instant = false) => {
       const nextState = !isOpen
       const measured = openBodyHRef.current
       const expandedH =
@@ -92,7 +97,7 @@ const ThoughtCollapsible = memo(
             : THOUGHT_SCROLL_MAX
       onToggle?.(nextState, expandedH)
       setIsOpen(nextState)
-      animateTo(nextState)
+      animateTo(nextState, instant ? 0 : 250)
     }
 
     // ── 吐字结束自动折叠 ──────────────────────────────────────────────
@@ -135,6 +140,20 @@ const ThoughtCollapsible = memo(
       }
     }, [isStreaming])
 
+    // ── 思考阶段结束（正文开始吐字）→ 立即秒收 ────────────────────────
+    // 流式层按 type: 'thought' | 'content' 分阶段推送；ChatMessageItem 传入的
+    // thoughtDone =「正文已有内容」，第一个 content 片段到达即阶段边界。
+    // 此刻吐字还在继续、没有「落定帧」的布局合并，所以可以零延迟零动画直接收；
+    // 兜底路径（thought-only/中断：正文始终没来）仍走上面的 isStreaming 400ms。
+    const wasThoughtDoneRef = useRef(thoughtDone)
+    useEffect(() => {
+      const was = wasThoughtDoneRef.current
+      wasThoughtDoneRef.current = thoughtDone
+      if (!was && thoughtDone && isOpenRef.current) {
+        toggleOpenRef.current(true) // 秒收：0ms，但带 onToggle 补偿防视口跳动
+      }
+    }, [thoughtDone])
+
     // 思考内容流式增长时自动贴到底部（见 handleContentSize：内容重排时贴底）
     // 手动点标题栏可随时展开/收起；自动折叠后想再看就点一下展开。
 
@@ -163,7 +182,7 @@ const ThoughtCollapsible = memo(
       >
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={toggleOpen}
+          onPress={() => toggleOpen()}
           style={styles.thoughtHeader}
         >
           <Text style={[styles.thoughtTitle, { color: theme.textMuted }]}>
@@ -262,7 +281,8 @@ const ThoughtCollapsible = memo(
   (prev, next) =>
     prev.thought === next.thought &&
     prev.theme === next.theme &&
-    prev.isStreaming === next.isStreaming
+    prev.isStreaming === next.isStreaming &&
+    prev.thoughtDone === next.thoughtDone
 )
 
 const styles = StyleSheet.create({

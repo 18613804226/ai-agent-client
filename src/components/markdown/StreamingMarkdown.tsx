@@ -298,7 +298,6 @@ const TailText = memo(function TailText({
               color={color}
               baseStyle={styles.tail}
               selectable={selectable}
-              segIndex={i}
             />
           ) : (
             seg.text
