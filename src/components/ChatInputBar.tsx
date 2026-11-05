@@ -1,9 +1,8 @@
 import React, {
-  useState,
   useEffect,
-  useLayoutEffect,
   useRef,
-  useCallback
+  useCallback,
+  useState
 } from 'react'
 import {
   StyleSheet,
@@ -14,81 +13,43 @@ import {
   Platform,
   Keyboard,
   AppState,
-  Image,
-  ScrollView,
   Pressable,
-  Animated,
-  Easing,
-  useWindowDimensions,
-  Alert,
-  Linking,
-  ActivityIndicator
+  useWindowDimensions
 } from 'react-native'
-import { InputBarIcon } from './InputBarIcon'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
+import { Svg, Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
-  type SharedValue,
+  withTiming
 } from 'react-native-reanimated'
-import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
-import { useSuppressBrowserCallout } from '../hooks/useSuppressBrowserCallout'
+import { InputBarIcon } from './InputBarIcon'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ImageViewer from './ImageViewer'
-import { FilePreviewer, extOf, classifyFile } from './FilePreviewer'
+import FilePreviewer from './FilePreviewer'
 import { HoverTouchable } from './HoverTouchable'
 import GlassSurface from './GlassSurface'
-import { api } from '../services/api'
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
+import { useSuppressBrowserCallout } from '../hooks/useSuppressBrowserCallout'
 import {
-  formatFileSize,
-  forgetImageUpload,
-  uploadAttachment,
-  retryAttachmentUpload,
   retryImageUpload,
-  type PickedAttachment
+  retryAttachmentUpload
 } from '../hooks/useImagePicker'
+import {
+  INPUT_BAR,
+  inputBarStyles
+} from './chatInputBar/inputBarStyles'
+import {
+  useTextareaAutoHeight,
+  useWebImagePaste
+} from './chatInputBar/webInputHelpers'
+import {
+  useAttachmentPreview,
+  AttachmentPreviewList
+} from './chatInputBar/attachmentPreview'
+import { VoiceModeUI } from './chatInputBar/VoiceModeUI'
 
-if (Platform.OS === 'web') {
-  const styleId = 'web-modern-scrollbar'
-  if (!document.getElementById(styleId)) {
-    const style = document.createElement('style')
-    style.id = styleId
-    style.innerHTML = `
-      textarea::-webkit-scrollbar { width: 5px; }
-      textarea::-webkit-scrollbar-track { background: transparent; }
-      textarea::-webkit-scrollbar-thumb {
-        background: rgba(150, 150, 150, 0.2);
-        border-radius: 10px;
-      }
-      textarea::-webkit-scrollbar-thumb:hover {
-        background: rgba(150, 150, 150, 0.5);
-      }
-    `
-    document.head.appendChild(style)
-  }
-}
-
-// field-sizing: content（textarea 按内容自适应高度）仅 Chrome 123+/2024.3+ 支持。
-// OPPO/ColorOS 等旧 Chromium 内核不认 → 用 scrollHeight 的 JS 兜底（见组件内 effect）。
-const FIELD_SIZING_SUPPORTED =
-  Platform.OS === 'web' &&
-  typeof CSS !== 'undefined' &&
-  typeof CSS.supports === 'function' &&
-  CSS.supports('field-sizing', 'content')
-
-/**
- * 悬浮输入栏占地常量：pill 高、pill 与提示区域间隙、提示区域高。
- */
-export const INPUT_BAR = {
-  pillMinH: 56,
-  pillPanelGap: 0,
-  panelH: 18,
-  /** 渐变纱幕高度（不含安全区）：从 pill 中部（pillMinH/2 + panelH）开始
-   *              往下渐变为半透，到底部约 90% 不透明（接近全实，仍透一点）。 */
-  panelFadeH: 49,
-  sheetMargin: 17,
-} as const
+// 保持原有公开 API：使用方从本文件导入 INPUT_BAR
+export { INPUT_BAR } from './chatInputBar/inputBarStyles'
 
 interface ChatInputBarProps {
   inputText: string
@@ -108,15 +69,15 @@ interface ChatInputBarProps {
    * 0=收起，1=完全展开）。小字折叠直接在 worklet 里读它，全程不经过 JS bridge；
    * web 端为 null（库是 NOOP），回退走 isKeyboardUp 的 JS 动画。
    */
-  keyboardProgress?: SharedValue<number> | null
+  keyboardProgress?: import('react-native-reanimated').SharedValue<number> | null
   /**
    * 统一的附件列表（图片 / 文档 / 视频 都在这里，用 kind 字段区分）。
    * 上传状态由条目的 uploading / uploadError / uploadId 字段承载：
    * 图片走 /chat/upload-image（uploadId 存返回 URL），其余走 /chat/attachment。
    */
-  attachments?: PickedAttachment[]
+  attachments?: import('../hooks/useImagePicker').PickedAttachment[]
   /** 需要函数式更新：上传成功/失败要按对象身份回填 uploadId / uploadError */
-  setAttachments?: React.Dispatch<React.SetStateAction<PickedAttachment[]>>
+  setAttachments?: React.Dispatch<React.SetStateAction<import('../hooks/useImagePicker').PickedAttachment[]>>
   onPickImage?: () => void
   onOverlayHeightChange?: (height: number) => void
 }
@@ -137,15 +98,20 @@ function ChatInputBar({
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false)
   const [isVoiceMode, setIsVoiceMode] = useState(false) // 语音/键盘模式
-  /** 🖥️ Web：「按住说话」按钮悬停态 */
-  const [isVoiceHover, setIsVoiceHover] = useState(false)
-  /** 🖥️ Web：附件缩略图悬停态（图片盖满了缩略图，底色 hover 看不见，改用放大+投影） */
-  const [hoveredThumb, setHoveredThumb] = useState<number | null>(null)
-  /** 非 null = 当前正在预览第几张已选图片*/
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
-  /** 非 null = 正在应用内真预览的文件（弹层渲染，不再 window.open 变下载） */
-  const [previewFile, setPreviewFile] = useState<PickedAttachment | null>(null)
-  const closeFilePreview = useCallback(() => setPreviewFile(null), [])
+  const inputRef = useRef<any>(null)
+
+  // ---- 语音结果：识别完成后直接发送到聊天区（不回填输入框）----
+  const handleVoiceResult = useCallback(
+    (text: string) => {
+      const content = text?.trim()
+      if (!content) return
+      setIsVoiceMode(false) // 退出语音模式
+      Keyboard.dismiss()
+      // ⚠️ 通过参数直传，避免依赖 setInputText 的异步更新
+      onSend(content)
+    },
+    [onSend]
+  )
 
   /** 键盘升起时淡出提示行：原生端直接读共享值，Web 端回退走 JS 动画。 */
   const footerProgress = useSharedValue(1)
@@ -175,8 +141,6 @@ function ChatInputBar({
   })
   const isWeb = Platform.OS === 'web'
   const isDesktopWeb = isWeb && width >= 768
-  // 🖥️ Web 悬停底色：输入条是深色玻璃面，HoverTouchable 默认的黑色 6% 在深色主题下
-  // 约等于没有反馈，这里按主题给两档可见的提亮/加深。
   const webHoverBg = theme.isDark
     ? 'rgba(255, 255, 255, 0.08)'
     : 'rgba(0, 0, 0, 0.05)'
@@ -206,93 +170,6 @@ function ChatInputBar({
       : isHovered
         ? (theme?.sendBtnHover ?? theme?.sendBtnActive ?? '#2563eb')
         : (theme?.sendBtnActive ?? '#3b82f6')
-
-  const handleRemoveAttachment = useCallback(
-    (index: number) => {
-      const target = attachments[index]
-      if (!target) return
-      // 图片：忘掉预传缓存（本地）；服务端 uploads 文件的删除需后端提供接口
-      if (target.kind === 'image') {
-        forgetImageUpload(target.uri)
-      }
-      // 文档/视频：已预传的顺手删服务端文件（DELETE /chat/attachments/:fileRef
-      // = uuid.ext；裸 uploadId 会被 400「非法文件名」拒绝）；还在传/失败的没有
-      // fileRef → 留给服务端 TTL / 30 天回收清
-      else if (target.uploadFileRef) {
-        api.deleteChatAttachment(target.uploadFileRef).catch(() => { })
-      }
-      setAttachments(attachments.filter((_, i) => i !== index))
-    },
-    [attachments, setAttachments]
-  )
-
-  /**
-   * 点附件 → 按类型走同一套「应用内真预览」：
-   * 图片进全屏 ImageViewer（缩放手势 + 翻页）；表格与 PDF 进 FilePreviewer
-   * 应用内渲染（PDF 走 react-native-pdf，表格可调 /chat/excel/check 查错）；
-   * web 端任何类型都进预览器。只有音视频等仍无本地渲染器的，才交系统应用。
-   */
-  const handleOpenAttachment = useCallback(
-    (att: PickedAttachment) => {
-      // 选中即上传：失败的点一下就地重传（成功后 chip 状态自愈），先不进预览
-      if (att.uploadError) {
-        if (att.kind === 'image') {
-          retryImageUpload(att, setAttachments)
-        } else {
-          retryAttachmentUpload(att, setAttachments)
-        }
-        return
-      }
-      const kind = classifyFile(att)
-      // 图片走全屏 ImageViewer（缩放手势 + 翻页）：索引要在「仅图片」列表里
-      if (kind === 'image') {
-        const idx = attachments
-          .filter((a) => a.kind === 'image')
-          .findIndex((a) => a === att)
-        if (idx >= 0) {
-          setPreviewIndex(idx)
-          return
-        }
-      }
-      // 表格 / PDF / 文本进 FilePreviewer 应用内真预览（PDF 走 react-native-pdf，
-      // 文本走 expo-file-system 读文件，表格可调 /chat/excel/check 查错）；
-      // web 端任何类型都进预览器
-      if (
-        kind === 'sheet' ||
-        kind === 'pdf' ||
-        kind === 'text' ||
-        Platform.OS === 'web'
-      ) {
-        setPreviewFile(att)
-        return
-      }
-      Linking.openURL(att.uri).catch(() => {
-        Alert.alert(
-          '无法预览',
-          att.name
-            ? `系统没有能打开「${att.name}」的应用`
-            : '系统没有能打开该文件的应用'
-        )
-      })
-    },
-    // ⚠️ 必须带上 attachments：setAttachments 是稳定的 state setter，
-    //    只写它的话这个回调永远停在首帧的闭包上（attachments 恒为 []），
-    //    图片缩略图就再也找不到自己的索引 → 掉进 Linking 报「无法预览」。
-    [attachments, setAttachments]
-  )
-
-  // ---- 语音结果：识别完成后直接发送到聊天区（不回填输入框）----
-  const handleVoiceResult = useCallback(
-    (text: string) => {
-      const content = text?.trim()
-      if (!content) return
-      setIsVoiceMode(false) // 退出语音模式
-      Keyboard.dismiss()
-      // ⚠️ 通过参数直传，避免依赖 setInputText 的异步更新
-      onSend(content)
-    },
-    [onSend]
-  )
 
   const handleSendOrStop = useCallback(() => {
     if (isGenerating) {
@@ -331,75 +208,12 @@ function ChatInputBar({
     }
   }, [isDesktopWeb, isVoiceMode, isRecording, stopRecord])
 
-  // ---- 录音科技感动画----
-  const pulse = useRef(new Animated.Value(0)).current
-  const glow = useRef(new Animated.Value(0)).current
-  const useNative = Platform.OS !== 'web'
-  useEffect(() => {
-    if (isRecording) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulse, {
-            toValue: 1,
-            duration: 900,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: useNative
-          }),
-          Animated.timing(pulse, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: useNative
-          })
-        ])
-      ).start()
-
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(glow, {
-            toValue: 1,
-            duration: 700,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: useNative
-          }),
-          Animated.timing(glow, {
-            toValue: 0.3,
-            duration: 700,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: useNative
-          })
-        ])
-      ).start()
-    } else {
-      pulse.stopAnimation()
-      glow.stopAnimation()
-      pulse.setValue(0)
-      glow.setValue(0)
-    }
-  }, [isRecording, pulse, glow])
-
-  const pulseScale = pulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.35]
-  })
-  const pulseOpacity = pulse.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.6, 0]
-  })
-
-  const handlePressIn = useCallback(() => {
-    startRecord()
-  }, [startRecord])
-
-  const handlePressOut = useCallback(() => {
-    stopRecord()
-  }, [stopRecord])
-
+  // ---- 录音科技感动画（已抽到 VoiceModeUI）----
   // ⚠️ OPPO/ColorOS 等国产浏览器长按会弹系统菜单抢按压事件（见 hook 注释），
   // 语音按钮不需要系统复制，直接整套压住。气泡正文千万别用这个。
   const voiceCallout = useSuppressBrowserCallout(isVoiceMode)
 
-  /* ---------- Web 粘贴图片 ---------- */
-  const inputRef = useRef<any>(null)
+  /* ---------- Web 粘贴图片 / 旧内核高度兜底（已抽到 webInputHelpers） ---------- */
 
   // 原生：键盘收起后主动 blur。Android 键盘回落（返回键/点击空白）不会自动失焦，
   // 之后从后台切回 Activity 会因焦点还在输入框而自动弹起键盘。
@@ -416,232 +230,38 @@ function ChatInputBar({
     }
   }, [])
 
-  useEffect(() => {
-    if (!isDesktopWeb || !inputRef.current) return
-    const nativeElement = inputRef.current
+  useWebImagePaste(isDesktopWeb, setAttachments, inputRef)
+  useTextareaAutoHeight(inputRef, inputText, width, isVoiceMode)
 
-    const handleDOMPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile()
-          if (blob) {
-            e.preventDefault()
-            const reader = new FileReader()
-            reader.onload = (event) => {
-              const base64String = event.target?.result as string
-              if (base64String) {
-                // 粘贴的图片同样并入统一附件列表（kind: 'image'）；
-                // uploading: true 让遮罩+转圈从第一帧就盖上（effect 会发起预传）
-                setAttachments((prev) => [
-                  ...prev,
-                  { uri: base64String, kind: 'image' as const, uploading: true }
-                ])
-              }
-            }
-            reader.readAsDataURL(blob)
-          }
-        }
-      }
-    }
-
-    nativeElement.addEventListener('paste', handleDOMPaste as EventListener)
-    return () =>
-      nativeElement.removeEventListener(
-        'paste',
-        handleDOMPaste as EventListener
-      )
-  }, [isDesktopWeb, setAttachments])
-
-  /* ---------- Web 旧内核（如 OPPO/ColorOS Chromium <123）textarea 高度兜底 ----------
-   * 这些内核不支持 `field-sizing: content`，textarea 不会按内容撑高。
-   * 这里在渲染后用 scrollHeight 手动撑高（与 styles.input 的 maxHeight=280 对齐），
-   * 现代内核走 CSS、本 effect 提前 return，互不干扰。 */
-  useLayoutEffect(() => {
-    if (FIELD_SIZING_SUPPORTED) return
-    if (Platform.OS !== 'web') return
-    const el = inputRef.current as HTMLTextAreaElement | null
-    if (!el) return
-    // RNW 不设 rows → textarea 默认 rows=2，空态会比 Chrome（field-sizing 塌成 1 行）高一截，
-    // 且单行光标顶在上沿。兜底分支里压成 1 再量（box-sizing 已是 border-box，稳定）。
-    el.rows = 1
-    el.style.height = 'auto' // 先重置才能拿到真实 scrollHeight
-    const next = Math.min(el.scrollHeight, 280)
-    el.style.height = `${next}px`
-  }, [inputText, width, isVoiceMode])
+  const {
+    previewIndex,
+    setPreviewIndex,
+    previewFile,
+    closeFilePreview,
+    handleOpenAttachment,
+    handleRemoveAttachment
+  } = useAttachmentPreview(attachments, setAttachments)
 
   return (
     // 悬浮层：绝对定位贴在容器底部、不占布局流；box-none 让间隙区域的触摸穿透给消息列表。
     <View
-      style={styles.inputAreaWrapper}
+      style={inputBarStyles.inputAreaWrapper}
       pointerEvents="box-none"
       onLayout={(e) => onOverlayHeightChange?.(e.nativeEvent.layout.height)}
     >
       {/* 附件预览：图片/文档/视频统一走同一条渲染逻辑 */}
       {hasAttachments && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.previewContainer}
-          contentContainerStyle={styles.previewContentContainer}
-        >
-          {attachments.map((att, index) =>
-            att.kind === 'image' ? (
-              /* 图片：缩略图（与原图片逻辑一致） */
-              <View
-                key={`img-${index}`}
-                style={[
-                  styles.previewItem,
-                  { backgroundColor: theme.btnBg, borderColor: theme.border },
-                  // 🖥️ Web：悬停时整块缩略图轻微放大 + 投影
-                  isWeb &&
-                  ({
-                    transitionProperty: 'transform, box-shadow',
-                    transitionDuration: '0.15s',
-                    transitionTimingFunction: 'ease'
-                  } as any),
-                  isWeb && hoveredThumb === index
-                    ? {
-                      transform: [{ scale: 1.05 }],
-                      zIndex: 2,
-                      boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.45)'
-                    }
-                    : null
-                ]}
-              >
-                <HoverTouchable
-                  activeOpacity={0.85}
-                  rippleColor="rgba(255, 255, 255, 0.35)"
-                  onPress={() => handleOpenAttachment(att)}
-                  style={styles.previewImageTap}
-                  onMouseEnter={() => setHoveredThumb(index)}
-                  onMouseLeave={() =>
-                    setHoveredThumb((v) => (v === index ? null : v))
-                  }
-                >
-                  <Image
-                    source={{ uri: att.uri }}
-                    style={styles.previewImage}
-                  />
-                </HoverTouchable>
-                {/* 传输状态：遮罩 + 转圈直接盖在预览小图上 */}
-                {att.uploading ? (
-                  <View
-                    style={[
-                      styles.uploadMask,
-                      { backgroundColor: theme.btnBg, pointerEvents: 'none' }
-                    ]}
-                  >
-                    <ActivityIndicator size="small" color={theme.textMuted} />
-                  </View>
-                ) : att.uploadError ? (
-                  <View
-                    style={[
-                      styles.uploadMaskError,
-                      { backgroundColor: theme.btnBg, pointerEvents: 'none' }
-                    ]}
-                  >
-                    <InputBarIcon name="alert-circle" size={20} color="#ef4444" />
-                  </View>
-                ) : null}
-                <HoverTouchable
-                  style={styles.deleteBadge}
-                  hoverBg="rgba(255, 255, 255, 0.22)"
-                  rippleColor="rgba(255, 255, 255, 0.35)"
-                  onPress={() => handleRemoveAttachment(index)}
-                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-                >
-                  <Text style={styles.deleteBadgeText}>✕</Text>
-                </HoverTouchable>
-              </View>
-            ) : (
-              /* 文档/视频：文件 chip（图标 + 名称 + 大小），点击进应用内真预览 */
-              <View
-                key={`${att.name ?? 'file'}-${index}`}
-                style={[
-                  styles.fileChip,
-                  // 底色/描边跟随主题：写死的浅灰在暗色主题下就是一块白
-                  { backgroundColor: theme.btnBg, borderColor: theme.border }
-                ]}
-              >
-                <HoverTouchable
-                  activeOpacity={0.85}
-                  rippleColor="rgba(255, 255, 255, 0.35)"
-                  onPress={() => handleOpenAttachment(att)}
-                  disabled={att.uploading}
-                  hoverBg={webHoverBgStrong}
-                  style={styles.fileChipTap}
-                >
-                  <View
-                    style={[styles.fileExtBox, { borderColor: theme.border }]}
-                  >
-                    <Text
-                      style={[styles.fileExtText, { color: theme.textMain }]}
-                    >
-                      {extOf(att.name, att.mime)}
-                    </Text>
-                  </View>
-                  <View style={styles.fileChipMeta}>
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.fileChipName, { color: theme.textMain }]}
-                    >
-                      {att.name || '未命名文件'}
-                    </Text>
-                    {/* 就绪后才显示大小；上传中/失败由遮罩 + 转圈表达，不堆文字 */}
-                    {!att.uploading && !att.uploadError ? (
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.fileChipSize,
-                          { color: theme.textMuted }
-                        ]}
-                      >
-                        {formatFileSize(att.size) || '文档'}
-                      </Text>
-                    ) : null}
-                  </View>
-                </HoverTouchable>
-                {/* 传输状态：遮罩 + 转圈盖住整块 chip */}
-                {att.uploading ? (
-                  <View
-                    style={[
-                      styles.uploadMask,
-                      { backgroundColor: theme.btnBg, pointerEvents: 'none' }
-                    ]}
-                  >
-                    <ActivityIndicator size="small" color={theme.textMuted} />
-                  </View>
-                ) : att.uploadError ? (
-                  <View
-                    style={[
-                      styles.uploadMaskError,
-                      { backgroundColor: theme.btnBg, pointerEvents: 'none' }
-                    ]}
-                  >
-                    <InputBarIcon name="alert-circle" size={20} color="#ef4444" />
-                    <Text style={styles.uploadMaskErrorText}>重试</Text>
-                  </View>
-                ) : null}
-                <HoverTouchable
-                  style={styles.deleteBadge}
-                  hoverBg="rgba(255, 255, 255, 0.22)"
-                  rippleColor="rgba(255, 255, 255, 0.35)"
-                  onPress={() => handleRemoveAttachment(index)}
-                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-                >
-                  <Text style={styles.deleteBadgeText}>✕</Text>
-                </HoverTouchable>
-              </View>
-            )
-          )}
-        </ScrollView>
+        <AttachmentPreviewList
+          attachments={attachments}
+          theme={theme}
+          onOpen={handleOpenAttachment}
+          onRemove={handleRemoveAttachment}
+        />
       )}
 
       {/* 失败才有这行：可点的重试入口（上传状态一律不回文字，靠 chip 上的遮罩+转圈） */}
       {failedAttachments.length > 0 && (
-        <View style={styles.fileHintRow}>
+        <View style={inputBarStyles.fileHintRow}>
           <HoverTouchable
             activeOpacity={0.7}
             hoverBg="rgba(239, 68, 68, 0.12)"
@@ -653,10 +273,10 @@ function ChatInputBar({
                 else retryAttachmentUpload(f, setAttachments)
               })
             }}
-            style={styles.hintRetryBtn}
+            style={inputBarStyles.hintRetryBtn}
           >
             <InputBarIcon name="alert-circle" size={12} color="#ef4444" />
-            <Text style={[styles.fileHintText, { color: '#ef4444' }]}>
+            <Text style={[inputBarStyles.fileHintText, { color: '#ef4444' }]}>
               附件上传失败，点此重试
             </Text>
           </HoverTouchable>
@@ -682,7 +302,7 @@ function ChatInputBar({
       <View
         pointerEvents="none"
         style={[
-          styles.bottomPanel,
+          inputBarStyles.bottomPanel,
           {
             height: INPUT_BAR.panelFadeH + insets.bottom,
             left: panelLeft,
@@ -692,7 +312,7 @@ function ChatInputBar({
       >
         {/* 渐进纱幕：纯渐变，不用 BlurView（均匀模糊会让顶部发雾、
             且模糊层上边缘会露出一条硬边）。从 pill 中部开始往下渐变，
-             到底部约 90% 不透明（接近全实，仍透一点）。 */}
+            到底部约 90% 不透明（接近全实，仍透一点）。 */}
         {/* ⚠️ Svg 必须显式给 width/height：react-native-svg 只在
             position !== 'absolute' 时才默认 100%，否则会缩成默认 ~300px 宽，
             面板右侧就盖不住（露出背后的光晕）。 */}
@@ -722,7 +342,7 @@ function ChatInputBar({
       <GlassSurface
         theme={theme}
         style={[
-          styles.inputBar,
+          inputBarStyles.inputBar,
           {
             backgroundColor: theme.bgApp,
             // Web：输入栏底色与页面底色相同，边框必须更高对比，
@@ -750,7 +370,7 @@ function ChatInputBar({
         {/* 附件按钮（语音模式下隐藏）*/}
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
           <HoverTouchable
-            style={styles.attachButton}
+            style={inputBarStyles.attachButton}
             hoverBg={webHoverBgStrong}
             onPress={onPickImage}
             disabled={isGenerating}
@@ -762,82 +382,22 @@ function ChatInputBar({
 
         {/* 输入框 / 按住说话 */}
         {isVoiceMode ? (
-          <View style={styles.voiceHoldWrap}>
-            {/* 脉冲外圈 */}
-            {isRecording && (
-              <Animated.View
-                style={[
-                  styles.pulseRing,
-                  { pointerEvents: 'none' },
-                  {
-                    transform: [{ scale: pulseScale }],
-                    opacity: pulseOpacity
-                  }
-                ]}
-              />
-            )}
-
-            <Pressable
-              ref={voiceCallout.ref}
-              style={[
-                styles.voiceHoldBtn,
-                voiceCallout.suppressStyle,
-                isRecording && styles.voiceHoldBtnActive,
-                { backgroundColor: theme.historyActiveBg },
-                // 🖥️ Web：悬停青色提亮（与按钮青色描边同色系）
-                isWeb &&
-                ({
-                  transitionProperty: 'background-color, border-color',
-                  transitionDuration: '0.15s',
-                  transitionTimingFunction: 'ease',
-                  cursor: 'pointer'
-                } as any),
-                isWeb && isVoiceHover && !isRecording
-                  ? {
-                    backgroundColor: theme.isDark
-                      ? 'rgba(0, 229, 255, 0.12)'
-                      : 'rgba(0, 120, 150, 0.08)',
-                    borderColor: 'rgba(0, 229, 255, 0.5)'
-                  }
-                  : null
-              ]}
-              onPressIn={handlePressIn}
-              onPressOut={handlePressOut}
-              disabled={isGenerating || isRecognizing}
-              // @ts-ignore
-              onMouseEnter={() => setIsVoiceHover(true)}
-              // @ts-ignore
-              onMouseLeave={() => setIsVoiceHover(false)}
-              // ⚠️ OPPO/ColorOS 等国产浏览器：长按会弹系统「复制/全选」菜单并抢走
-              // 按压事件，导致按住说话被打断。这里直接禁掉该按钮的上下文菜单。
-              // @ts-ignore RNW 透传到 DOM 的 onContextMenu
-              onContextMenu={voiceCallout.contextMenuGuard}
-            >
-              {isRecording && (
-                <Animated.View style={[styles.recDot, { opacity: glow }]} />
-              )}
-              <Text
-                style={[
-                  styles.voiceHoldText,
-                  { color: isRecording ? '#00E5FF' : theme.textMain },
-                  isRecording && styles.voiceHoldTextActive
-                ]}
-              >
-                {isRecognizing
-                  ? '识别中…'
-                  : isRecording
-                    ? '松开 结束'
-                    : '按住 说话'}
-              </Text>
-            </Pressable>
-          </View>
+          <VoiceModeUI
+            theme={theme}
+            isRecording={isRecording}
+            isRecognizing={isRecognizing}
+            disabled={isGenerating || isRecognizing}
+            onPressIn={startRecord}
+            onPressOut={stopRecord}
+            voiceCallout={voiceCallout}
+          />
         ) : (
           <TextInput
             ref={inputRef}
             style={[
-              styles.input,
+              inputBarStyles.input,
               { color: theme.textMain },
-              !isDesktopWeb || onPickImage ? styles.inputWithLeftPadding : null
+              !isDesktopWeb || onPickImage ? inputBarStyles.inputWithLeftPadding : null
             ]}
             placeholder={
               isGenerating
@@ -866,7 +426,7 @@ function ChatInputBar({
         {/* 🖥️ 桌面 Web（≥768px）隐藏语音入口；移动端 / H5 / Native 保留 */}
         {!isGenerating && !isDesktopWeb && (
           <HoverTouchable
-            style={styles.modeToggleBtn}
+            style={inputBarStyles.modeToggleBtn}
             hoverBg={webHoverBgStrong}
             onPress={toggleVoiceMode}
             activeOpacity={0.6}
@@ -888,7 +448,7 @@ function ChatInputBar({
           // 📱 Android：Material 白色水波纹（彩色按钮上），圆形裁剪
           <Pressable
             style={[
-              styles.sendButton,
+              inputBarStyles.sendButton,
               { backgroundColor: sendColor, overflow: 'hidden' }
             ]}
             android_ripple={{
@@ -909,7 +469,7 @@ function ChatInputBar({
           <TouchableOpacity
             style={
               [
-                styles.sendButton,
+                inputBarStyles.sendButton,
                 { backgroundColor: sendColor },
                 isWeb && {
                   transitionProperty: 'background-color, transform',
@@ -927,6 +487,7 @@ function ChatInputBar({
             activeOpacity={0.8}
             // @ts-ignore
             onMouseEnter={() => setIsHovered(true)}
+            // @ts-ignore
             onMouseLeave={() => setIsHovered(false)}
           >
             <InputBarIcon
@@ -943,11 +504,11 @@ function ChatInputBar({
         style={{ height: INPUT_BAR.panelH + insets.bottom }}
         pointerEvents="none"
       >
-        <View style={[styles.panelTipZone, { height: INPUT_BAR.panelH }]}>
+        <View style={[inputBarStyles.panelTipZone, { height: INPUT_BAR.panelH }]}>
           <Reanimated.View style={footerWrapStyle}>
             <Text
               numberOfLines={1}
-              style={[styles.footerTip, { color: theme.textMuted, opacity: 0.9 }]}
+              style={[inputBarStyles.footerTip, { color: theme.textMuted, opacity: 0.9 }]}
             >
               {isDesktopWeb
                 ? 'AI 智能体可能会产生错误信息。支持直接粘贴截图。'
@@ -959,270 +520,5 @@ function ChatInputBar({
     </View>
   )
 }
-
-const styles = StyleSheet.create({
-  inputAreaWrapper: {
-    // 悬浮层：绝对定位贴在容器底部、不占布局流，消息从输入框/条带底下滚过。
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16
-  },
-  bottomPanel: {
-    position: 'absolute',
-    bottom: 0,
-    overflow: 'hidden'
-  },
-  previewContainer: {
-    maxHeight: 80,
-    marginBottom: 8
-  },
-  previewContentContainer: {
-    alignItems: 'center',
-    gap: 8
-  },
-  previewItem: {
-    position: 'relative',
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    borderWidth: 1,
-    // 底色/描边由调用处按主题注入（写死浅色会在暗色主题下发白）
-    overflow: 'hidden'
-  },
-  /** 文档预览 chip：宽条形（文件名长），高度与图片缩略图一致*/
-  fileChip: {
-    position: 'relative',
-    width: 158,
-    height: 60,
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: 'hidden'
-  },
-  fileChipTap: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    gap: 8
-  },
-  fileExtBox: {
-    width: 30,
-    height: 30,
-    borderRadius: 6,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  fileExtText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.3
-  },
-  fileChipMeta: {
-    flex: 1,
-    justifyContent: 'center'
-  },
-  fileChipName: {
-    fontSize: 11,
-    fontWeight: '500'
-  },
-  fileChipSize: {
-    fontSize: 10,
-    marginTop: 1
-  },
-  previewImageTap: {
-    width: '100%',
-    height: '100%'
-  },
-  previewImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover'
-  },
-  deleteBadge: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  deleteBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: 'bold'
-  },
-  inputBar: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 24,
-    paddingVertical: 8,
-    paddingLeft: 8,
-    paddingRight: 8,
-    // 不做投影：白色主题下白底 + 深色阴影显得脏，浅色描边已足够勾勒浮起感。
-    // elevation 也永久拿掉：安卓上它生成额外原生层，半透明底下透出白条（已实锤）
-  },
-  panelTipZone: {
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  attachButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(150, 150, 150, 0.1)'
-  },
-  input: {
-    flex: 1,
-    maxHeight: 280,
-    fontSize: 15,
-    paddingLeft: 4,
-    paddingTop: Platform.OS === 'ios' ? 10 : 9,
-    paddingBottom: Platform.OS === 'ios' ? 10 : 9,
-    textAlignVertical: 'center',
-    borderWidth: 0,
-    backgroundColor: 'transparent',
-    ...Platform.select({
-      web: {
-        outlineStyle: 'none',
-        resize: 'none',
-        overflowY: 'auto',
-        height: 'auto',
-        fieldSizing: 'content'
-      } as any
-    })
-  },
-  inputWithLeftPadding: {
-    paddingLeft: 4
-  },
-
-  /* ---------- 按住说话（科技感） ---------- */
-  voiceHoldWrap: {
-    flex: 1,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 4
-  },
-  voiceHoldBtn: {
-    flexDirection: 'row',
-    width: '100%',
-    height: 40,
-    borderRadius: 19,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.2)'
-    // backgroundColor: 'rgba(0, 229, 255, 0.04)',
-    // 长按压制样式已由 useSuppressBrowserCallout.suppressStyle 统一提供，这里不重复写
-  },
-  voiceHoldBtnActive: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    borderColor: 'rgba(0, 229, 255, 0.1)',
-    boxShadow: '0px 0px 12px rgba(0, 229, 255, 0.27)',
-    elevation: 8
-  },
-  voiceHoldText: {
-    fontSize: 15,
-    fontWeight: '500',
-    letterSpacing: 0.5
-  },
-  voiceHoldTextActive: {
-    color: 'rgba(0, 229, 255, 0.3)',
-    ...Platform.select({
-      web: { textShadow: '0px 0px 8px rgba(0, 229, 255, 0.1)' } as any,
-      default: {
-        textShadowColor: 'rgba(0, 229, 255, 0.1)',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 8
-      }
-    })
-  },
-  pulseRing: {
-    position: 'absolute',
-    width: '100%',
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#00E5FF'
-  },
-  recDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#00E5FF',
-    boxShadow: '0px 0px 6px #00E5FF'
-  },
-
-  /* ---------- 切换按钮 ---------- */
-  modeToggleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-
-  /* ---------- 发送按钮 ---------- */
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  footerTip: {
-    fontSize: 9,
-    lineHeight: 12,
-    textAlign: 'center',
-    marginTop: 0
-  },
-  fileHintRow: {
-    marginBottom: 4
-  },
-  /** 传输中遮罩：铺满缩略图 / chip，中间放转圈 */
-  uploadMask: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // 半透明：既能看出「底下是啥」，又明确表示「还没就绪」
-    opacity: 0.78
-  },
-  /** 失败遮罩：图标 + 「重试」提示，点 chip 即重传 */
-  uploadMaskError: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 1,
-    opacity: 0.9
-  },
-  uploadMaskErrorText: {
-    color: '#ef4444',
-    fontSize: 9,
-    fontWeight: '700'
-  },
-  hintRetryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 6
-  },
-  fileHintText: {
-    fontSize: 12,
-    lineHeight: 18
-  }
-})
 
 export default React.memo(ChatInputBar)
