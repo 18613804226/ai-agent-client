@@ -212,7 +212,20 @@ export function useChatScroll({
       // ⚠️ autoFollowRef 是唯一权威值：原生 inverted 下贴底本身是自动的，
       //    它只决定「回到底部」按钮的显隐和吐字期要不要额外插手（见 followBottom）。
       if (autoFollowRef.current) {
-        if (distanceFromBottom > 120) autoFollowRef.current = false;
+        // Web：只有「向上滚」(y 变小) 才是用户主动离开底部。
+        // 程序化 smooth 贴底、发送后消息追加撑高内容时 y 是递增的，
+        // 但 distanceFromBottom 在动画途中仍可能 >120 —— 旧逻辑据此脱钩，
+        // 首个 content chunk 正好落在这个窗口 → 第一行不贴底、第二行才贴。
+        // 下面复位分支早就用 y > previousY 判方向，这里补上对称判定即可。
+        // 原生 inverted 的 offset 语义不同，保持原逻辑。
+        const userScrolledUp =
+          Platform.OS !== 'web' ||
+          (typeof y === 'number' &&
+            typeof previousY === 'number' &&
+            y < previousY);
+        if (distanceFromBottom > 120 && userScrolledUp) {
+          autoFollowRef.current = false;
+        }
       } else if (
         distanceFromBottom < 40 &&
         (Platform.OS !== 'web' ||
@@ -263,6 +276,8 @@ export function useChatScroll({
   //     UIManager.measure → setTimeout(0)（见 node_modules/react-native-web/dist/
   //     exports/UIManager/index.js 的 measureLayout），回调落在下一个宏任务里，
   //     同样晚于 paint。所以它现在只当兜底（见下面 ScrollView 上的回调）。
+  // ⚠️ 不要在这里「流开始时强制复位 autoFollowRef」：用户在发送后、首字到达前
+  //    主动上滑也会被拽回底部。误脱钩已在 handleScroll 里按 y 方向根治。
   useIsomorphicLayoutEffect(() => {
     followBottom();
   }, [displayMessages, followBottom]);

@@ -51,7 +51,7 @@
 │   ├── types/            # TypeScript 类型定义
 │   └── utils/            # 通用工具与平台适配
 ├── .github/workflows/    # CI/CD：类型检查、Web 部署、一键打 APK
-├── patches/              # patch-package 补丁（npm install 时自动应用）
+├── patches/              # patch-package 补丁（pnpm install 时自动应用）
 ├── plugins/              # 本地 Expo Config Plugin（ABI 分包、高刷新率注入）
 ├── scripts/              # CI 安卓签名注入等构建脚本
 ├── app.json              # Expo 应用配置
@@ -127,11 +127,11 @@
 
 ## 📦 快速上手
 
-> **注意**：建议使用 `npm` 进行依赖安装。**尽量不要使用 `pnpm`**，否则可能会因 `node_modules` 目录结构差异导致部分 React Native 依赖包无法正确识别。
+> **包管理器**：统一使用 `pnpm`（唯一 lockfile 是 `pnpm-lock.yaml`，版本由 `package.json` 的 `packageManager` 字段锁定）。CI（GitHub Actions）、EAS 云构建与本地开发都走 pnpm；`pnpm-workspace.yaml` 已配置 `nodeLinker: hoisted` 保证 React Native 依赖解析正常。安装会自动执行 `postinstall`，经 `patch-package` 应用 `patches/` 下的补丁，不要跳过。
 
 ```bash
 # 1. 安装项目依赖（postinstall 会自动经 patch-package 应用 patches/ 下的补丁）
-npm install
+pnpm install
 
 # 2. 配置环境变量：复制模板并按需修改
 #    EXPO_PUBLIC_API_URL 为后端 API 地址，缺省回退 http://localhost:3000
@@ -143,10 +143,10 @@ npm install
 cp .env.example .env
 
 # 3. 启动
-npm run start        # 交互式菜单（Expo Dev Server）
-npm run web          # 浏览器端
-npm run android      # 安卓（首次自动 prebuild 生成 android/ 工程）
-npm run ios          # iOS（需 macOS + Xcode）
+pnpm start           # 交互式菜单（Expo Dev Server）
+pnpm web             # 浏览器端
+pnpm android         # 安卓（首次自动 prebuild 生成 android/ 工程）
+pnpm ios             # iOS（需 macOS + Xcode）
 ```
 
 ---
@@ -166,7 +166,7 @@ npm run ios          # iOS（需 macOS + Xcode）
 ### ☁️ 云打包 APK
 
 ```bash
-npm run android:cloud
+pnpm android:cloud
 ```
 
 使用 EAS `production` profile 在云端构建；`eas.json` 已配置 production channel、API URL 和 `autoIncrement`。首次使用需先 `eas login`。
@@ -174,12 +174,12 @@ npm run android:cloud
 ### 💻 本地打 release APK（支持 OTA）
 
 ```bash
-npm run android:release
+pnpm android:release
 ```
 
 这条命令固定执行：读取本地 `.env` / `.env.production` → 干净 `expo prebuild` → 补回 `android/local.properties` → 放入 `release.keystore` → 注入 release 签名 → arm64 release 构建。`EXPO_PUBLIC_API_URL` 会显式传给 Gradle，避免本地包回落到 `localhost`。**`app.json` 改过配置后必须走这条命令**，不要直接对祖传 `android/` 跑 gradle。
 
-> 纯 JS 改动可用 `SKIP_PREBUILD=1 npm run android:release` 复用现有 `android/`，跳过 prebuild（省掉原生工程重新生成与缓存失效，重复打包快很多）。
+> 纯 JS 改动可用 `SKIP_PREBUILD=1 pnpm android:release` 复用现有 `android/`，跳过 prebuild（省掉原生工程重新生成与缓存失效，重复打包快很多）。
 >
 > Windows 注意：reanimated 的 C++ 编译镜像路径可能超过 260 字符上限（表现为 ninja `mkdir` 失败）。项目已把 Android SDK 的 `cmake/3.22.1/bin/ninja.exe` 替换为长路径感知的 1.12.1（原文件备份为 `ninja.exe.bak`）；若换机或重装 SDK 后复现，重新替换即可。
 
@@ -205,7 +205,7 @@ tar -xOf android/app/build/outputs/apk/release/app-arm64-v8a-release.apk assets/
 JS、图片等资源改动走 OTA，不需要重新打 APK：
 
 ```bash
-npm run ota -- --message "描述本次更新"
+pnpm ota -- --message "描述本次更新"
 ```
 
 等价的底层命令是 `eas update --channel production --environment production`。
@@ -213,7 +213,7 @@ npm run ota -- --message "描述本次更新"
 - Android 端固定使用 `production` channel，App 启动时会检查并下载更新。
 - 下载完成后通过 `Updates.useUpdates()` 自动 `reloadAsync()`，不需要再手动冷启动两次。
 - 原生配置、签名、SDK 版本、新增原生依赖仍然必须重新打 APK；OTA 只覆盖 JS 和资源。
-- `patches/expo-updates+57.0.26.patch` 强制 manifest 请求使用 `gzip`，规避 Android 上 zstd 响应卡住 `Check` 的问题；`patch-package` 会在 `npm install` 后自动应用，不要删除。（该补丁按 57.0.26 生成，当前 expo-updates 58.0.21 会自动套用，版本不匹配只会告警、不影响功能。）
+- `patches/expo-updates+57.0.26.patch` 强制 manifest 请求使用 `gzip`，规避 Android 上 zstd 响应卡住 `Check` 的问题；`patch-package` 会在 `pnpm install` 后自动应用，不要删除。（该补丁按 57.0.26 生成，当前 expo-updates 58.0.21 会自动套用，版本不匹配只会告警、不影响功能。）
 - 发布顺序：先确认安装包已包含当前原生配置，再发布 OTA。若先发 OTA 又重新打 APK，新 APK 自带最新 JS，启动时会显示无更新。
 
 验证更新是否生效：
@@ -232,7 +232,7 @@ adb logcat -s dev.expo.updates:V
 | `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` | Secrets | release 正式签名；**未配置时回退 debug 签名——每次构建签名都不同，无法覆盖安装升级** |
 | `ALIYUN_PORT`、`SSH_PORT`、`REMOTE_PATH` | Secrets | 均有默认值，一般无需配置 |
 
-> 不走 CI 也可以本地直出：`npm run android` 会用本机 debug keystore 生成可安装的包。
+> 不走 CI 也可以本地直出：`pnpm android` 会用本机 debug keystore 生成可安装的包。
 
 ---
 
