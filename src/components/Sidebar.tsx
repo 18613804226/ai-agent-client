@@ -75,7 +75,7 @@ export default function Sidebar({
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const router = useRouter()
-// 💡 全局角色：紧凑分段器切换，admin 才显示「管理后台」入口。
+  // 💡 全局角色：紧凑分段器切换，admin 才显示「管理后台」入口。
   const { role } = useRole()
   const { device, logoutToDevice, activateAdmin } = useAuth()
   // 乐观反馈：点 Admin/User 立刻高亮该段，网络（verifyAdminToken）+ AsyncStorage 返回后
@@ -296,13 +296,13 @@ export default function Sidebar({
                   // 处理中/结果展示时不响应长按（与电脑端 X 按钮的隐藏逻辑一致）
                   onLongPressAt={
                     !isPCWeb &&
-                    !(
-                      file.status === 'processing' ||
-                      file.uploading ||
-                      file.showResult
-                    )
+                      !(
+                        file.status === 'processing' ||
+                        file.uploading ||
+                        file.showResult
+                      )
                       ? (offsetX, offsetY) =>
-                          openMenuAtFile(file, offsetX, offsetY)
+                        openMenuAtFile(file, offsetX, offsetY)
                       : undefined
                   }
                 >
@@ -482,11 +482,11 @@ export default function Sidebar({
                   onLongPressAt={
                     !isPCWeb
                       ? (offsetX, offsetY) =>
-                          openMenuAtConversation(
-                            { id: conv.id, title: conv.title },
-                            offsetX,
-                            offsetY
-                          )
+                        openMenuAtConversation(
+                          { id: conv.id, title: conv.title },
+                          offsetX,
+                          offsetY
+                        )
                       : undefined
                   }
                 >
@@ -624,28 +624,28 @@ export default function Sidebar({
                         // 乐观反馈：先高亮 Admin，再去免密激活；失败/无缓存再回滚
                         setPendingRole('admin');
                         try {
-                           const ok = await activateAdmin();
-                           if (ok) {
-                             // 静默切换，不弹 toast
-                           } else {
-                             onCloseDrawer?.()
-                             router.push('/admin-login')
-                           }
+                          const ok = await activateAdmin();
+                          if (ok) {
+                            // 静默切换，不弹 toast
+                          } else {
+                            onCloseDrawer?.()
+                            router.push('/admin-login')
+                          }
                         } finally {
-                           setPendingRole(null);
+                          setPendingRole(null);
                         }
                         return;
                       }
                       if (role === 'admin') {
                         setPendingRole('user');
-                         try {
-                            await logoutToDevice();
-                            // 静默切换，不弹 toast
-                          } catch {
-                           MyToast.show('切换失败，请检查网络');
-                         } finally {
-                           setPendingRole(null);
-                         }
+                        try {
+                          await logoutToDevice();
+                          // 静默切换，不弹 toast
+                        } catch {
+                          MyToast.show('切换失败，请检查网络');
+                        } finally {
+                          setPendingRole(null);
+                        }
                       }
                     }}
                   >
@@ -679,9 +679,9 @@ export default function Sidebar({
             >
               {(
                 [
-                  { mode: 'light', label: '浅色', icon: '☀️' },
-                  { mode: 'dark', label: '深色', icon: '🌙' },
-                  { mode: 'system', label: '跟随系统', icon: '💻' }
+                  { mode: 'light', label: '浅色', icon: '' },
+                  { mode: 'dark', label: '深色', icon: '' },
+                  { mode: 'system', label: '跟随系统', icon: '' }
                 ] as const
               ).map(({ mode, label, icon }) => {
                 const selected = themeMode === mode

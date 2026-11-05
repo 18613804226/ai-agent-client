@@ -921,7 +921,7 @@ const styles = StyleSheet.create({
     minHeight: 0
   },
   topBar: {
-    minHeight: 62,
+    minHeight: 72,
     borderBottomWidth: 1,
     justifyContent: 'center',
     paddingBottom: 2
