@@ -774,7 +774,18 @@ export function useChatManager() {
         chunkContent = delta.content || payload.content || ''
       }
 
-      if (chunkThought) enqueue('thought', chunkThought)
+      if (chunkThought) {
+        // 思考/路由元信息是后端整串下发的短文本：不进打字机队列。
+        // 否则它会按 99 字/秒的节奏揭示，在 ~1 秒内持续表现为「末尾被截断」
+        // （每次截图缺的字数还不一样）。这里到达即完整写入、立即上屏，
+        // 打字机效果只留给模型正文（content）。
+        currentThoughtRef.current += chunkThought
+        updateStreamingMarkdownState(
+          currentContentRef.current,
+          currentThoughtRef.current,
+          currentStreamingMsgIdRef.current
+        )
+      }
       if (chunkContent) enqueue('content', chunkContent)
     } catch {
       // 解析失败忽略

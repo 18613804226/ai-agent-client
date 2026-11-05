@@ -163,7 +163,7 @@ export default function AdminDashboardScreen() {
     // 退出 admin：token 降级回 user 设备，避免一直拿 admin token 聊天
     try {
       await logoutToDevice()
-    } catch {}
+    } catch { }
     // 侧栏角色分段器的高亮跟着切回 User（role 的真源是 RoleContext）
     setRole('user')
     // 侧滑退回聊天页（Stack pop）
@@ -189,7 +189,7 @@ export default function AdminDashboardScreen() {
           {
             backgroundColor: theme.bgSidebar,
             borderBottomColor: theme.border,
-            paddingTop: insets.top + (Platform.OS === 'web' ? 0 : 9)
+            paddingTop: Platform.OS === 'web' ? 0 : insets.top
           }
         ]}
       >

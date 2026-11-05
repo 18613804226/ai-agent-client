@@ -5,22 +5,21 @@ import { Animated, Easing, Platform } from 'react-native'
  * 流式文本「墨洇」尾部（从虚到实）。
  * 只把最后几个字渲染成略低于正文的透明度，前缀保持普通字符串子节点。
  *
- * ⚠️ 关键设计（避免两个坑）：
+ * 设计要点：
  * 1. 用 RN legacy Animated（useNativeDriver:false → setNativeProps）更新颜色，
  *    不走 React 重渲染、不重建父 Text 的 spannable → 无重排、不闪。
- *    （React 状态按帧驱动会在打字机每 ~50ms 一个新字时形成 20Hz 闪烁。）
  * 2. 不按文本长度重挂节点（重挂会让淡入每次从头开始 → 尾字永远停在低透明度，
- *    深底上像"末尾字符不显示"）。节点保持挂载，只在新字到达时把进度压回
- *    「可读下限」再提亮到 1 —— 下限取 0.7，尾字任何时刻都看得清。
+ *    深底上像"末尾字符不显示"）。节点保持挂载，新字到达时从「可读下限」再提亮。
+ * 3. 透明度下限取 0.5，尾字任何时刻都看得清。
  */
 
 /** 墨洇覆盖的字数（最后 N 个字） */
 export const INK_TAIL = 5
 /** 透明度下限：即使在动画起点也可读（修复"末尾字符不显示"）。
  *  越小对比越强、湿墨越明显；0.5 是"明显但不会看不见"的平衡点。 */
-const INK_FLOOR = 0.4
+const INK_FLOOR = 0.2
 /** 淡入时长 */
-const INK_DURATION = 220
+const INK_DURATION = 160
 /** iOS / Web 的湿墨晕半径（Android 内联 span 不支持 textShadow，自动忽略） */
 const INK_RADIUS = 6
 const INK_SHADOW_ALPHA = 0.35
@@ -81,7 +80,7 @@ const InkTail = ({
       style={[
         baseStyle,
         {
-          // 主体：颜色 alpha 在 可读下限(0.7) → 1 之间淡入（三端通用）
+          // 主体：颜色 alpha 在 可读下限(0.5) → 1 之间淡入（三端通用）
           color: progress.interpolate({
             inputRange: [0, 1],
             outputRange: [
@@ -152,3 +151,4 @@ export function InkTailText({
     </>
   )
 }
+
