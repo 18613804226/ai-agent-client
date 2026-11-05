@@ -113,7 +113,10 @@ export const inputBarStyles = StyleSheet.create({
   inputBar: {
     minHeight: 56,
     flexDirection: 'row',
-    alignItems: 'center',
+    // 多行时让左右按钮贴底（而不是浮在 pill 垂直中间）。
+    // 单行时 pill 高 = 40(按钮) + 8×2(paddingVertical) = 56 = minHeight，
+    // center 与 flex-end 算出来完全一样，所以单行观感零变化。
+    alignItems: 'flex-end',
     borderWidth: 1,
     borderRadius: 24,
     paddingVertical: 8,
