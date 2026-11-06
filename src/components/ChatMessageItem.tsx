@@ -204,7 +204,14 @@ const ChatMessageItem = memo(
     const metaText = (() => {
       if (isUser) return ''
       const parts: string[] = []
-      if (item.model) parts.push(item.model)
+      if (item.model) {
+        // 服务端 model 形如 'zhipu|glm-4.5-flash'：厂商前缀对展示没用还占单行宽度，
+        // 降级看模型名本身（qwen…）就够了。只裁显示，原始值仍完整存着。
+        const label = item.model.includes('|')
+          ? item.model.slice(item.model.indexOf('|') + 1)
+          : item.model
+        if (label) parts.push(label)
+      }
       if (item.durationMs != null) {
         const d = formatDurationMs(item.durationMs)
         if (d) parts.push(`耗时 ${d}`)
