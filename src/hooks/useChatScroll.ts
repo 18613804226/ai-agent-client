@@ -70,6 +70,13 @@ export function useChatScroll({
    * 不能据此关掉 autoFollow，也不该闪出「回到底部」按钮（切长会话时尤其明显）。
    */
   const pinAnimUntilRef = useRef(0);
+  /**
+   * 流式状态的同步副本。用 ref 而不是直接把 streamingRenderMsg 放进
+   * handleContentSizeChange 的 deps：否则每吐一个 token 都换一次回调身份，
+   * scrollViewProps 每帧变引用 → FlashList 重新处理内部 ScrollView props。
+   */
+  const streamingRef = useRef(streamingRenderMsg);
+  streamingRef.current = streamingRenderMsg;
   /** 内容总高度（onContentSizeChange 给），切会话时用来算「视觉顶部」的 offset */
   const contentHeightRef = useRef(0);
   /** ScrollView 视口高度（外层 View 的 onLayout 给） */
@@ -350,6 +357,7 @@ export function useChatScroll({
    */
   const handleContentSizeChange = useCallback(
     (_width?: number, height?: number) => {
+      const prevH = contentHeightRef.current;
       if (typeof height === 'number' && height > 0) {
         contentHeightRef.current = height;
         outerMaxSV.value = Math.max(0, height - viewportHeightRef.current);
@@ -367,6 +375,21 @@ export function useChatScroll({
       if (APP_PIN_USER_MESSAGE) return; // 钉顶模式：内容变化不自动吸底
 
       if (!autoFollowRef.current) return;
+
+      const grew = typeof height === 'number' && height > prevH + 0.5;
+      // 流式期间「内容真的长高了」→ 立刻同步贴底，保护窗不挡。
+      // 思考框挂载/测量、内层 scrollable 翻转、折叠动画、图片与 Markdown 重排
+      // 都发生在子组件内部，不会产生 ChatArea 的 displayMessages commit，
+      // 主路径 followBottom 根本不会跑，唯一能跟的只有这里。发送时的
+      // pinToBottom(true) 会开 900ms 保护窗，恰好把这几次增高挡掉 →
+      // scrollHeight 涨了、scrollTop 不动，gap 卡几十 px 直到下一个 chunk 才补，
+      // 即「第一行不贴底、第二行才贴」以及「有时贴有时不贴」。
+      // 保护窗本意是屏蔽程序化平滑的 onScroll 噪声，不是屏蔽真实内容增长。
+      // 仍在 autoFollowRef 闸门之后：用户上滑时不会被拽回底部。
+      if (streamingRef.current && grew) {
+        pinToBottom(false);
+        return;
+      }
       // 程序化平滑贴底动画在途：此时的高 distance 是动画本身，插手会把它掐成瞬移
       if (Date.now() < pinAnimUntilRef.current) return;
 

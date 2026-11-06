@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Platform, Vibration } from 'react-native'
+import { Platform, Vibration, Dimensions } from 'react-native'
 import { useAnimatedRef } from 'react-native-reanimated'
 import {
   api,
@@ -38,6 +38,22 @@ import { MyToast } from '../components/GlobalToast'
 import { stopSpeech } from '../services/speechPlayer'
 import { resolveImageUpload, type PickedAttachment } from './useImagePicker'
 import { chatDistanceFromBottom, scrollChatToBottom } from '../utils/chatScroll'
+import { getDeviceInfo } from '../utils/deviceInfo'
+import { isMobileWebWidth } from '../constants/theme'
+
+/**
+ * 服务端「按端分流提示词」用的 platform。
+ * - 原生 APP：'ios' / 'android'
+ * - 手机 H5：'mobile'（服务端别名，和原生一起走移动端短回复模板）
+ * - 桌面 Web：undefined → 调用方不写该字段，服务端回退原提示词，Markdown 回复不变
+ *
+ * H5 口径与项目其它地方一致（语音入口、侧栏长按菜单）：视口宽 <= 768。
+ * 每次发消息时现读 Dimensions，窗口 resize / 横竖屏切换后立即生效。
+ */
+function resolveChatPlatform(): string | undefined {
+  if (Platform.OS !== 'web') return getDeviceInfo().platform
+  return isMobileWebWidth(Dimensions.get('window').width) ? 'mobile' : undefined
+}
 
 export interface Message {
   id: string
@@ -822,6 +838,18 @@ export function useChatManager() {
     // images 已经在 handleSend 中上传，返回的是后端 URL 列表，直接使用
     const imageUrls = images
 
+    // 服务端按端分流提示词：原生 APP + 手机 H5 走移动端短回复模板；
+    // 桌面 Web 不写该字段 → 服务端回退原提示词，Markdown 回复不受影响。
+    // 一条 body 供下面 fetch / XHR 两个分支复用，避免两端字段漂移。
+    const chatPlatform = resolveChatPlatform()
+    const streamBody = JSON.stringify({
+      query: queryText,
+      images: imageUrls,
+      fileIds: knowledgeFileIds,
+      ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+      ...(chatPlatform ? { platform: chatPlatform } : {})
+    })
+
     // ========== WEB：fetch + ReadableStream ==========
     if (Platform.OS === 'web') {
       try {
@@ -832,12 +860,7 @@ export function useChatManager() {
             'Content-Type': 'application/json',
             ...(streamToken ? { Authorization: 'Bearer ' + streamToken } : {})
           },
-          body: JSON.stringify({
-            query: queryText,
-            images: imageUrls,
-            fileIds: knowledgeFileIds,
-            ...(attachmentIds.length > 0 ? { attachmentIds } : {})
-          }),
+          body: streamBody,
           signal: abortControllerRef.current!.signal
         })
 
@@ -1046,14 +1069,7 @@ export function useChatManager() {
           settle()
         })
 
-        xhr.send(
-          JSON.stringify({
-            query: queryText,
-            images: imageUrls,
-            fileIds: knowledgeFileIds,
-            ...(attachmentIds.length > 0 ? { attachmentIds } : {})
-          })
-        )
+        xhr.send(streamBody)
       })
     }
   }

@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
 import { getToken, notifyUnauthorized, setDevice } from './authStore';
-import type { DeviceMeta } from '../utils/deviceInfo';
+import { getDeviceInfo, type DeviceMeta } from '../utils/deviceInfo';
+
+// process.env is injected by Expo at runtime for EXPO_PUBLIC_* variables.
+// tsconfig (expo/tsconfig.base) does not include @types/node, so declare it locally.
+declare const process: { env: { [key: string]: string | undefined } };
 
 /**
  * 从环境变量读取后端地址。
@@ -332,7 +336,7 @@ export const api = {
     }>;
   },
 
-   async speechToText(form: FormData): Promise<string> {
+  async speechToText(form: FormData): Promise<string> {
     const data = (await httpClient.post('/chat/asr', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000,
@@ -341,205 +345,205 @@ export const api = {
     return data.text;
   },
 
-   /**
-    * 上传图片到后端，返回图片 URL 数组。
-    * 支持 base64 data URL 或 File/Blob。
-    */
-   uploadImages: async (images: string[]): Promise<string[]> => {
-     const urls: string[] = [];
-     for (const img of images) {
-       try {
-         if (img.startsWith('data:')) {
-           const data: any = await httpClient.post('/chat/upload-image', {
-             image: img,
-           });
-           if (data?.url) urls.push(data.url);
-         } else {
-           urls.push(img);
-         }
-       } catch (err) {
-         console.error('上传图片失败:', err);
-       }
-     }
-     return urls;
-   },
-
-   /**
-    * 上传单张图片（严格版）：失败抛 Error(后端中文 message)，供「选中即传」链路使用。
-    * 与 uploadImages 的区别：那个为兼容老调用会吞错、返回短数组（位置映射不可靠），
-    * 这里必须让调用方感知失败——还原输入 + toast，不再静默丢图。
-    */
-   uploadImageStrict: async (image: string): Promise<string> => {
-     if (!image.startsWith('data:')) return image; // 非 data: 视作已有 URL（与旧行为一致）
-     try {
-       const data: any = await httpClient.post('/chat/upload-image', {
-         image,
-       });
-       if (!data?.url) throw new Error('上传响应缺少图片 URL');
-       return data.url as string;
-     } catch (err: any) {
-       throw new Error(
-         err?.response?.data?.message || err?.message || '图片上传失败',
-       );
-     }
-   },
-
-   /**
-    * 方式 B：上传聊天附件（文档/视频）拿 id，随后随消息以 attachmentIds 引用。
-    * 后端：POST /chat/attachment → { id, name, kind, charCount, durationSec? }。
-    * 不入向量库、不污染知识库（知识库只由 /chat/knowledge/upload 写入）。
-    */
-   uploadChatAttachment: async (file: {
-     name: string;
-     uri?: string;
-     blob?: any;
-     mime?: string;
-   }): Promise<ChatAttachmentUpload> => {
-     const data = (await postMultipart(
-       '/chat/attachment',
-       file,
-     )) as ChatAttachmentUpload;
-     // DELETE 按 `uuid.ext` 强校验（裸 uuid → 400 非法文件名）；
-     // 响应没显式给 fileRef 时从 url 尾段解析兜底
-     if (!data.fileRef && data.url?.includes('/chat/attachments/')) {
-       data.fileRef = data.url.split('/').pop();
-     }
-     return data;
-   },
-
-   /**
-    * Excel 程序化查错：规则引擎（不走大模型、不占对话配额、不落盘）。
-    * 后端：POST /chat/excel/check → { fileName, sheets, summary, findings }。
-    * 非 2xx 抛 Error(后端 message)（文件过大 / 非 xlsx / 加密损坏 / rules 非法…）。
-    */
-   checkExcelFile: (
-     file: { name: string; uri?: string; blob?: any; mime?: string },
-     rules?: Record<string, unknown>,
-   ): Promise<ExcelCheckResult> =>
-     postMultipart(
-       '/chat/excel/check',
-       file,
-       rules ? { rules: JSON.stringify(rules) } : undefined,
-     ),
-
-   /**
-    * 删除已上传的聊天图片（DELETE /chat/uploads/:filename，需 token，204）。
-    * 只允许删「未被消息引用」的文件：调用方（useImagePicker）负责用
-    * inUse 标记挡掉已随消息发出的 URL。
-    */
-   deleteUploadedImage: async (filename: string): Promise<void> => {
-     await httpClient.delete(`/chat/uploads/${encodeURIComponent(filename)}`);
-   },
-
-   /**
-    * 删除预上传附件（DELETE /chat/attachments/:fileRef，204）。
-    * ⚠️ fileRef = 「uuid.ext」（上传响应的 fileRef / url 尾段），不是裸 id——
-    * 后端正则强校验，传裸 uuid 会 400「非法文件名」。
-    * 仅限「发送前」清理：已被消息引用的附件后端回 409 拒删；
-    * 没删的由服务端 30 天回收兜底。
-    */
-    deleteChatAttachment: async (fileRef: string): Promise<void> => {
-      await httpClient.delete(
-        `/chat/attachments/${encodeURIComponent(fileRef)}`,
-      );
-    },
-
-    /**
-     * GET /chat/attachments/<fileRef>/html — 后端把 Office 文档转成纯文本 HTML。
-     * - 200：返回 HTML 文本（几乎没有标签/图片，就是可读的纯文本）
-     * - 415：格式不支持在线预览 → 调用方回退到「用其他应用打开」面板
-     * 用裸 axios 直连：绕过 httpClient 拦截器（415 不应触发全局日志 / 401 自愈）
-     */
-    getAttachmentHtml: async (
-      fileRef: string,
-    ): Promise<{ html: string | null; notSupported: boolean }> => {
+  /**
+   * 上传图片到后端，返回图片 URL 数组。
+   * 支持 base64 data URL 或 File/Blob。
+   */
+  uploadImages: async (images: string[]): Promise<string[]> => {
+    const urls: string[] = [];
+    for (const img of images) {
       try {
-        const token = await getToken();
-        const resp = await axios.get<string>(
-          `${baseURL}/chat/attachments/${encodeURIComponent(fileRef)}/html`,
-          {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-            responseType: 'text',
-            timeout: 30000,
-          },
-        );
-        return { html: (resp.data as string) ?? '', notSupported: false };
-      } catch (e: any) {
-        const status = e?.response?.status;
-        if (status === 415) return { html: null, notSupported: true };
-        throw e;
+        if (img.startsWith('data:')) {
+          const data: any = await httpClient.post('/chat/upload-image', {
+            image: img,
+          });
+          if (data?.url) urls.push(data.url);
+        } else {
+          urls.push(img);
+        }
+      } catch (err) {
+        console.error('上传图片失败:', err);
       }
-    },
+    }
+    return urls;
+  },
 
-    /**
-     * 下载聊天附件到本地缓存（原生端），带 token。返回本地 file:// uri。
-     * 历史消息附件在原生端只有服务端引用（无本地 blob/uri），PDF/图片等需要
-     * 落到本地文件才能用原生渲染器（react-native-pdf / Image）打开。
-     * 用 expo-file-system/legacy：支持下载时带 headers，且 web 端可安全解析。
-     */
-    downloadAttachment: async (
-      fileRef: string,
-      name?: string,
-    ): Promise<string> => {
-      const token = await getToken();
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const FS: any = require('expo-file-system/legacy');
-      const ext =
-        (name?.split('.').pop() || 'bin').split('?')[0].slice(0, 8) || 'bin';
-      const dest = `${FS.cacheDirectory}preview-${Date.now()}.${ext}`;
-      const url = `${baseURL}/chat/attachments/${encodeURIComponent(fileRef)}`;
-      const res = await FS.downloadAsync(
-        url,
-        dest,
-        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+  /**
+   * 上传单张图片（严格版）：失败抛 Error(后端中文 message)，供「选中即传」链路使用。
+   * 与 uploadImages 的区别：那个为兼容老调用会吞错、返回短数组（位置映射不可靠），
+   * 这里必须让调用方感知失败——还原输入 + toast，不再静默丢图。
+   */
+  uploadImageStrict: async (image: string): Promise<string> => {
+    if (!image.startsWith('data:')) return image; // 非 data: 视作已有 URL（与旧行为一致）
+    try {
+      const data: any = await httpClient.post('/chat/upload-image', {
+        image,
+      });
+      if (!data?.url) throw new Error('上传响应缺少图片 URL');
+      return data.url as string;
+    } catch (err: any) {
+      throw new Error(
+        err?.response?.data?.message || err?.message || '图片上传失败',
       );
-      if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
-      return res.uri;
+    }
+  },
+
+  /**
+   * 方式 B：上传聊天附件（文档/视频）拿 id，随后随消息以 attachmentIds 引用。
+   * 后端：POST /chat/attachment → { id, name, kind, charCount, durationSec? }。
+   * 不入向量库、不污染知识库（知识库只由 /chat/knowledge/upload 写入）。
+   */
+  uploadChatAttachment: async (file: {
+    name: string;
+    uri?: string;
+    blob?: any;
+    mime?: string;
+  }): Promise<ChatAttachmentUpload> => {
+    const data = (await postMultipart(
+      '/chat/attachment',
+      file,
+    )) as ChatAttachmentUpload;
+    // DELETE 按 `uuid.ext` 强校验（裸 uuid → 400 非法文件名）；
+    // 响应没显式给 fileRef 时从 url 尾段解析兜底
+    if (!data.fileRef && data.url?.includes('/chat/attachments/')) {
+      data.fileRef = data.url.split('/').pop();
+    }
+    return data;
+  },
+
+  /**
+   * Excel 程序化查错：规则引擎（不走大模型、不占对话配额、不落盘）。
+   * 后端：POST /chat/excel/check → { fileName, sheets, summary, findings }。
+   * 非 2xx 抛 Error(后端 message)（文件过大 / 非 xlsx / 加密损坏 / rules 非法…）。
+   */
+  checkExcelFile: (
+    file: { name: string; uri?: string; blob?: any; mime?: string },
+    rules?: Record<string, unknown>,
+  ): Promise<ExcelCheckResult> =>
+    postMultipart(
+      '/chat/excel/check',
+      file,
+      rules ? { rules: JSON.stringify(rules) } : undefined,
+    ),
+
+  /**
+   * 删除已上传的聊天图片（DELETE /chat/uploads/:filename，需 token，204）。
+   * 只允许删「未被消息引用」的文件：调用方（useImagePicker）负责用
+   * inUse 标记挡掉已随消息发出的 URL。
+   */
+  deleteUploadedImage: async (filename: string): Promise<void> => {
+    await httpClient.delete(`/chat/uploads/${encodeURIComponent(filename)}`);
+  },
+
+  /**
+   * 删除预上传附件（DELETE /chat/attachments/:fileRef，204）。
+   * ⚠️ fileRef = 「uuid.ext」（上传响应的 fileRef / url 尾段），不是裸 id——
+   * 后端正则强校验，传裸 uuid 会 400「非法文件名」。
+   * 仅限「发送前」清理：已被消息引用的附件后端回 409 拒删；
+   * 没删的由服务端 30 天回收兜底。
+   */
+  deleteChatAttachment: async (fileRef: string): Promise<void> => {
+    await httpClient.delete(
+      `/chat/attachments/${encodeURIComponent(fileRef)}`,
+    );
+  },
+
+  /**
+   * GET /chat/attachments/<fileRef>/html — 后端把 Office 文档转成纯文本 HTML。
+   * - 200：返回 HTML 文本（几乎没有标签/图片，就是可读的纯文本）
+   * - 415：格式不支持在线预览 → 调用方回退到「用其他应用打开」面板
+   * 用裸 axios 直连：绕过 httpClient 拦截器（415 不应触发全局日志 / 401 自愈）
+   */
+  getAttachmentHtml: async (
+    fileRef: string,
+  ): Promise<{ html: string | null; notSupported: boolean }> => {
+    try {
+      const token = await getToken();
+      const resp = await axios.get<string>(
+        `${baseURL}/chat/attachments/${encodeURIComponent(fileRef)}/html`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          responseType: 'text',
+          timeout: 30000,
+        },
+      );
+      return { html: (resp.data as string) ?? '', notSupported: false };
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 415) return { html: null, notSupported: true };
+      throw e;
+    }
+  },
+
+  /**
+   * 下载聊天附件到本地缓存（原生端），带 token。返回本地 file:// uri。
+   * 历史消息附件在原生端只有服务端引用（无本地 blob/uri），PDF/图片等需要
+   * 落到本地文件才能用原生渲染器（react-native-pdf / Image）打开。
+   * 用 expo-file-system/legacy：支持下载时带 headers，且 web 端可安全解析。
+   */
+  downloadAttachment: async (
+    fileRef: string,
+    name?: string,
+  ): Promise<string> => {
+    const token = await getToken();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const FS: any = require('expo-file-system/legacy');
+    const ext =
+      (name?.split('.').pop() || 'bin').split('?')[0].slice(0, 8) || 'bin';
+    const dest = `${FS.cacheDirectory}preview-${Date.now()}.${ext}`;
+    const url = `${baseURL}/chat/attachments/${encodeURIComponent(fileRef)}`;
+    const res = await FS.downloadAsync(
+      url,
+      dest,
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+    );
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    return res.uri;
+  },
+
+  /**
+   * 上传知识库文件（异步、不阻塞）。
+   * 后端落盘建记录后立即返回 { id, fileName, status, totalChunks, processedChunks: 0 }，
+   * 向量化在后台跑，进度用 getKnowledgeFileProgress 轮询。
+   *
+   * - Web：浏览器原生 Blob + fetch。
+   * - Native：用 RN 自带的 XMLHttpRequest + FormData 的 `{ uri, name, type }`
+   *   文件对象。关键点：
+   *   1) Expo 不会替换全局 XMLHttpRequest，所以它读文件走 RN 原生网络层，
+   *      绕开 expo-file-system 的 FilePermissionService（在 Expo Go 里它会以
+   *      “isn't readable / Missing 'READ' permission” 拒绝 DocumentPicker 的缓存文件）。
+   *   2) 不能设置 Content-Type（RN 会自动带 multipart boundary）。
+   *   3) 不做上传字节进度（进度由后端轮询给出），避免个别机型 upload progress 的坑。
+   *   Expo 的全局 fetch 不支持 `{uri,...}`（会抛 Unsupported FormDataPart），故不用 fetch。
+   */
+  uploadKnowledgeFile: (
+    file: {
+      name: string;
+      uri: string;
+      size?: number;
+      mimeType?: string;
     },
+  ): Promise<KnowledgeFileResult | null> => {
+    // 知识库接口：/chat/knowledge/*（任意登录用户可用，全局共享）
+    const url = `${baseURL}/chat/knowledge/upload`;
 
-   /**
-    * 上传知识库文件（异步、不阻塞）。
-    * 后端落盘建记录后立即返回 { id, fileName, status, totalChunks, processedChunks: 0 }，
-    * 向量化在后台跑，进度用 getKnowledgeFileProgress 轮询。
-    *
-    * - Web：浏览器原生 Blob + fetch。
-    * - Native：用 RN 自带的 XMLHttpRequest + FormData 的 `{ uri, name, type }`
-    *   文件对象。关键点：
-    *   1) Expo 不会替换全局 XMLHttpRequest，所以它读文件走 RN 原生网络层，
-    *      绕开 expo-file-system 的 FilePermissionService（在 Expo Go 里它会以
-    *      “isn't readable / Missing 'READ' permission” 拒绝 DocumentPicker 的缓存文件）。
-    *   2) 不能设置 Content-Type（RN 会自动带 multipart boundary）。
-    *   3) 不做上传字节进度（进度由后端轮询给出），避免个别机型 upload progress 的坑。
-    *   Expo 的全局 fetch 不支持 `{uri,...}`（会抛 Unsupported FormDataPart），故不用 fetch。
-    */
-   uploadKnowledgeFile: (
-     file: {
-       name: string;
-       uri: string;
-       size?: number;
-       mimeType?: string;
-     },
-   ): Promise<KnowledgeFileResult | null> => {
-     // 知识库接口：/chat/knowledge/*（任意登录用户可用，全局共享）
-     const url = `${baseURL}/chat/knowledge/upload`;
-
-     // ================= Web =================
-     if (Platform.OS === 'web') {
-       return (async () => {
-         try {
-           const blob = await (await fetch(file.uri)).blob();
-           const formData = new FormData();
-           formData.append('file', blob, file.name);
-           const token = await getToken();
-            const resp = await fetch(url, { method: 'POST', headers: token ? { Authorization: 'Bearer ' + token } : {}, body: formData });
-           if (!resp.ok) { if (resp.status === 401) notifyUnauthorized(); throw new Error('HTTP ' + resp.status); }
-           return await resp.json();
-         } catch (err) {
-           console.error('上传知识库文件失败:', err);
-           return null;
-         }
-       })();
-     }
+    // ================= Web =================
+    if (Platform.OS === 'web') {
+      return (async () => {
+        try {
+          const blob = await (await fetch(file.uri)).blob();
+          const formData = new FormData();
+          formData.append('file', blob, file.name);
+          const token = await getToken();
+          const resp = await fetch(url, { method: 'POST', headers: token ? { Authorization: 'Bearer ' + token } : {}, body: formData });
+          if (!resp.ok) { if (resp.status === 401) notifyUnauthorized(); throw new Error('HTTP ' + resp.status); }
+          return await resp.json();
+        } catch (err) {
+          console.error('上传知识库文件失败:', err);
+          return null;
+        }
+      })();
+    }
 
      // ================= Native：RN XHR =================
      return new Promise((resolve) => {
@@ -655,7 +659,13 @@ export async function refreshDeviceSnapshot(): Promise<void> {
     const { getDevice, setDevice, setToken, saveUserSession } = await import('./authStore');
     const device = await getDevice();
     if (!device || !device.deviceId) return;
-    const data = await httpClient.post('/auth/device-login', { deviceId: device.deviceId }) as any;
+    // 必须和首次登录一样带上完整设备信息：服务端按端标识分流提示词，
+    // 429 校准时这次 device-login 若只带 deviceId，会把服务端记下的 platform
+    // 覆盖成「未上报」→ APP 端随后又回退到 Web 长回复模板。
+    const data = await httpClient.post('/auth/device-login', {
+      deviceId: device.deviceId,
+      ...getDeviceInfo(),
+    }) as any;
     // device-login 会签发新 token：必须立即落地并同步 user 缓存，
     // 否则旧 token 可能在服务端被顶作废，后续请求 401
     if (data && data.token) {
