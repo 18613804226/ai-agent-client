@@ -202,8 +202,8 @@ const ChatMessageItem = memo(
      * 桌面 Web 追加首字 / 生成 token / 生成速度 / 引用 / 上下文记忆 / 结束状态，
      * 由 MessageActions 的 metaLines=2 自动折行，不用手动塞进一行被 ellipsis 切掉。
      * 模型徽标对 APP / H5 尤其重要 —— thinking 已禁用，thought 里那行
-     * 「模型选择…」文本看不到了。总 token（含输入）与生成速度
-     * （completionTokens / 生成耗时）口径不同，并列显示。
+     * 「模型选择…」文本看不到了。总 token 是含输入的计费口径，
+     * tok/s 只用 completionTokens 作分子，输出量不再单独展示。
      */
     const metaText = (() => {
       if (isUser) return ''
@@ -221,8 +221,10 @@ const ChatMessageItem = memo(
         if (d) parts.push(`耗时 ${d}`)
       }
       // 原有信息，所有端都保留；放在靠前位置，单行 ellipsis 也不会先切掉它。
-      // 单位统一用 tok（和 tok/s 同一套缩写），桌面两行才放得下最坏情况
-      if (item.tokens != null) parts.push(`${item.tokens} tok`)
+      // 单位统一用 tok（和 tok/s 同一套缩写），桌面两行才放得下最坏情况。
+      // 显式标「总」是为了和下面 completionTokens 的「输出」区分：
+      // 总 = 输入(系统提示 + 历史 + 检索/工具结果 + 本轮问题) + 本轮输出。
+      if (item.tokens != null) parts.push(`${item.tokens} tok(总)`)
 
       if (!compactMeta) {
         if (item.ttftMs != null && item.ttftMs > 0) {
@@ -232,12 +234,11 @@ const ChatMessageItem = memo(
         const totalMs = item.serverDurationMs || item.durationMs
         const genMs =
           totalMs != null && item.ttftMs != null ? totalMs - item.ttftMs : 0
-        if (item.completionTokens) {
-          parts.push(`生成 ${item.completionTokens} tok`)
-          if (genMs > 0) {
-            const perSec = item.completionTokens / (genMs / 1000)
-            parts.push(`${Math.round(perSec)} tok/s`)
-          }
+        // completionTokens 只作为 tok/s 的分子，不单独展示（输出量看着像和
+        // 「总」重复、又容易误读）。速度这一项已经隐含了它。
+        if (item.completionTokens && genMs > 0) {
+          const perSec = item.completionTokens / (genMs / 1000)
+          parts.push(`${Math.round(perSec)} tok/s`)
         }
         if (item.sourcesCount) parts.push(`引用 ${item.sourcesCount}`)
         // 上下文记忆指标：本轮带入 / 被裁掉的历史条数，以及是否用了滚动摘要
