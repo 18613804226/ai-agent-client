@@ -224,7 +224,7 @@ const ChatMessageItem = memo(
       // 单位统一用 tok（和 t/s 同一套缩写），桌面两行才放得下最坏情况。
       // 显式标「总」是为了和下面 completionTokens 的「输出」区分：
       // 总 = 输入(系统提示 + 历史 + 检索/工具结果 + 本轮问题) + 本轮输出。
-      if (item.tokens != null) parts.push(`${item.tokens} t(总)`)
+      if (item.tokens != null) parts.push(`${item.tokens} tokens`)
 
       if (!compactMeta) {
         if (item.ttftMs != null && item.ttftMs > 0) {
