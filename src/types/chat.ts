@@ -15,10 +15,26 @@ export interface Message {
    * 历史会话重载后端不返回该字段，行自然消失（本地会话期内有效）。
    */
   attachments?: PickedAttachment[];
-  /** 本轮消耗的 token 数（来自服务端 done 事件；拿不到时不展示） */
+  /** 本轮消耗的 token 数（来自服务端 done 事件；total_tokens，含输入） */
   tokens?: number;
-  /** 本轮耗时（毫秒，客户端从发送到流结束计时） */
+  /** 本轮耗时（毫秒，客户端从发送到流结束计时，含打字机逐字揭示时间） */
   durationMs?: number;
+  /** 服务端 done：本轮实际使用的模型（降级后为降级目标）。
+   *  APP / H5 的 thinking 已禁用，这里是唯一能看到模型名的地方 */
+  model?: string;
+  /** 服务端 done：生成 token 数（不含输入），算生成速度的分子 */
+  completionTokens?: number;
+  /** 服务端 done：结束原因 stop / length / tool_calls / content_filter */
+  finishReason?: string;
+  /** 服务端 done：是否被长度上限截断 */
+  truncated?: boolean;
+  /** 服务端 done：首字延迟 ms（含 RAG 检索）；没出字为 null */
+  ttftMs?: number | null;
+  /** 服务端 done：本轮总耗时 ms。刻意不叫 durationMs —— 客户端已有同名自算值，
+   *  两者口径不同，同名会互相覆盖并让 tok/s 算错 */
+  serverDurationMs?: number;
+  /** 服务端 done：本轮引用来源条数 */
+  sourcesCount?: number;
 }
 
 export interface ThemeType {

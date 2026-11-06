@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from 'react'
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image, Dimensions } from 'react-native'
 import { InputBarIcon } from './InputBarIcon'
 import Animated, {
   useSharedValue,
@@ -14,6 +14,7 @@ import ThoughtCollapsible from './ThoughtCollapsible'
 import MessageActions from './MessageActions'
 import { normalizeInlineEmphasis } from '../utils/normalizeEmphasis'
 import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageItem.styles'
+import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
 
@@ -193,17 +194,43 @@ const ChatMessageItem = memo(
         : normalizeInlineEmphasis(item.content.trimEnd())
 
     /**
-     * 气泡下方小字：耗时 · tokens。
-     * 任一侧有值才展示（拿不到 tokens 的老后端只显示耗时，反之只显示 tokens）。
+     * 气泡下方小字：模型 · 耗时 ·（桌面 Web 追加）首字 / 生成速度 / 引用 / 截断。
+     * 沿用 MessageActions 里固定 26px、单行、fontSize 11 的既有位置，不新增高度。
+     * APP / H5 刚切成极简短回复，只保留「模型 + 耗时」；模型徽标对这两端尤其
+     * 重要 —— thinking 已禁用，thought 里那行「模型选择…」文本看不到了。
      */
     const metaText = (() => {
       if (isUser) return ''
       const parts: string[] = []
+      if (item.model) parts.push(item.model)
       if (item.durationMs != null) {
         const d = formatDurationMs(item.durationMs)
         if (d) parts.push(`耗时 ${d}`)
       }
-      if (item.tokens != null) parts.push(`${item.tokens} tokens`)
+
+      // 现读视口宽度：只有桌面 Web 给完整统计（窄屏一行也塞不下）
+      const compact =
+        Platform.OS !== 'web' ||
+        isMobileWebWidth(Dimensions.get('window').width)
+      if (!compact) {
+        if (item.ttftMs != null && item.ttftMs > 0) {
+          parts.push(`首字 ${formatDurationMs(item.ttftMs)}`)
+        }
+        // 优先服务端总耗时（与 ttftMs 同口径）；老后端没给时回退客户端自算值
+        const totalMs = item.serverDurationMs || item.durationMs
+        const genMs =
+          totalMs != null && item.ttftMs != null ? totalMs - item.ttftMs : 0
+        if (item.completionTokens && genMs > 0) {
+          parts.push(
+            `${(item.completionTokens / (genMs / 1000)).toFixed(1)} tok/s`
+          )
+        } else if (item.tokens != null) {
+          parts.push(`${item.tokens} tokens`)
+        }
+        if (item.sourcesCount) parts.push(`引用 ${item.sourcesCount}`)
+        if (item.truncated) parts.push('已截断')
+        else if (item.finishReason === 'content_filter') parts.push('内容过滤')
+      }
       return parts.join(' · ')
     })()
 
@@ -458,6 +485,14 @@ const ChatMessageItem = memo(
     prev.item.systemNote === next.item.systemNote &&
     prev.item.tokens === next.item.tokens &&
     prev.item.durationMs === next.item.durationMs &&
+    // done 统计字段：不进比较器的话 React.memo 会挡住气泡下方小字的刷新
+    prev.item.model === next.item.model &&
+    prev.item.completionTokens === next.item.completionTokens &&
+    prev.item.finishReason === next.item.finishReason &&
+    prev.item.truncated === next.item.truncated &&
+    prev.item.ttftMs === next.item.ttftMs &&
+    prev.item.serverDurationMs === next.item.serverDurationMs &&
+    prev.item.sourcesCount === next.item.sourcesCount &&
     prev.isPlaying === next.isPlaying &&
     prev.onPreviewImage === next.onPreviewImage &&
     prev.onPreviewFile === next.onPreviewFile &&

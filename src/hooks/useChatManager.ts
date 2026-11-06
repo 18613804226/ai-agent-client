@@ -505,6 +505,14 @@ export function useChatManager() {
         systemNote?: boolean
         tokens?: number
         durationMs?: number
+        model?: string
+        completionTokens?: number
+        finishReason?: string
+        truncated?: boolean
+        ttftMs?: number | null
+        /** 服务端 done 的 durationMs 落到这里，不覆盖客户端自算的 durationMs */
+        serverDurationMs?: number
+        sourcesCount?: number
       }
     ) => {
       setConversations((prev) =>
@@ -775,12 +783,32 @@ export function useChatManager() {
         streamFinishedRef.current = true
         return
       } else if (payload.type === 'done') {
-        // 本轮结束：把 token / 模型挂到消息上（耗时在吐字收尾时统一算）
-        const tokens =
-          typeof payload.tokens === 'number' ? payload.tokens : undefined
+        // 本轮结束：把 done 的统计挂到消息上（客户端耗时仍在吐字收尾统一算）。
+        // 服务端 durationMs 存成 serverDurationMs：客户端已有同名自算值（含打字机
+        // 排队时间），同名会互相覆盖，且拿它算 tok/s 会明显低估生成速度。
+        const finishReason =
+          typeof payload.finishReason === 'string' ? payload.finishReason : ''
         updateAiMessageFields(currentStreamingMsgIdRef.current, {
-          ...(tokens !== undefined ? { tokens } : {})
+          ...(typeof payload.tokens === 'number' ? { tokens: payload.tokens } : {}),
+          ...(typeof payload.model === 'string' && payload.model
+            ? { model: payload.model }
+            : {}),
+          ...(typeof payload.completionTokens === 'number'
+            ? { completionTokens: payload.completionTokens }
+            : {}),
+          finishReason,
+          // 服务端本就由 finishReason === 'length' 推出，老版没传时兜底
+          truncated: payload.truncated === true || finishReason === 'length',
+          ttftMs: typeof payload.ttftMs === 'number' ? payload.ttftMs : null,
+          serverDurationMs:
+            typeof payload.durationMs === 'number' ? payload.durationMs : 0,
+          sourcesCount:
+            typeof payload.sourcesCount === 'number' ? payload.sourcesCount : 0
         })
+        return
+      } else if (payload.type === 'ping') {
+        // 心跳帧：必须显式忽略。落进下面 else 会把 payload.content（如 "pong"）
+        // 当成正文 enqueue 出去，直接污染回答。
         return
       } else if (payload.type === 'sources') {
         return // 引用来源帧：暂不渲染

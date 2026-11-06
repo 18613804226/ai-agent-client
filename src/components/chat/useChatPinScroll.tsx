@@ -844,6 +844,10 @@ export function useChatPinScroll({
       )
       const push = Math.max(0, delta - gap)
       if (push > 0.5) scrollToOffsetUI(outerOffsetSV.value + push, true)
+    } else if (delta < 0 && !interactingSV.value) {
+      // 删除缩略图/输入栏变矮：直接把内容往上拽 -delta，把最后一条消息顶回输入栏上方
+      const pull = -delta
+      scrollToOffsetUI(outerOffsetSV.value - pull, true)
     }
   }, [
     bottomContentInset,
