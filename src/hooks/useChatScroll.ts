@@ -16,6 +16,14 @@ import type { Message, StreamingRenderMsg } from '../types/chat';
 const PIN_ANIM_MS = 900;
 
 /**
+ * 非流式期内容尺寸连续变化（思考框展开/收起、图片加载、Markdown 重排）的
+ * 稳定窗口。折叠动画 250ms 内每帧都派 onContentSizeChange，若每次都读
+ * scrollHeight 就是「写样式→读几何」的 layout thrashing；合并到尺寸稳定后
+ * 只判断一次即可。流式期不走这条，仍立即贴底（首行贴底依赖它）。
+ */
+const SIZE_SETTLE_MS = 80;
+
+/**
  * 安全取 Web 滚动 DOM 节点。
  * ⚠️ FlashList 的公开句柄是普通对象（getScrollableNode 等方法内部再解引用它自己的
  * scrollViewRef.current）；ChatArea 因 key={activeId} remount（切会话/删会话/新建）时，
@@ -89,6 +97,16 @@ export function useChatScroll({
   const outerMaxSV = useSharedValue(0);
   /** 切会话后只做一次「从最旧滑到最新」的进场动画（下一次内容尺寸变化时消费掉） */
   const pendingEntryAnimRef = useRef(false);
+  /** 非流式期「尺寸稳定后再判断是否贴底」的合并定时器 */
+  const sizeSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 切会话 / 卸载时清掉待执行的贴底判断，避免打在已卸载的滚动节点上
+  useEffect(() => () => {
+    if (sizeSettleTimerRef.current) {
+      clearTimeout(sizeSettleTimerRef.current);
+      sizeSettleTimerRef.current = null;
+    }
+  }, []);
 
   /**
    * 贴底（消费级 App 的做法）：同步定位，不走动画、不排队。
@@ -390,19 +408,33 @@ export function useChatScroll({
         pinToBottom(false);
         return;
       }
+
+      // 折叠：内容变矮 → gap 只会变小、浏览器会自动 clamp scrollTop，本来就不
+      // 需要贴底。直接 return，省掉这次读 scrollHeight 的强制同步回流。
+      if (typeof height === 'number' && height < prevH - 0.5) return;
       // 程序化平滑贴底动画在途：此时的高 distance 是动画本身，插手会把它掐成瞬移
       if (Date.now() < pinAnimUntilRef.current) return;
 
-      const ref: any = scrollViewRef.current;
-      const node = getScrollNodeSafe(ref);
-      if (
-        node &&
-        typeof node.scrollTop === 'number' &&
-        node.scrollHeight - node.clientHeight - node.scrollTop <= 1
-      ) {
-        return; // 已经在底部，什么都不用做
-      }
-      pinToBottom(false);
+      // 非流式期变高（展开思考框 / 图片加载 / Markdown 重排）：动画期间高度每帧
+      // 都在变，把「读几何 → 贴底」合并到尺寸稳定后只做一次，避免每帧
+      // 写样式 → 读 scrollHeight 的 layout thrashing。
+      if (sizeSettleTimerRef.current) clearTimeout(sizeSettleTimerRef.current);
+      sizeSettleTimerRef.current = setTimeout(() => {
+        sizeSettleTimerRef.current = null;
+        // timer 落地时用户可能已上滑 / 切了会话，重新过一遍闸门
+        if (!autoFollowRef.current) return;
+        if (Date.now() < pinAnimUntilRef.current) return;
+        const ref: any = scrollViewRef.current;
+        const node = getScrollNodeSafe(ref);
+        if (
+          node &&
+          typeof node.scrollTop === 'number' &&
+          node.scrollHeight - node.clientHeight - node.scrollTop <= 1
+        ) {
+          return; // 已经在底部，什么都不用做
+        }
+        pinToBottom(false);
+      }, SIZE_SETTLE_MS);
     },
     [pinToBottom, autoFollowRef, scrollViewRef, playEntryScroll],
   );

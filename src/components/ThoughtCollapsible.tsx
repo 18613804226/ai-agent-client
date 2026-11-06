@@ -35,6 +35,13 @@ interface ThoughtCollapsibleProps {
 /** 时长与曲线参数来自 utils/chatScroll（与钉顶补偿单点定义），这里只把曲线对象缓存一次 */
 const THOUGHT_EASING = Easing.bezier(...THOUGHT_ANIM_BEZIER)
 
+/**
+ * Web：把折叠动画的重排 / 重绘限制在思考框内部，不波及整条消息和 FlashList。
+ * 放静态 style 数组里、不进 worklet；原生端为 null（RN style 数组允许）。
+ */
+const WEB_BODY_CONTAIN =
+  Platform.OS === 'web' ? ({ contain: 'layout paint' } as any) : null
+
 // ===================== ThoughtCollapsible =====================
 const ThoughtCollapsible = memo(
   function ThoughtCollapsible({
@@ -227,18 +234,23 @@ const ThoughtCollapsible = memo(
           </View>
         </TouchableOpacity>
         <Animated.View
-          style={bodyAnimatedStyle}
-          onLayout={(e) => {
-            // 只记「完全展开」的实测高度：折叠/展开动画期间量到的是被 maxHeight
-            // 裁剪出来的中间值，写进去会把动画高度带偏（越收越小）。
-            // 流式增长时 progress 停在 1，逐次上报，最后一次就是折叠前的高度。
-            if (!isOpen || progress.value < 0.99) return
-            const h = e.nativeEvent.layout.height
-            if (h > 0) {
-              openBodyHRef.current = h
-              bodyHSV.value = h
-            }
-          }}
+          style={[bodyAnimatedStyle, WEB_BODY_CONTAIN]}
+          // 折叠期间不挂 onLayout：动画每帧改 maxHeight 都会派一次布局事件到 JS，
+          // 而这段时间量到的都是被裁剪的中间值、本来就会被守卫丢掉。
+          // 不挂 handler 直接省掉这 ~15 次跨线程往返；展开时重新挂上测量。
+          onLayout={
+            isOpen
+              ? (e) => {
+                  // 只记「完全展开」的实测高度：展开动画期间量到的是裁剪值。
+                  if (progress.value < 0.99) return
+                  const h = e.nativeEvent.layout.height
+                  if (h > 0) {
+                    openBodyHRef.current = h
+                    bodyHSV.value = h
+                  }
+                }
+              : undefined
+          }
         >
           {Platform.OS === 'web' && !scrollable ? (
             // Web：内容不需要滚动时直接渲染文本，不套 overflow:hidden 的
