@@ -16,14 +16,6 @@ import type { Message, StreamingRenderMsg } from '../types/chat';
 const PIN_ANIM_MS = 900;
 
 /**
- * 非流式期内容尺寸连续变化（思考框展开/收起、图片加载、Markdown 重排）的
- * 稳定窗口。折叠动画 250ms 内每帧都派 onContentSizeChange，若每次都读
- * scrollHeight 就是「写样式→读几何」的 layout thrashing；合并到尺寸稳定后
- * 只判断一次即可。流式期不走这条，仍立即贴底（首行贴底依赖它）。
- */
-const SIZE_SETTLE_MS = 80;
-
-/**
  * 安全取 Web 滚动 DOM 节点。
  * ⚠️ FlashList 的公开句柄是普通对象（getScrollableNode 等方法内部再解引用它自己的
  * scrollViewRef.current）；ChatArea 因 key={activeId} remount（切会话/删会话/新建）时，
@@ -97,16 +89,6 @@ export function useChatScroll({
   const outerMaxSV = useSharedValue(0);
   /** 切会话后只做一次「从最旧滑到最新」的进场动画（下一次内容尺寸变化时消费掉） */
   const pendingEntryAnimRef = useRef(false);
-  /** 非流式期「尺寸稳定后再判断是否贴底」的合并定时器 */
-  const sizeSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // 切会话 / 卸载时清掉待执行的贴底判断，避免打在已卸载的滚动节点上
-  useEffect(() => () => {
-    if (sizeSettleTimerRef.current) {
-      clearTimeout(sizeSettleTimerRef.current);
-      sizeSettleTimerRef.current = null;
-    }
-  }, []);
 
   /**
    * 贴底（消费级 App 的做法）：同步定位，不走动画、不排队。
@@ -373,22 +355,6 @@ export function useChatScroll({
    *   UIManager.measure → setTimeout(0)，落在下一个宏任务里、晚于 paint，
    *   所以只当兜底（主路径是上面的 useLayoutEffect + scrollTop）。
    */
-  /** 读几何判断是否离底，必要时同步贴底。
-   *  ⚠️ 读 scrollHeight 会强制浏览器完成布局，调用点必须自己控制频率。 */
-  const stickToBottomIfNeeded = useCallback(() => {
-    if (!autoFollowRef.current) return;
-    if (Date.now() < pinAnimUntilRef.current) return;
-    const node = getScrollNodeSafe(scrollViewRef.current as any);
-    if (
-      node &&
-      typeof node.scrollTop === 'number' &&
-      node.scrollHeight - node.clientHeight - node.scrollTop <= 1
-    ) {
-      return; // 已经在底部，什么都不用做
-    }
-    pinToBottom(false);
-  }, [pinToBottom, autoFollowRef, scrollViewRef]);
-
   const handleContentSizeChange = useCallback(
     (_width?: number, height?: number) => {
       const prevH = contentHeightRef.current;
@@ -424,49 +390,21 @@ export function useChatScroll({
         pinToBottom(false);
         return;
       }
+      // 程序化平滑贴底动画在途：此时的高 distance 是动画本身，插手会把它掐成瞬移
+      if (Date.now() < pinAnimUntilRef.current) return;
 
-      // ⚠️ 自动折叠（thoughtDone）时思考框逐帧变矮、正文同时逐帧变高，
-      // onContentSizeChange 报的总高会在「变高 / 变矮」之间来回跳。
-      // 若变矮帧跳过贴底、变高帧立即贴底，视口就被交替写与不写 → 抖一下。
-      // 因此省回流的优化只在**非流式期**（平时手动展开/收起）启用；
-      // 流式期保持原来的每帧同步判断，由补偿链统一接管视口。
-      if (!streamingRef.current) {
-        // 折叠：内容变矮 → gap 只会变小、浏览器自动 clamp scrollTop，不需要贴底
-        if (typeof height === 'number' && height < prevH - 0.5) return;
-        if (Date.now() < pinAnimUntilRef.current) return;
-
-        // 展开（变高）：立即贴底，不能有 debounce 延迟 —— 思考框展开时内容逐帧
-        // 长高，若等到动画结束再等 80ms 才滚，视觉上就是「没第一时间贴底」。
-        // 用 onContentSizeChange 给的 height 直接算目标 offset，**不读
-        // scrollHeight / clientHeight**，所以逐帧写也不会造成强制同步布局；
-        // 卡和延迟两头都保住。
-        if (typeof height === 'number') {
-          const node = getScrollNodeSafe(scrollViewRef.current as any);
-          if (node && typeof node.scrollTop === 'number') {
-            node.scrollTop = Math.max(0, height - viewportHeightRef.current);
-          }
-        }
-        // 动画结束后只做一次精确校准（唯一一次读几何），修正 height 与
-        // 真实 scrollHeight 之间可能存在的 padding 偏差
-        if (sizeSettleTimerRef.current) clearTimeout(sizeSettleTimerRef.current);
-        sizeSettleTimerRef.current = setTimeout(() => {
-          sizeSettleTimerRef.current = null;
-          // timer 落地时用户可能已上滑 / 切了会话，重新过一遍闸门
-          stickToBottomIfNeeded();
-        }, SIZE_SETTLE_MS);
-        return;
+      const ref: any = scrollViewRef.current;
+      const node = getScrollNodeSafe(ref);
+      if (
+        node &&
+        typeof node.scrollTop === 'number' &&
+        node.scrollHeight - node.clientHeight - node.scrollTop <= 1
+      ) {
+        return; // 已经在底部，什么都不用做
       }
-
-      // 流式期：原逻辑，每帧同步判断（首行贴底修复依赖它）
-      stickToBottomIfNeeded();
+      pinToBottom(false);
     },
-    [
-      pinToBottom,
-      autoFollowRef,
-      scrollViewRef,
-      playEntryScroll,
-      stickToBottomIfNeeded,
-    ],
+    [pinToBottom, autoFollowRef, scrollViewRef, playEntryScroll],
   );
 
   /** 外层 View 的 onLayout：记录视口高度并更新思考框贴边联动的上限 */
