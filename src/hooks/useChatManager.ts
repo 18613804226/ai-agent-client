@@ -513,6 +513,9 @@ export function useChatManager() {
         /** 服务端 done 的 durationMs 落到这里，不覆盖客户端自算的 durationMs */
         serverDurationMs?: number
         sourcesCount?: number
+        historyKept?: number
+        historyDropped?: number
+        digestUsed?: boolean
       }
     ) => {
       setConversations((prev) =>
@@ -803,7 +806,15 @@ export function useChatManager() {
           serverDurationMs:
             typeof payload.durationMs === 'number' ? payload.durationMs : 0,
           sourcesCount:
-            typeof payload.sourcesCount === 'number' ? payload.sourcesCount : 0
+            typeof payload.sourcesCount === 'number' ? payload.sourcesCount : 0,
+          // 上下文记忆指标：本轮带入 / 裁掉的历史条数、是否用了滚动摘要
+          historyKept:
+            typeof payload.historyKept === 'number' ? payload.historyKept : 0,
+          historyDropped:
+            typeof payload.historyDropped === 'number'
+              ? payload.historyDropped
+              : 0,
+          digestUsed: payload.digestUsed === true
         })
         return
       } else if (payload.type === 'ping') {

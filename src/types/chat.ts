@@ -35,6 +35,12 @@ export interface Message {
   serverDurationMs?: number;
   /** 服务端 done：本轮引用来源条数 */
   sourcesCount?: number;
+  /** 服务端 done：本轮带入上下文的历史消息条数 */
+  historyKept?: number;
+  /** 服务端 done：被上下文窗口裁掉的历史条数 */
+  historyDropped?: number;
+  /** 服务端 done：是否启用滚动摘要（上下文压缩） */
+  digestUsed?: boolean;
 }
 
 export interface ThemeType {

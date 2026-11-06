@@ -32,8 +32,10 @@ interface MessageActionsProps {
   onPlayingChange: (id: string | null) => void;
   /** 吐字未完成时为 false：只占位不响应点击，避免布局跳动 */
   ready?: boolean;
-  /** 操作行左侧的小字（耗时 / tokens）；为空则不占位 */
+  /** 操作行左侧的小字（耗时 / tokens / 统计）；为空则不占位 */
   metaText?: string;
+  /** 小字允许的行数：桌面 Web 统计项多用 2，APP / H5 保持单行（默认 1） */
+  metaLines?: number;
 }
 
 const CopyIcon = ({ color, size = 14 }: { color: string; size?: number }) => (
@@ -86,6 +88,7 @@ const MessageActions = memo(
     onPlayingChange,
     ready = true,
     metaText,
+    metaLines = 1,
   }: MessageActionsProps) {
     // 三个视觉状态：
     //   喇叭（未读） → 点击后「转圈」（正在请求/合成，还没出声）→ 「停止」（第一个音频真的开播）。
@@ -158,7 +161,7 @@ const MessageActions = memo(
         {metaText ? (
           <View style={styles.meta}>
             <Text
-              numberOfLines={1}
+              numberOfLines={metaLines}
               style={[styles.metaText, { color: theme.textMuted }]}
             >
               {metaText}
@@ -223,7 +226,8 @@ const MessageActions = memo(
     prev.theme === next.theme &&
     prev.isPlaying === next.isPlaying &&
     prev.ready === next.ready &&
-    prev.metaText === next.metaText,
+    prev.metaText === next.metaText &&
+    prev.metaLines === next.metaLines,
 );
 
 export default MessageActions;
@@ -233,7 +237,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    height: ACTION_ROW_HEIGHT,
+    // 桌面 Web 的小字允许两行：用 minHeight 让行高随内容长到 32px，
+    // 单行时仍严格是 ACTION_ROW_HEIGHT，不改动任何一端的既有高度
+    minHeight: ACTION_ROW_HEIGHT,
     marginTop: 1,
   },
   hidden: { opacity: 0 },

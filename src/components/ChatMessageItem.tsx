@@ -193,22 +193,26 @@ const ChatMessageItem = memo(
         ? item.content || ''
         : normalizeInlineEmphasis(item.content.trimEnd())
 
+    // 现读视口宽度：桌面 Web 才有空间展开完整统计（并允许小字折成两行）
+    const compactMeta =
+      Platform.OS !== 'web' ||
+      isMobileWebWidth(Dimensions.get('window').width)
     /**
-     * 气泡下方小字：模型 · 耗时 · 总 token ·（桌面 Web 追加）首字 / 生成速度 / 引用 / 截断。
-     * 沿用 MessageActions 里固定 26px、单行、fontSize 11 的既有位置，不新增高度。
-     * APP / H5 刚切成极简短回复，只保留前三项；模型徽标对这两端尤其重要 ——
-     * thinking 已禁用，thought 里那行「模型选择…」文本看不到了。
-     * 总 token（total_tokens，含输入）与生成速度（completionTokens / 生成耗时）
-     * 是两个不同口径，两项并列显示，不要二选一。
+     * 气泡下方小字。APP / H5 保持单行「模型 · 耗时 · 总 token」；
+     * 桌面 Web 追加首字 / 生成 token / 生成速度 / 引用 / 上下文记忆 / 结束状态，
+     * 由 MessageActions 的 metaLines=2 自动折行，不用手动塞进一行被 ellipsis 切掉。
+     * 模型徽标对 APP / H5 尤其重要 —— thinking 已禁用，thought 里那行
+     * 「模型选择…」文本看不到了。总 token（含输入）与生成速度
+     * （completionTokens / 生成耗时）口径不同，并列显示。
      */
     const metaText = (() => {
       if (isUser) return ''
       const parts: string[] = []
       if (item.model) {
         // 服务端 model 是「厂商:模型」：'zhipu:glm-4.5-flash'，降级时厂商会变
-        // （如 'dashscope:qwen3.7-flash'）。去掉第一段厂商前缀只留模型名 ——
-        // 降级一眼可见，也省单行宽度。兼容旧格式 'zhipu|glm…'；不带分隔符的
-        // 老值原样显示。只裁显示，原始值完整存着。
+        // （如 'dashscope:qwen3.7-flash'）。去掉第一段只留模型名 —— 降级一眼
+        // 可见，也省宽度。兼容旧格式 'zhipu|glm…'；无分隔符的老值原样显示。
+        // 只裁显示，原始值完整存着。
         const label = item.model.replace(/^[^:|]+[:|]\s*/, '').trim()
         if (label) parts.push(label)
       }
@@ -216,14 +220,11 @@ const ChatMessageItem = memo(
         const d = formatDurationMs(item.durationMs)
         if (d) parts.push(`耗时 ${d}`)
       }
-      // 原有信息，所有端都保留；放在靠前位置，单行 ellipsis 也不会先切掉它
-      if (item.tokens != null) parts.push(`${item.tokens} tokens`)
+      // 原有信息，所有端都保留；放在靠前位置，单行 ellipsis 也不会先切掉它。
+      // 单位统一用 tok（和 tok/s 同一套缩写），桌面两行才放得下最坏情况
+      if (item.tokens != null) parts.push(`${item.tokens} tok`)
 
-      // 现读视口宽度：只有桌面 Web 给完整统计（窄屏一行也塞不下）
-      const compact =
-        Platform.OS !== 'web' ||
-        isMobileWebWidth(Dimensions.get('window').width)
-      if (!compact) {
+      if (!compactMeta) {
         if (item.ttftMs != null && item.ttftMs > 0) {
           parts.push(`首字 ${formatDurationMs(item.ttftMs)}`)
         }
@@ -231,14 +232,22 @@ const ChatMessageItem = memo(
         const totalMs = item.serverDurationMs || item.durationMs
         const genMs =
           totalMs != null && item.ttftMs != null ? totalMs - item.ttftMs : 0
-        if (item.completionTokens && genMs > 0) {
-          parts.push(
-            `${(item.completionTokens / (genMs / 1000)).toFixed(1)} tok/s`
-          )
+        if (item.completionTokens) {
+          parts.push(`生成 ${item.completionTokens} tok`)
+          if (genMs > 0) {
+            const perSec = item.completionTokens / (genMs / 1000)
+            parts.push(`${Math.round(perSec)} tok/s`)
+          }
         }
         if (item.sourcesCount) parts.push(`引用 ${item.sourcesCount}`)
+        // 上下文记忆指标：本轮带入 / 被裁掉的历史条数，以及是否用了滚动摘要
+        if (item.historyKept || item.historyDropped) {
+          parts.push(`记忆 ${item.historyKept ?? 0}/${item.historyDropped ?? 0}`)
+        }
+        if (item.digestUsed) parts.push('滚动摘要')
         if (item.truncated) parts.push('已截断')
         else if (item.finishReason === 'content_filter') parts.push('内容过滤')
+        else if (item.finishReason === 'tool_calls') parts.push('工具调用')
       }
       return parts.join(' · ')
     })()
@@ -476,6 +485,7 @@ const ChatMessageItem = memo(
                   onPlayingChange={setPlayingMsgId}
                   ready={!isStreaming}
                   metaText={metaText}
+                  metaLines={compactMeta ? 1 : 2}
                 />
               )}
             </View>
@@ -502,6 +512,9 @@ const ChatMessageItem = memo(
     prev.item.ttftMs === next.item.ttftMs &&
     prev.item.serverDurationMs === next.item.serverDurationMs &&
     prev.item.sourcesCount === next.item.sourcesCount &&
+    prev.item.historyKept === next.item.historyKept &&
+    prev.item.historyDropped === next.item.historyDropped &&
+    prev.item.digestUsed === next.item.digestUsed &&
     prev.isPlaying === next.isPlaying &&
     prev.onPreviewImage === next.onPreviewImage &&
     prev.onPreviewFile === next.onPreviewFile &&
