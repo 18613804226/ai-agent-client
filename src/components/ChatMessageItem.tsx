@@ -194,10 +194,12 @@ const ChatMessageItem = memo(
         : normalizeInlineEmphasis(item.content.trimEnd())
 
     /**
-     * 气泡下方小字：模型 · 耗时 ·（桌面 Web 追加）首字 / 生成速度 / 引用 / 截断。
+     * 气泡下方小字：模型 · 耗时 · 总 token ·（桌面 Web 追加）首字 / 生成速度 / 引用 / 截断。
      * 沿用 MessageActions 里固定 26px、单行、fontSize 11 的既有位置，不新增高度。
-     * APP / H5 刚切成极简短回复，只保留「模型 + 耗时」；模型徽标对这两端尤其
-     * 重要 —— thinking 已禁用，thought 里那行「模型选择…」文本看不到了。
+     * APP / H5 刚切成极简短回复，只保留前三项；模型徽标对这两端尤其重要 ——
+     * thinking 已禁用，thought 里那行「模型选择…」文本看不到了。
+     * 总 token（total_tokens，含输入）与生成速度（completionTokens / 生成耗时）
+     * 是两个不同口径，两项并列显示，不要二选一。
      */
     const metaText = (() => {
       if (isUser) return ''
@@ -207,6 +209,8 @@ const ChatMessageItem = memo(
         const d = formatDurationMs(item.durationMs)
         if (d) parts.push(`耗时 ${d}`)
       }
+      // 原有信息，所有端都保留；放在靠前位置，单行 ellipsis 也不会先切掉它
+      if (item.tokens != null) parts.push(`${item.tokens} tokens`)
 
       // 现读视口宽度：只有桌面 Web 给完整统计（窄屏一行也塞不下）
       const compact =
@@ -224,8 +228,6 @@ const ChatMessageItem = memo(
           parts.push(
             `${(item.completionTokens / (genMs / 1000)).toFixed(1)} tok/s`
           )
-        } else if (item.tokens != null) {
-          parts.push(`${item.tokens} tokens`)
         }
         if (item.sourcesCount) parts.push(`引用 ${item.sourcesCount}`)
         if (item.truncated) parts.push('已截断')
