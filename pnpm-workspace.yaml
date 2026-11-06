@@ -1,1 +1,12 @@
 ﻿nodeLinker: hoisted
+
+# pnpm 12 默认要求包发布满 24h（minimumReleaseAge）才允许安装；
+# caniuse-lite 等浏览器数据包几乎每天发版，lockfile 一刷新就会撞冷却期，
+# CI / EAS 全部被 ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION 拦死。显式关闭。
+minimumReleaseAge: 0
+
+# 必须保持 false：postinstall（patch-package 补丁 + trim-icon-fonts）依赖它执行。
+# ⚠️ pnpm 会跳过依赖包自己的构建脚本（v10+ 默认行为），但项目根目录的
+#    lifecycle 脚本归 ignoreScripts 管——设 true 补丁就不打，Android OTA
+#    会复现 manifest 卡 Check 的老 bug。勿在本机全局配置里覆盖成 true。
+ignoreScripts: false
