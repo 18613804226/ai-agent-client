@@ -205,11 +205,11 @@ const ChatMessageItem = memo(
       if (isUser) return ''
       const parts: string[] = []
       if (item.model) {
-        // 服务端 model 形如 'zhipu|glm-4.5-flash'：厂商前缀对展示没用还占单行宽度，
-        // 降级看模型名本身（qwen…）就够了。只裁显示，原始值仍完整存着。
-        const label = item.model.includes('|')
-          ? item.model.slice(item.model.indexOf('|') + 1)
-          : item.model
+        // 服务端 model 是「厂商:模型」：'zhipu:glm-4.5-flash'，降级时厂商会变
+        // （如 'dashscope:qwen3.7-flash'）。去掉第一段厂商前缀只留模型名 ——
+        // 降级一眼可见，也省单行宽度。兼容旧格式 'zhipu|glm…'；不带分隔符的
+        // 老值原样显示。只裁显示，原始值完整存着。
+        const label = item.model.replace(/^[^:|]+[:|]\s*/, '').trim()
         if (label) parts.push(label)
       }
       if (item.durationMs != null) {
