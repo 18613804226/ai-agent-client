@@ -788,11 +788,13 @@ export function useChatManager() {
       } else if (payload.type === 'done') {
         // 本轮结束：把 done 的统计挂到消息上（客户端耗时仍在吐字收尾统一算）。
         // 服务端 durationMs 存成 serverDurationMs：客户端已有同名自算值（含打字机
-        // 排队时间），同名会互相覆盖，且拿它算 tok/s 会明显低估生成速度。
+        // 排队时间），同名会互相覆盖，且拿它算 t/s 会明显低估生成速度。
         const finishReason =
           typeof payload.finishReason === 'string' ? payload.finishReason : ''
         updateAiMessageFields(currentStreamingMsgIdRef.current, {
-          ...(typeof payload.tokens === 'number' ? { tokens: payload.tokens } : {}),
+          ...(typeof payload.tokens === 'number'
+            ? { tokens: payload.tokens }
+            : {}),
           ...(typeof payload.model === 'string' && payload.model
             ? { model: payload.model }
             : {}),

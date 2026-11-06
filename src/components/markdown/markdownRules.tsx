@@ -159,16 +159,21 @@ export const createMarkdownRules = (selectable: boolean): RenderRules => ({
     let runKey = 0;
     const flushRun = () => {
       if (run.length) {
-        // 块间空行统一在这里补（各块规则自己不补）：
-        //  · run **内部**用 `\n\n` —— 两个换行 = 一行空白；
-        //  · run **起始**用 `\n` —— 同样是一行空白，但开头的 `\n\n` 会变成
-        //    两行空白（第一个换行会先产生一个空行）。
-        // 流式侧的块是各自独立的节点，由 <BlockSeparator /> 补同样的一行空白，
-        // 两边行数才能对齐，否则切点落定 / 吐字结束时会跳一下。
+        // 块间只用**单换行**分隔，不能补 `\n\n`（两个换行 = 一行可见空白）。
+        //
+        // 为什么：splitStableBlocks 只按「原文空行」切块，块间空白行已经由
+        // <BlockSeparator /> 统一负责。但 markdown-it 会在**原文没有空行**时
+        // 也拆出多个块（例如「引导语\n- 列表项」→ paragraph + bullet_list），
+        // 这些块会一起进同一个 run。流式期它们是纯 <Text> 里的单换行、紧挨着
+        // 没有空白行；吐完那一刻 tail 升格成 StableMarkdown，这里若补 `\n\n`
+        // 就会凭空多出一行空白 —— 正是「渲染时没有、渲染完多一行」的来源。
+        //
+        // View 块（代码块/hr）也不补起始换行：它已经是独立兄弟节点，垂直布局
+        // 自带换行，流式侧 TailText 的 fence 段之后同样是独立节点（见
+        // StreamingMarkdown 的 needsNoSeparator 注释）。
         const content: React.ReactNode[] = [];
-        if (blocks.length > 0) content.push('\n');
         run.forEach((el, i) => {
-          if (i > 0) content.push('\n\n');
+          if (i > 0) content.push('\n');
           content.push(el);
         });
         blocks.push(
@@ -194,7 +199,7 @@ export const createMarkdownRules = (selectable: boolean): RenderRules => ({
     flushRun();
     return <View key={node.key}>{blocks}</View>;
   },
-  // 段落：块间空行由 body 规则统一补（见上），这里不再自己补 ——
+  // 段落：块间由 body 规则统一补**单换行**（见上），这里不再自己补 ——
   // 各块规则自己补的话，run 起始处的换行数会和 run 内部对不上。
   paragraph: (node, children, _parent, styles) => (
     <Text key={node.key} selectable={selectable} style={styles.paragraph}>

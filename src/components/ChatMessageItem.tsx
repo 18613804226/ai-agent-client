@@ -71,18 +71,18 @@ const ChatMessageItem = memo(
     onThoughtToggle?: (msgId: string, expanding: boolean, height: number) => void
   }) => {
     const entrance = useSharedValue(animateIn ? 0 : 1)
-  useEffect(() => {
-    // FlashList 会复用 cell：item 变化时必须把入场值重置，否则新消息可能继承上一条的 0/1
-    entrance.value = animateIn ? 0 : 1
-    if (!animateIn) return
-    entrance.value = withTiming(1, { duration: 200 })
-  }, [animateIn, entrance, item.id])
-  const entranceStyle = useAnimatedStyle(() => ({
-    opacity: entrance.value,
-    transform: [{ translateY: (1 - entrance.value) * 10 }],
-  }))
+    useEffect(() => {
+      // FlashList 会复用 cell：item 变化时必须把入场值重置，否则新消息可能继承上一条的 0/1
+      entrance.value = animateIn ? 0 : 1
+      if (!animateIn) return
+      entrance.value = withTiming(1, { duration: 200 })
+    }, [animateIn, entrance, item.id])
+    const entranceStyle = useAnimatedStyle(() => ({
+      opacity: entrance.value,
+      transform: [{ translateY: (1 - entrance.value) * 10 }],
+    }))
 
-  const isUser = item.role === 'user'
+    const isUser = item.role === 'user'
     const hasContent = !!(item.content && item.content !== '...')
     const hasThought = !!item.thought
     const isThinking = !isUser && !hasContent && !hasThought
@@ -116,68 +116,68 @@ const ChatMessageItem = memo(
     const attachmentRows =
       docAttachments.length > 0
         ? docAttachments.map((a, idx) => {
-            const isVideo =
-              a.mime?.startsWith('video/') || (a as any).kind === 'video';
-            const fileName = a.name || '未命名文件';
-            const fileSize = formatFileSize(a.size) || '';
-            return (
-              <TouchableOpacity
-                key={`${a.name}-${idx}`}
-                activeOpacity={0.7}
-                disabled={!canPreview(a)}
-                onPress={() => onPreviewFile?.(a)}
+          const isVideo =
+            a.mime?.startsWith('video/') || (a as any).kind === 'video';
+          const fileName = a.name || '未命名文件';
+          const fileSize = formatFileSize(a.size) || '';
+          return (
+            <TouchableOpacity
+              key={`${a.name}-${idx}`}
+              activeOpacity={0.7}
+              disabled={!canPreview(a)}
+              onPress={() => onPreviewFile?.(a)}
+              style={[
+                chatMessageStyles.attachmentCard,
+                {
+                  backgroundColor: theme.bubbleUserBg,
+                  borderColor: theme.bubbleUserText + '15',
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <View
                 style={[
-                  chatMessageStyles.attachmentCard,
-                  {
-                    backgroundColor: theme.bubbleUserBg,
-                    borderColor: theme.bubbleUserText + '15',
-                    borderWidth: 1,
-                  },
+                  chatMessageStyles.attachmentIcon,
+                  { backgroundColor: theme.bubbleUserText + '12' },
                 ]}
               >
-                <View
+                <InputBarIcon
+                  name={isVideo ? 'film' : 'file-text'}
+                  size={16}
+                  color={theme.bubbleUserText}
+                />
+              </View>
+              <View style={chatMessageStyles.attachmentInfo}>
+                <Text
+                  numberOfLines={1}
                   style={[
-                    chatMessageStyles.attachmentIcon,
-                    { backgroundColor: theme.bubbleUserText + '12' },
+                    chatMessageStyles.attachmentName,
+                    { color: theme.bubbleUserText },
                   ]}
                 >
-                  <InputBarIcon
-                    name={isVideo ? 'film' : 'file-text'}
-                    size={16}
-                    color={theme.bubbleUserText}
-                  />
-                </View>
-                <View style={chatMessageStyles.attachmentInfo}>
+                  {fileName}
+                </Text>
+                {fileSize ? (
                   <Text
-                    numberOfLines={1}
                     style={[
-                      chatMessageStyles.attachmentName,
+                      chatMessageStyles.attachmentMeta,
                       { color: theme.bubbleUserText },
                     ]}
                   >
-                    {fileName}
+                    {fileSize}
                   </Text>
-                  {fileSize ? (
-                    <Text
-                      style={[
-                        chatMessageStyles.attachmentMeta,
-                        { color: theme.bubbleUserText },
-                      ]}
-                    >
-                      {fileSize}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={{ opacity: 0.6 }}>
-                  <InputBarIcon
-                    name="chevron-right"
-                    size={15}
-                    color={theme.bubbleUserText}
-                  />
-                </View>
-              </TouchableOpacity>
-            );
-          })
+                ) : null}
+              </View>
+              <View style={{ opacity: 0.6 }}>
+                <InputBarIcon
+                  name="chevron-right"
+                  size={15}
+                  color={theme.bubbleUserText}
+                />
+              </View>
+            </TouchableOpacity>
+          );
+        })
         : null;
 
     /**
@@ -203,7 +203,7 @@ const ChatMessageItem = memo(
      * 由 MessageActions 的 metaLines=2 自动折行，不用手动塞进一行被 ellipsis 切掉。
      * 模型徽标对 APP / H5 尤其重要 —— thinking 已禁用，thought 里那行
      * 「模型选择…」文本看不到了。总 token 是含输入的计费口径，
-     * tok/s 只用 completionTokens 作分子，输出量不再单独展示。
+     * t/s 只用 completionTokens 作分子，输出量不再单独展示。
      */
     const metaText = (() => {
       if (isUser) return ''
@@ -221,10 +221,10 @@ const ChatMessageItem = memo(
         if (d) parts.push(`耗时 ${d}`)
       }
       // 原有信息，所有端都保留；放在靠前位置，单行 ellipsis 也不会先切掉它。
-      // 单位统一用 tok（和 tok/s 同一套缩写），桌面两行才放得下最坏情况。
+      // 单位统一用 tok（和 t/s 同一套缩写），桌面两行才放得下最坏情况。
       // 显式标「总」是为了和下面 completionTokens 的「输出」区分：
       // 总 = 输入(系统提示 + 历史 + 检索/工具结果 + 本轮问题) + 本轮输出。
-      if (item.tokens != null) parts.push(`${item.tokens} tok(总)`)
+      if (item.tokens != null) parts.push(`${item.tokens} t(总)`)
 
       if (!compactMeta) {
         if (item.ttftMs != null && item.ttftMs > 0) {
@@ -234,11 +234,11 @@ const ChatMessageItem = memo(
         const totalMs = item.serverDurationMs || item.durationMs
         const genMs =
           totalMs != null && item.ttftMs != null ? totalMs - item.ttftMs : 0
-        // completionTokens 只作为 tok/s 的分子，不单独展示（输出量看着像和
+        // completionTokens 只作为 t/s 的分子，不单独展示（输出量看着像和
         // 「总」重复、又容易误读）。速度这一项已经隐含了它。
         if (item.completionTokens && genMs > 0) {
           const perSec = item.completionTokens / (genMs / 1000)
-          parts.push(`${Math.round(perSec)} tok/s`)
+          parts.push(`${Math.round(perSec)} t/s`)
         }
         if (item.sourcesCount) parts.push(`引用 ${item.sourcesCount}`)
         // 上下文记忆指标：本轮带入 / 被裁掉的历史条数，以及是否用了滚动摘要
@@ -260,12 +260,12 @@ const ChatMessageItem = memo(
         isUser
           ? [chatMessageStyles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
           : [
-              chatMessageStyles.bubbleAi,
-              {
-                backgroundColor: theme.bubbleAiBg,
-                borderColor: theme.border
-              }
-            ]
+            chatMessageStyles.bubbleAi,
+            {
+              backgroundColor: theme.bubbleAiBg,
+              borderColor: theme.border
+            }
+          ]
       ],
       [isUser, theme]
     )
@@ -440,7 +440,7 @@ const ChatMessageItem = memo(
                       onToggle={
                         onThoughtToggle
                           ? (expanding, height) =>
-                              onThoughtToggle(item.id, expanding, height)
+                            onThoughtToggle(item.id, expanding, height)
                           : undefined
                       }
                     />
@@ -460,19 +460,19 @@ const ChatMessageItem = memo(
                   {/* 正文：统一走 StreamingMarkdown —— 流式期段落级增量；结束时不切换渲染器
                   （否则整棵树卸载重挂 → 布局跳一下），只把最后一段升格为稳定块，
                   其余块 memo 命中零重排。rules/style 流式与结束完全一致。 */}
-                <StreamingMarkdown
-                  content={renderContent}
-                  streaming={isStreaming}
-                  style={dynamicMarkdownStyles}
-                  selectable={textSelectable}
-                  rules={
-                    Platform.OS === 'web'
-                      ? webMarkdownRules
-                      : textSelectable
-                        ? selectableMarkdownRules
-                        : nonSelectableMarkdownRules
-                  }
-                />
+                  <StreamingMarkdown
+                    content={renderContent}
+                    streaming={isStreaming}
+                    style={dynamicMarkdownStyles}
+                    selectable={textSelectable}
+                    rules={
+                      Platform.OS === 'web'
+                        ? webMarkdownRules
+                        : textSelectable
+                          ? selectableMarkdownRules
+                          : nonSelectableMarkdownRules
+                    }
+                  />
                 </View>
               )}
 

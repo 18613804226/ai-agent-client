@@ -14,7 +14,7 @@ import { Animated, Easing, Platform } from 'react-native'
  */
 
 /** 墨洇覆盖的字数（最后 N 个字） */
-export const INK_TAIL = 5
+export const INK_TAIL = 4
 /** 透明度下限：即使在动画起点也可读（修复"末尾字符不显示"）。
  *  越小对比越强、湿墨越明显；0.5 是"明显但不会看不见"的平衡点。 */
 const INK_FLOOR = 0.2
