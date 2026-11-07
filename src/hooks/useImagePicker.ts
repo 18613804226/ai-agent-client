@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker'
 import * as DocumentPicker from 'expo-document-picker'
 import { api } from '../services/api'
 import { MyToast } from '../components/GlobalToast'
+import { prepareNativeImage, prepareWebImage } from '../utils/imageCompress'
 
 /**
  * 已选附件。
@@ -53,30 +54,39 @@ function readWebFile(
   onFile: (att: PickedAttachment) => void,
 ) {
   const isImage = /^image\//.test(file.type || '')
+  if (isImage) {
+    // 图片先压到上传限额内再入列：base64 体积膨胀 4/3，原图动辄几 MB，
+    // 直接送 /chat/upload-image 必然被服务端 body limit 挡回 413。
+    prepareWebImage(file as Blob)
+      .then((uri) => {
+        // 一律带 uploading: true 入列：选中即上传，遮罩（转圈）从第一帧就盖上，
+        // 别让「没状态的裸图」先闪一下
+        onImage({
+          uri,
+          kind: 'image' as const,
+          name: file.name,
+          size: file.size,
+          mime: file.type,
+          uploading: true,
+        })
+      })
+      .catch(() => {
+        MyToast.show('图片读取失败，请重新选择')
+      })
+    return
+  }
   const reader = new FileReader()
   reader.onload = (event) => {
     const base64String = event.target?.result as string
     if (!base64String) return
-    // 一律带 uploading: true 入列：选中即上传，遮罩（转圈）从第一帧就盖上，
-    // 别让「没状态的裸图」先闪一下
-    if (isImage)
-      onImage({
-        uri: base64String,
-        kind: 'image' as const,
-        name: file.name,
-        size: file.size,
-        mime: file.type,
-        uploading: true,
-      })
-    else
-      onFile({
-        uri: base64String,
-        kind: 'file',
-        name: file.name,
-        size: file.size,
-        mime: file.type,
-        blob: file,
-      })
+    onFile({
+      uri: base64String,
+      kind: 'file',
+      name: file.name,
+      size: file.size,
+      mime: file.type,
+      blob: file,
+    })
   }
   reader.readAsDataURL(file)
 }
@@ -372,18 +382,29 @@ export function useImagePicker() {
     assets: ImagePicker.ImagePickerAsset[],
   ) => {
     if (!assets || assets.length === 0) return
-    const newAttachments: PickedAttachment[] = assets.map((asset) => {
-      const uri = asset.base64
-        ? `data:image/jpeg;base64,${asset.base64}`
-        : asset.uri
-      return {
-        uri,
-        kind: 'image' as const,
-        // 带 uploading: true 入列：下面的 effect 会紧跟着发起预传，
-        // 遮罩（转圈）从第一帧就盖上，不留「光秃秃的图」空窗
-        uploading: true,
-      }
-    })
+    // 压缩后再入列：手机直出照片动辄几 MB，base64 再膨胀 4/3 → 必 413。
+    // 压完的 data URL 才是「预览 / 缓存 key / 上传」三处共用的那一份。
+    const results = await Promise.all(
+      assets.map(async (asset) => {
+        const uri = await prepareNativeImage({
+          uri: asset.uri,
+          base64: asset.base64,
+          fileSize: asset.fileSize,
+        })
+        if (!uri) return null
+        return {
+          uri,
+          kind: 'image' as const,
+          // 带 uploading: true 入列：下面的 effect 会紧跟着发起预传，
+          // 遮罩（转圈）从第一帧就盖上，不留「光秃秃的图」空窗
+          uploading: true,
+        }
+      }),
+    )
+    const failed = results.filter((r) => !r).length
+    const newAttachments = results.filter(Boolean) as PickedAttachment[]
+    if (failed > 0) MyToast.show(`${failed} 张图片处理失败，请重试`)
+    if (newAttachments.length === 0) return
     setSelectedAttachments((prev) => [...prev, ...newAttachments])
   }
 
@@ -489,7 +510,9 @@ export function useImagePicker() {
     })
 
     if (!result.canceled && result.assets) {
-      processPickedAssets(result.assets)
+      processPickedAssets(result.assets).catch(() => {
+        MyToast.show('图片处理失败，请重试')
+      })
     }
   }
 
@@ -526,7 +549,9 @@ export function useImagePicker() {
       allowsMultipleSelection: true,
     })
     if (!result.canceled && result.assets) {
-      processPickedAssets(result.assets)
+      processPickedAssets(result.assets).catch(() => {
+        MyToast.show('图片处理失败，请重试')
+      })
     }
   }
 

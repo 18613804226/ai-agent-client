@@ -27,6 +27,19 @@ import type { DeviceUsageRecord } from '../src/types/admin'
 
 const formatNumber = (value: number) => value.toLocaleString('en-US')
 
+/**
+ * 首次加载的「磨砂半透」遮罩：不铺实色，让设备页骨架从底下透出来。
+ * 与输入栏磨砂同款做法（glassConfig）——只叠半透明主题色，不做高斯模糊：
+ * 项目里刻意不用 BlurView / backdrop-filter（均匀模糊会让整屏发雾、
+ * 且 RNW 根本不支持 backdropFilter 这个 style）。
+ */
+const loadingScrimBg = (isDark: boolean) =>
+  isDark ? 'rgba(0, 0, 0, 0.55)' : 'rgba(240, 244, 249, 0.72)'
+
+/** 转圈底下的小玻璃卡片：半透明 + 细边，保证 spinner 在浅色/深色下都看得清 */
+const loadingCardBg = (isDark: boolean) =>
+  isDark ? 'rgba(30, 31, 32, 0.78)' : 'rgba(255, 255, 255, 0.82)'
+
 export default function AdminDashboardScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -428,9 +441,23 @@ export default function AdminDashboardScreen() {
       {/* 进入设备页首次加载的全屏 loading（翻页只用顶部小提示，不遮整屏） */}
       {loading && !initialLoaded ? (
         <View
-          style={[styles.loadingOverlay, { backgroundColor: theme.bgApp }]}
+          pointerEvents="box-only"
+          style={[
+            styles.loadingOverlay,
+            { backgroundColor: loadingScrimBg(theme.isDark) }
+          ]}
         >
-          <ActivityIndicator size="large" color={theme.sendBtnActive} />
+          <View
+            style={[
+              styles.loadingCard,
+              {
+                backgroundColor: loadingCardBg(theme.isDark),
+                borderColor: theme.border
+              }
+            ]}
+          >
+            <ActivityIndicator size="large" color={theme.sendBtnActive} />
+          </View>
         </View>
       ) : null}
     </View>
@@ -923,6 +950,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10
+  },
+  loadingCard: {
+    width: 76,
+    height: 76,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      web: { boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)' },
+      default: { elevation: 8 }
+    })
   },
   scroll: {
     flex: 1,

@@ -130,6 +130,17 @@ export const createDynamicMarkdownStyles = (
   StyleSheet.create({
     body: { fontSize: 15, lineHeight: 24, color: theme.textMain },
     strong: { fontWeight: 'bold' as const, color: theme.textMain },
+    // 显式覆盖库默认 hardbreak: { width: '100%', height: 1 }。模型用「行尾两空格
+    // + 换行」表示硬换行时，这个样式会让 <Text> 内联树里多撑出一整行空白，
+    // 而且只在含硬换行的回答里出现（正是「有的回答底部多一行」的来源之一）。
+    // 流式期尾巴是纯 <Text>，没有这一层 → 落定后才会冒出来。
+    softbreak: { fontSize: 15, lineHeight: 24 },
+    hardbreak: {
+      width: undefined,
+      height: undefined,
+      fontSize: 15,
+      lineHeight: 24
+    },
     paragraph: {
       marginTop: 0,
       marginBottom: 8,

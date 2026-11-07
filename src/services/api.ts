@@ -2,6 +2,7 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 import { getToken, notifyUnauthorized, setDevice } from './authStore';
 import { getDeviceInfo, type DeviceMeta } from '../utils/deviceInfo';
+import { assertImageUploadable } from '../utils/imageCompress';
 
 // process.env is injected by Expo at runtime for EXPO_PUBLIC_* variables.
 // tsconfig (expo/tsconfig.base) does not include @types/node, so declare it locally.
@@ -376,12 +377,21 @@ export const api = {
   uploadImageStrict: async (image: string): Promise<string> => {
     if (!image.startsWith('data:')) return image; // 非 data: 视作已有 URL（与旧行为一致）
     try {
+      // 客户端闸门：base64 会把二进制膨胀 4/3，超过 ~1.2MB 必然撞服务端
+      // body limit（413）。先自己拦下来，别白跑一趟再吃一个没头没尾的报错。
+      assertImageUploadable(image);
       const data: any = await httpClient.post('/chat/upload-image', {
         image,
       });
       if (!data?.url) throw new Error('上传响应缺少图片 URL');
       return data.url as string;
     } catch (err: any) {
+      // 413 = Payload Too Large：服务端（nginx / body parser）拒收。
+      // axios 默认文案是「Request failed with status code 413」，对用户毫无意义，
+      // 这里换成能指导下一步的中文提示。
+      if (err?.response?.status === 413) {
+        throw new Error('图片太大，服务器拒收（413）。请换一张更小的图片');
+      }
       throw new Error(
         err?.response?.data?.message || err?.message || '图片上传失败',
       );

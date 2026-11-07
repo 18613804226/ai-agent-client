@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect } from 'react'
 import { Platform } from 'react-native'
 import type { MutableRefObject } from 'react'
 import type { PickedAttachment } from '../../hooks/useImagePicker'
+import { prepareWebImage } from '../../utils/imageCompress'
 
 /**
  * ChatInputBar 的 Web 专用逻辑（纯搬运自 ChatInputBar.tsx）：
@@ -61,19 +62,18 @@ export function useWebImagePaste(
           const blob = items[i].getAsFile()
           if (blob) {
             e.preventDefault()
-            const reader = new FileReader()
-            reader.onload = (event) => {
-              const base64String = event.target?.result as string
-              if (base64String) {
+            // 粘贴的图也要先压缩：剪贴板里的截图常常好几 MB，
+            // 原样上传必然被服务端 body limit 挡回 413。
+            prepareWebImage(blob)
+              .then((uri) => {
                 // 粘贴的图片同样并入统一附件列表（kind: 'image'）；
                 // uploading: true 让遮罩+转圈从第一帧就盖上（effect 会发起预传）
                 setAttachments((prev) => [
                   ...prev,
-                  { uri: base64String, kind: 'image' as const, uploading: true }
+                  { uri, kind: 'image' as const, uploading: true }
                 ])
-              }
-            }
-            reader.readAsDataURL(blob)
+              })
+              .catch(() => {})
           }
         }
       }

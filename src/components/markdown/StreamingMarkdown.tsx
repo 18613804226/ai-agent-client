@@ -423,8 +423,11 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   // 走与流式段落升级完全相同的 StableMarkdown 渲染 + 样式（含 BlockFadeIn 淡入），
   // TailText 清空。于是结束态与最后一帧只差「尾段升格 + 光标消失」，
   // 其余块 key/文本不变 → memo 命中 → 零重排，不再有整棵树卸载重挂的跳动。
+  // 结束态只升格「有可见内容」的尾段：纯空白 tail 升格后，map 会为它补一个
+  // <BlockSeparator />（一整行空 Text），而 StableMarkdown 解析空白又不产生内容
+  // → 气泡底部凭空多一行空白。有些回答结尾带换行/空段时就会命中这里。
   const finalBlocks =
-    !streaming && tail ? [...blocks, tail] : blocks
+    !streaming && tail.trim() ? [...blocks, tail] : blocks
   const finalTail = streaming ? tail : ''
 
   return (
