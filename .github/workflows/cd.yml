@@ -45,6 +45,10 @@ jobs:
 
       - name: Prepare server directory
         uses: appleboy/ssh-action@v1.1.0
+        env:
+          # drone-ssh v1.7.7 已从 GitHub Releases 下架（404），
+          # ssh-action 的 entrypoint.sh 默认写死 1.7.7，这里显式覆盖为现存版本。
+          DRONE_SSH_VERSION: 1.8.6
         with:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
