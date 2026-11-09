@@ -788,13 +788,13 @@ export function useChatPinScroll({
    * 输入栏高度变化（出现/移除附件缩略图、多行输入等）时调整内容位置：
    * 输入栏顶边上移 delta，要保证最后一条消息不被新出现的行盖住。
    *
-   * - 钉顶：被钉消息固定在视口顶部，只重算留白（留白缩掉 delta，内容总高不变，
-   *   maxScroll 仍等于钉顶目标）——不移动钉顶目标，否则整条消息会被顶出屏幕。
-   * - 非钉顶：先吃掉「最后一条消息底 → 输入栏顶」的空闲距离 gap，只有超出的
-   *   部分 (delta - gap) 才推上去。贴底时 gap=0 → 正好顶 delta；
-   *   没贴底但下方还有空白时 → 原地不动。
+   * - 钉顶：先算下方真实空白 gap。短回答有一屏留白可吃 → 沿用原行为
+   *   （只重算留白、视口不动，钉顶消息不被顶出屏幕）；气泡很长时留白已压到 0，
+   *   必须把 delta 记进 pinBottomPadRef 并同步上推视口，否则输入栏直接盖住正文。
+   * - 非钉顶：同样先吃 gap，只有超出的 (delta - gap) 才推上去。
+   *   贴底时 gap=0 → 正好顶 delta；下方还有空白时 → 原地不动。
    *
-   * 放在 useChatScroll 之后：非钉顶分支要用 outerOffsetSV 读当前 offset。
+   * 放在 useChatScroll 之后：两个分支都要用 outerOffsetSV 读当前 offset。
    */
   const prevBottomInsetRef = useRef(bottomContentInset)
   /** 挂载时间：进页面输入栏刚量完高度的那次上顶要跳过（和贴底跟随撞在一起） */
@@ -804,57 +804,70 @@ export function useChatPinScroll({
     prevBottomInsetRef.current = bottomContentInset
     const delta = bottomContentInset - prev
     if (!APP_PIN_USER_MESSAGE || delta === 0) return
+
+    // gap = 「最后一条消息底 → 输入栏顶」的真实空白（按**旧**输入栏高度算）：
+    //   gap = offset + viewportH − prev − naturalH
+    // 用 naturalHRef 而不是 contentH 换算：FlashList 的 onContentSizeChange 与
+    // 这个 effect 谁先跑不确定，contentH / spacer 可能一个已更新一个还是旧值，
+    // 拿总高换算会混进 2×delta 的误差 → push 忽大忽小（偶发的一种来源）。
+    // naturalH 在两种顺序下都稳定。
+    // 短回答下方有一屏留白 → gap ≥ delta → 输入栏只吃空白，不用滚；
+    // 气泡非常长时留白压到 0 → gap = 0 → 正好顶 delta。
+    const gap = Math.max(
+      0,
+      outerOffsetSV.value + viewportHRef.current - prev - naturalHRef.current
+    )
+    const push = delta > 0 ? Math.max(0, delta - gap) : 0
+    const active = !interactingSV.value
+
     if (pinTargetSV.value >= 0) {
-      // 钉顶：被钉消息固定在视口顶部，输入栏变高只应挤压下方的留白/回答区，
-      // 不能把钉顶目标也往上挪 —— 那样整条钉顶消息会被顶出屏幕（就是「错位」）。
-      // 只重算留白：留白会自动缩掉 delta，内容总高不变 → maxScroll 仍等于目标，
-      // 视口不移动，被钉消息原地不动。
+      if (push > 0.5 && active) {
+        // ⚠️ 补偿必须记进 pinBottomPadRef：不加的话 recomputePinSpacer 会把
+        // 新加的 delta 从留白里原样扣掉 → 内容总高不变、maxScroll 不变，
+        // 下发 scrollToOffset(+push) 会被 clamp 回原位（看起来完全没动）。
+        // 这个 ref 的注释本来就写着「输入栏每变高一次，钉顶目标就加上相应的
+        // 距离」，但一直只有归零、从没写过非零值 —— 正是偶发不顶的根。
+        pinBottomPadRef.current += push
+        pinTargetSV.value += push
+        pinTargetBaseRef.current += push
+        recomputePinSpacer()
+        // 显式下发，不依赖帧回调：用户碰过列表后 touchedSV=true，
+        // 帧回调会永久停手，只靠它就会变成「有的顶、有的不顶」。
+        scrollToOffsetUI(outerOffsetSV.value + push, true)
+        return
+      }
+      if (delta < 0 && active && pinBottomPadRef.current > 0) {
+        // 删除缩略图/输入栏变矮：只回撤之前顶过的量，避免反复增删附件
+        // 把视口越推越远（pinBottomPadRef 一直涨、钉顶目标漂移）。
+        const pull = Math.min(pinBottomPadRef.current, -delta)
+        pinBottomPadRef.current -= pull
+        pinTargetSV.value = Math.max(0, pinTargetSV.value - pull)
+        pinTargetBaseRef.current = Math.max(0, pinTargetBaseRef.current - pull)
+        recomputePinSpacer()
+        scrollToOffsetUI(Math.max(0, outerOffsetSV.value - pull), true)
+        return
+      }
+      // 下方还有留白：输入栏吃掉空白即可，钉顶消息原地不动（原有行为）
       recomputePinSpacer()
       return
     }
-    // 非钉顶（历史贴底 / 用户停在底部 / 用户停在半路）：输入栏变高（选中图片后
-    // 出现缩略图行、多行输入等）→ 底部占位变高，输入栏顶边上移 delta。
-    // 正确做法不是「无脑滚到底」，而是先算最后一条消息与输入栏顶之间还有多少
-    // 空闲距离 gap：
-    //   gap >= delta → 输入栏吃进这段空白，气泡原地不动（不推）；
-    //   gap <  delta → 只推超出的 (delta - gap)，把气泡顶回输入栏上方。
-    // 这样「贴底」时 gap=0 → 正好顶 delta；「没贴底、下方尚有空白」时不会被推。
+
+    // 非钉顶（历史贴底 / 用户停在底部 / 用户停在半路）：只推 (delta - gap)，
+    // 不「无脑滚到底」，半路看历史的用户不会被拽走。
     // ⚠️ 进页面 600ms 内（输入栏刚量完高度）不推：这时候贴底跟随本来就在滚动，
     //    再推一次动画会和用户的第一下拖动抢 —— 表现为「切换后第一次往回滑被挡住」。
-    if (
-      delta > 0 &&
-      Date.now() - mountedAtRef.current > 600 &&
-      !interactingSV.value
-    ) {
-      // gap = 输入栏顶 − 最后一条消息底。
-      // 两者都用「内容总高」换算：footer 高 = spacer + bottomContentInset，
-      // 输入栏顶 = viewportH − bottomContentInset，相减后 bottomContentInset 抵消，
-      // 只剩 spacer：
-      //   gap = viewportH − contentH + spacer + offset
-      // spacer = getListFooterHeight() − bottomContentInset。
-      // 内容不足一屏时 offset=0、contentH<viewportH，公式自然给出真实空白。
-      const spacer =
-        getListFooterHeight() - bottomContentInset
-      const gap = Math.max(
-        0,
-        viewportHRef.current -
-          contentHRef.current +
-          spacer +
-          outerOffsetSV.value
-      )
-      const push = Math.max(0, delta - gap)
-      if (push > 0.5) scrollToOffsetUI(outerOffsetSV.value + push, true)
-    } else if (delta < 0 && !interactingSV.value) {
-      // 删除缩略图/输入栏变矮：直接把内容往上拽 -delta，把最后一条消息顶回输入栏上方
+    if (push > 0.5 && active && Date.now() - mountedAtRef.current > 600) {
+      scrollToOffsetUI(outerOffsetSV.value + push, true)
+    } else if (delta < 0 && active) {
+      // 删除缩略图/输入栏变矮：把最后一条消息顶回输入栏上方
       const pull = -delta
-      scrollToOffsetUI(outerOffsetSV.value - pull, true)
+      scrollToOffsetUI(Math.max(0, outerOffsetSV.value - pull), true)
     }
   }, [
     bottomContentInset,
     pinTargetSV,
     interactingSV,
     scrollToOffsetUI,
-    getListFooterHeight,
     recomputePinSpacer,
     scrollViewRef,
     outerOffsetSV
