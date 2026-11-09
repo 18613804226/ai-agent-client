@@ -11,7 +11,7 @@ jobs:
   deploy-web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate GitHub Secrets
         run: |
@@ -26,10 +26,10 @@ jobs:
           fi
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -44,7 +44,7 @@ jobs:
         run: pnpm exec expo export --platform web
 
       - name: Prepare server directory
-        uses: appleboy/ssh-action@v1.1.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           # drone-ssh v1.7.7 已从 GitHub Releases 下架（404），且 GitHub 的
           # release 下载 CDN 对 CI 不稳定（504）。走 ghproxy 镜像下载现存版本。
