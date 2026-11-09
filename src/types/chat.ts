@@ -1,4 +1,5 @@
 import type { PickedAttachment } from '../hooks/useImagePicker'
+import type { ChatSource } from '../utils/citations'
 
 export interface Message {
   id: string
@@ -33,8 +34,13 @@ export interface Message {
   /** 服务端 done：本轮总耗时 ms。刻意不叫 durationMs —— 客户端已有同名自算值，
    *  两者口径不同，同名会互相覆盖并让 t/s 算错 */
   serverDurationMs?: number
-  /** 服务端 done：本轮引用来源条数 */
+  /** 服务端 done：本轮引用来源条数（含知识库来源，不能用来判断有没有可点角标） */
   sourcesCount?: number
+  /**
+   * 本轮引用来源明细：实时流来自 `sources` 帧，历史回显来自 `messages[].sources`。
+   * 只有 kind==='web' 且带 url/index 的项会变成正文 [n] 可点角标。
+   */
+  sources?: ChatSource[]
   /** 服务端 done：本轮带入上下文的历史消息条数 */
   historyKept?: number
   /** 服务端 done：被上下文窗口裁掉的历史条数 */

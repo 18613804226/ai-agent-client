@@ -8,11 +8,19 @@ import Animated, {
 } from 'react-native-reanimated'
 import { INVERTED_CHAT_LIST, CELL_INVERSION_STYLE } from '../utils/chatScroll'
 import { WEB_ROW_CONTAINMENT } from '../utils/layout'
-import { selectableMarkdownRules, nonSelectableMarkdownRules, webMarkdownRules } from './markdown/markdownRules'
+import {
+  selectableMarkdownRules,
+  nonSelectableMarkdownRules,
+  webMarkdownRules,
+  createMarkdownRules,
+  createWebMarkdownRules
+} from './markdown/markdownRules'
 import { StreamingMarkdown } from './markdown/StreamingMarkdown'
 import ThoughtCollapsible from './ThoughtCollapsible'
 import MessageActions from './MessageActions'
 import { normalizeInlineEmphasis } from '../utils/normalizeEmphasis'
+import { EMPTY_CITATIONS, openSourceUrl, webCitations } from '../utils/citations'
+import { SourcesList } from './SourcesList'
 import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageItem.styles'
 import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
@@ -192,6 +200,32 @@ const ChatMessageItem = memo(
       isStreaming || !item.content
         ? item.content || ''
         : normalizeInlineEmphasis(item.content.trimEnd())
+
+    /**
+     * [n] 角标来源映射。
+     * 流式期刻意用模块级 EMPTY_CITATIONS：rules 也保持模块级常量，
+     * 于是「sources 帧中途到达」和「每个 content chunk」都不会让
+     * StableMarkdown 的 memo 失效 —— 吐字期零闪烁。
+     * 吐字结束那一次 commit 才换成带角标的 rules，与 finalBlocks 尾段升格、
+     * MessageActions ready 同帧发生，正好是需求要的「统一重渲染一次」。
+     */
+    const citations = useMemo(
+      () => (isStreaming ? EMPTY_CITATIONS : webCitations(item.sources)),
+      [isStreaming, item.sources]
+    )
+
+    const markdownRules = useMemo(() => {
+      if (isStreaming || citations.size === 0) {
+        return Platform.OS === 'web'
+          ? webMarkdownRules
+          : textSelectable
+            ? selectableMarkdownRules
+            : nonSelectableMarkdownRules
+      }
+      return Platform.OS === 'web'
+        ? createWebMarkdownRules(citations, openSourceUrl)
+        : createMarkdownRules(textSelectable, citations, openSourceUrl)
+    }, [isStreaming, citations, textSelectable])
 
     // 现读视口宽度：桌面 Web 才有空间展开完整统计（并允许小字折成两行）
     const compactMeta =
@@ -465,15 +499,15 @@ const ChatMessageItem = memo(
                     streaming={isStreaming}
                     style={dynamicMarkdownStyles}
                     selectable={textSelectable}
-                    rules={
-                      Platform.OS === 'web'
-                        ? webMarkdownRules
-                        : textSelectable
-                          ? selectableMarkdownRules
-                          : nonSelectableMarkdownRules
-                    }
+                    rules={markdownRules}
                   />
                 </View>
+              )}
+
+              {/* 来源列表：正文角标之外的兜底入口。只在吐字结束后挂载，
+                  流式期完全不占位，与 MessageActions ready 同帧出现 */}
+              {!isUser && hasContent && !isStreaming && item.sources && (
+                <SourcesList sources={item.sources} theme={theme} />
               )}
 
               {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动 */}
@@ -513,6 +547,8 @@ const ChatMessageItem = memo(
     prev.item.ttftMs === next.item.ttftMs &&
     prev.item.serverDurationMs === next.item.serverDurationMs &&
     prev.item.sourcesCount === next.item.sourcesCount &&
+    // sources 帧在流末尾才到：不进比较器的话 memo 会挡住角标/来源列表刷新
+    prev.item.sources === next.item.sources &&
     prev.item.historyKept === next.item.historyKept &&
     prev.item.historyDropped === next.item.historyDropped &&
     prev.item.digestUsed === next.item.digestUsed &&

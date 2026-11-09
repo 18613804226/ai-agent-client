@@ -9,6 +9,10 @@ import {
 } from 'react-native-markdown-display';
 import { IconCheck, IconCopy } from '../Icons';
 import { MyToast } from '../GlobalToast';
+import {
+  linkifyCitations,
+  type CitationMap,
+} from '../../utils/citations';
 
 // ===================== Markdown 渲染规则 =====================
 // 策略（混合文本树）：纯文本块仍合并成同一棵可选 <Text> 树 —— 原生端保留
@@ -143,7 +147,67 @@ const BLOCKQUOTE_VIEW_FIX = {
   verticalAlign: undefined,
 } as any;
 
-export const createMarkdownRules = (selectable: boolean): RenderRules => ({
+/**
+ * 「[n] 角标可点」的 text 规则生成器。
+ *
+ * 只挂在 markdown AST 的 text 叶子节点上：行内代码 / 围栏代码块是独立的
+ * code_inline / fence 节点，不会被误链；产物全是 <Text>/字符串，不破坏
+ * body 规则「Text 内绝不能嵌 View」的防线。
+ *
+ * 无角标时保持与原来一模一样的单 <Text>，字号线高不变 —— 结束态换 rules
+ * 不会产生行高跳变。selectable 传 undefined 表示 Web（库默认 text 无该属性）。
+ */
+export const citationTextRule = (
+  citations: CitationMap | undefined,
+  onPress: ((url: string) => void) | undefined,
+  selectable: boolean | undefined
+) => (
+  node: any,
+  _children: any,
+  _parent: any,
+  styles: any,
+  inheritedStyles: any = {}
+) => {
+  const content: string = typeof node.content === 'string' ? node.content : '';
+  const segments =
+    citations && citations.size > 0 && onPress
+      ? linkifyCitations(content, citations)
+      : [{ text: content }];
+  const hasLink = segments.some((s) => !!s.url);
+  const selectableProp = selectable === undefined ? {} : { selectable };
+  const baseStyle = [inheritedStyles, styles.text];
+
+  if (!hasLink) {
+    return (
+      <Text key={node.key} {...selectableProp} style={baseStyle}>
+        {content}
+      </Text>
+    );
+  }
+  return (
+    <Text key={node.key} {...selectableProp} style={baseStyle}>
+      {segments.map((seg, i) =>
+        seg.url ? (
+          <Text
+            key={`cite-${i}`}
+            onPress={() => onPress!(seg.url!)}
+            style={styles.citation}
+          >
+            {seg.text}
+          </Text>
+        ) : (
+          <React.Fragment key={`text-${i}`}>{seg.text}</React.Fragment>
+        ),
+      )}
+    </Text>
+  );
+};
+
+export const createMarkdownRules = (
+  selectable: boolean,
+  citations?: CitationMap,
+  onCitationPress?: (url: string) => void,
+): RenderRules => ({
   ...renderRules,
   // 根容器：把「连续的文本块」合并进同一个可选文本树（原生保证跨段选择）；
   // 代码块与水平线单独抽成 View 盒子 —— 原生 Text 内不能嵌 View，抽出来后
@@ -376,15 +440,7 @@ export const createMarkdownRules = (selectable: boolean): RenderRules => ({
       {children}
     </Text>
   ),
-  text: (node, _children, _parent, styles, inheritedStyles = {}) => (
-    <Text
-      key={node.key}
-      selectable={selectable}
-      style={[inheritedStyles, styles.text]}
-    >
-      {node.content}
-    </Text>
-  ),
+  text: citationTextRule(citations, onCitationPress, selectable),
   strong: (node, children, _parent, styles) => (
     <Text key={node.key} selectable={selectable} style={styles.strong}>
       {children}
@@ -499,3 +555,17 @@ export const webMarkdownRules: RenderRules = {
     );
   },
 };
+
+/**
+ * Web 端 rules 不走 factory（它依赖库默认的 View 版 body/paragraph），
+ * 所以单独叠一层角标 text 规则，保证三端都能点。
+ */
+export const createWebMarkdownRules = (
+  citations?: CitationMap,
+  onCitationPress?: (url: string) => void,
+): RenderRules => ({
+  ...webMarkdownRules,
+  ...(citations && citations.size > 0 && onCitationPress
+    ? { text: citationTextRule(citations, onCitationPress, undefined) }
+    : {}),
+});

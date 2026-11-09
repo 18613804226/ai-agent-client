@@ -25,7 +25,15 @@ const normalizeMessages = (list: any[]) => {
       id = `${id}#${suffix}`
     }
     seen.add(id)
-    return { ...m, id }
+    // 历史回显的 messages[].sources 与 sources 帧同结构（少了 usedInThisReply）。
+    // 全字段透传即可，这里只把非法/缺失的 sources 规范化掉，别凭空加空数组。
+    return {
+      ...m,
+      id,
+      ...(Array.isArray(m.sources)
+        ? { sources: normalizeSources(m.sources) }
+        : {})
+    }
   })
 }
 import {
@@ -40,6 +48,7 @@ import { resolveImageUpload, type PickedAttachment } from './useImagePicker'
 import { chatDistanceFromBottom, scrollChatToBottom } from '../utils/chatScroll'
 import { getDeviceInfo } from '../utils/deviceInfo'
 import { isMobileWebWidth } from '../constants/theme'
+import { normalizeSources, type ChatSource } from '../utils/citations'
 
 /**
  * 服务端「按端分流提示词」用的 platform。
@@ -65,6 +74,8 @@ export interface Message {
   images?: string[]
   /** 随消息发送的附件（文档/视频）：本地回显 + 气泡内点击预览（存完整附件对象） */
   attachments?: PickedAttachment[]
+  /** 本轮引用来源明细（sources 帧 / 历史回显），web 项驱动 [n] 角标 */
+  sources?: ChatSource[]
 }
 
 export interface Conversation {
@@ -513,6 +524,8 @@ export function useChatManager() {
         /** 服务端 done 的 durationMs 落到这里，不覆盖客户端自算的 durationMs */
         serverDurationMs?: number
         sourcesCount?: number
+        /** sources 帧：本轮来源明细（含知识库项，原样保留） */
+        sources?: ChatSource[]
         historyKept?: number
         historyDropped?: number
         digestUsed?: boolean
@@ -824,7 +837,15 @@ export function useChatManager() {
         // 当成正文 enqueue 出去，直接污染回答。
         return
       } else if (payload.type === 'sources') {
-        return // 引用来源帧：暂不渲染
+        // 引用来源帧：只把明细挂到消息上，**流式期绝不动正文 / rules**。
+        // [n] 角标等吐字结束那一次 commit 统一 linkify 重渲染，否则每个
+        // chunk 都换树结构会闪。空数组（本轮没检索到资料）也照常存。
+        // 该帧在助手消息落库后、done 之前推；done 分支不结束流，
+        // finish() 用 {...msg, ...fields} 合并，不会覆盖这里写入的 sources。
+        updateAiMessageFields(currentStreamingMsgIdRef.current, {
+          sources: normalizeSources(payload.sources)
+        })
+        return
       } else {
         chunkThought =
           delta.reasoning_content || payload.reasoning_content || ''

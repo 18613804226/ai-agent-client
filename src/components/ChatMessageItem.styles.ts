@@ -124,12 +124,20 @@ export const createDynamicMarkdownStyles = (
     textMain: string
     textMuted: string
     border: string
+    /** [n] 角标链接色；老 theme 对象没有该字段时回退主题蓝 */
+    sendBtnActive?: string
   },
   rowWidth = 0
 ) =>
   StyleSheet.create({
     body: { fontSize: 15, lineHeight: 24, color: theme.textMain },
     strong: { fontWeight: 'bold' as const, color: theme.textMain },
+    // 正文里的 [n] 可点角标：只靠蓝色表明可点，不加下划线。
+    // 刻意不动 fontSize / lineHeight ——
+    // 结束态换 rules 时行高一变就会看到整段文字跳一下。
+    citation: {
+      color: theme.sendBtnActive || '#4b92ee'
+    },
     // 显式覆盖库默认 hardbreak: { width: '100%', height: 1 }。模型用「行尾两空格
     // + 换行」表示硬换行时，这个样式会让 <Text> 内联树里多撑出一整行空白，
     // 而且只在含硬换行的回答里出现（正是「有的回答底部多一行」的来源之一）。
