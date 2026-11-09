@@ -19,6 +19,7 @@ import { ListFadeIn } from './chat/ListFadeIn'
 import { useChatPreviews } from './chat/useChatPreviews'
 import { useAutoRead } from './chat/useAutoRead'
 import { useChatPinScroll } from './chat/useChatPinScroll'
+import { useSelectionGestureGuard } from '../hooks/useSelectionGestureGuard'
 
 const styles = StyleSheet.create({
   loadingOverlay: {
@@ -50,14 +51,17 @@ export default function ChatArea({
   const { isGenerating } = useChat()
   const streamingRenderMsg = useStreamingRenderMsg()
 
-  // 🧹 抽屉打开时清掉 Web 端已选中的蓝色文本选择框
+  // 三指下滑截图等系统手势：一指落在 selectable 文本上会拉出原生选区并被截进图里
+  const { selectionSuppressed, guardProps } = useSelectionGestureGuard()
+
+  // 🧹 抽屉打开 / 多指手势时清掉 Web 端已选中的蓝色文本选择框
   // （App 端靠 textSelectable=false 让原生选择自动收起）
   useEffect(() => {
-    if (!isDrawerOpen) return
+    if (!isDrawerOpen && !selectionSuppressed) return
     if (Platform.OS !== 'web') return
     const sel = (globalThis as any).getSelection?.()
     sel?.removeAllRanges?.()
-  }, [isDrawerOpen])
+  }, [isDrawerOpen, selectionSuppressed])
 
   // 图片 / 文件附件预览
   const {
@@ -159,6 +163,7 @@ export default function ChatArea({
       playingMsgId,
       isGenerating,
       isDrawerOpen,
+      selectionSuppressed,
       theme,
       messageCount: displayMessages.length,
       animateInUserId: lastUserIdForAnim
@@ -167,11 +172,40 @@ export default function ChatArea({
       playingMsgId,
       isGenerating,
       isDrawerOpen,
+      selectionSuppressed,
       theme,
       displayMessages.length,
       lastUserIdForAnim
     ]
   )
+
+  /** 手势守卫与钉顶/贴底的触摸回调串联，谁都不能覆盖谁 */
+  const mergedInteractionProps = useMemo(() => {
+    const chain =
+      (...fns: Array<((e: any) => void) | undefined>) =>
+      (e: any) => {
+        for (const fn of fns) fn?.(e)
+      }
+    return {
+      ...listInteractionProps,
+      onTouchStart: chain(
+        listInteractionProps.onTouchStart,
+        guardProps.onTouchStart
+      ),
+      onTouchMove: chain(
+        (listInteractionProps as any).onTouchMove,
+        guardProps.onTouchMove
+      ),
+      onTouchEnd: chain(
+        listInteractionProps.onTouchEnd,
+        guardProps.onTouchEnd
+      ),
+      onTouchCancel: chain(
+        listInteractionProps.onTouchCancel,
+        guardProps.onTouchCancel
+      )
+    }
+  }, [listInteractionProps, guardProps])
 
   const keyExtractor = useCallback(
     // 服务端历史 ID 偶发重复时，纯 id 会让 FlashList 复用错 cell / 直接不渲染。
@@ -203,7 +237,7 @@ export default function ChatArea({
           setPlayingMsgId={handlePlayingChange}
           onPreviewImage={openPreview}
           onPreviewFile={openFilePreview}
-          textSelectable={!extra.isDrawerOpen}
+          textSelectable={!extra.isDrawerOpen && !extra.selectionSuppressed}
           onLayout={
             APP_PIN_USER_MESSAGE
               ? (e: any) => handleMessageLayout(item.id, e)
@@ -262,7 +296,7 @@ export default function ChatArea({
                   : undefined
               }
               {...scrollViewProps}
-              {...listInteractionProps}
+              {...mergedInteractionProps}
               style={scrollViewStyle}
               contentContainerStyle={chatAreaStyles.scrollContent}
               alwaysBounceVertical={false}
