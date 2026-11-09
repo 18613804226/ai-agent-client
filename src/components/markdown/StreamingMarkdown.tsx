@@ -152,8 +152,10 @@ function splitTailSegments(text: string): TailSeg[] {
     // 段**内**的空行必须原样保留：模型用空行分段是有意的语义（见 markdownRules
     // 的 paragraph 规则 —— 块之间用 `\n\n`）。之前这里把它压成 `\n`，导致流式期
     // 和最终态都把段落挤成一行，看起来就是「空白行被吃掉了」。
-    // 只有**末尾**的空行要裁：那只是「光标停在空行上」，最终渲染里也不产生空行。
-    const t = buf.join('\n').replace(/\n+$/, '')
+    // 只有**末尾**的空白要裁：那只是「光标停在空行上」，最终渲染里也不产生空行。
+    // ⚠️ 用 `\s+$` 而不是 `\n+$`：模型偶发在结尾输出 `\n `（换行+空格），
+    //    只裁 `\n` 会留下空格行 → 视觉上仍是一行多余空白。
+    const t = buf.join('\n').replace(/\s+$/, '')
     buf.length = 0
     if (t) segs.push({ kind: 'text', text: t })
   }
@@ -426,8 +428,11 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   // 结束态只升格「有可见内容」的尾段：纯空白 tail 升格后，map 会为它补一个
   // <BlockSeparator />（一整行空 Text），而 StableMarkdown 解析空白又不产生内容
   // → 气泡底部凭空多一行空白。有些回答结尾带换行/空段时就会命中这里。
+  // ⚠️ 升格时还要 trimEnd()：模型偶发在结尾带 1~2 个换行，`tail.trim()` 只用来
+  //    判断「有没有内容」，原样把 `'…靠谱。\n\n'` 交给 markdown 会在气泡底部
+  //    渲染出末尾空行（有的一行、有的多行）。
   const finalBlocks =
-    !streaming && tail.trim() ? [...blocks, tail] : blocks
+    !streaming && tail.trim() ? [...blocks, tail.trimEnd()] : blocks
   const finalTail = streaming ? tail : ''
 
   return (

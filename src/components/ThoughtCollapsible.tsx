@@ -48,6 +48,10 @@ const ThoughtCollapsible = memo(
     const contentHeightRef = useRef(0)
     const progress = useSharedValue(1)
 
+    // 服务端（模型）偶发在 thought 末尾带换行符（1~2 个），直接进 <Text> 会
+    // 渲染成末尾空行（有的一行、有的多行）。渲染前统一裁掉末尾空白。
+    const displayThought = thought.trimEnd()
+
     // ── 思考框内层滚动：原生嵌套滚动（不用自定义 Pan）────────────────────────
     // 内层 ScrollView 用原生滚动（scrollEnabled=内容超高才开）；
     // 外层 FlashList 已开 nestedScrollEnabled → Android 形成「先内后外」的手势交接，
@@ -75,8 +79,11 @@ const ThoughtCollapsible = memo(
       const y = e.nativeEvent.contentOffset?.y ?? 0
       const h = e.nativeEvent.contentSize?.height ?? 0
       const vh = Math.max(e.nativeEvent.layoutMeasurement?.height ?? 0, 1)
-      // 在底部（或内容还没超高）保持跟随；用户往上读 → 停在原位、不再自动贴底
-      followThoughtBottom.current = y + vh >= h - 2 || y <= 0.5
+      // 停在底部 → 跟随；内容还没超高（无需滚动，y 必为 0）→ 跟随。
+      // 用户往上读到顶部（y≈0 但内容已超高）→ 不再跟随。
+      // ⚠️ 旧写法 `y <= 0.5` 把「顶部」误当成「内容还没超高」：用户拉到顶部后
+      //    一吐字又被 scrollToEnd 拽回底部。判据必须基于内容高度而非滚动位置。
+      followThoughtBottom.current = y + vh >= h - 2 || h <= vh + 0.5
     }, [])
 
     const animateTo = (open: boolean) => {
@@ -257,12 +264,12 @@ const ThoughtCollapsible = memo(
               >
                 {isStreaming ? (
                   <InkTailText
-                    text={thought}
+                    text={displayThought}
                     color={theme.textMuted}
                     baseStyle={styles.thoughtContent}
                   />
                 ) : (
-                  thought
+                  displayThought
                 )}
               </Text>
             </View>
@@ -287,12 +294,12 @@ const ThoughtCollapsible = memo(
                 {/* 流式期间：末尾挂「墨洇」，与正文一致；结束落定后回退纯文本 */}
                 {isStreaming ? (
                   <InkTailText
-                    text={thought}
+                    text={displayThought}
                     color={theme.textMuted}
                     baseStyle={styles.thoughtContent}
                   />
                 ) : (
-                  thought
+                  displayThought
                 )}
               </Text>
             </ScrollView>
