@@ -54,6 +54,10 @@ jobs:
 
       - name: Upload web build
         uses: appleboy/scp-action@v1.0.0
+        env:
+          # drone-scp v1.8.0 已从 GitHub Releases 下架（404），
+          # scp-action 的 entrypoint.sh 默认写死 1.8.0，这里显式覆盖为现存版本。
+          DRONE_SCP_VERSION: 1.8.3
         with:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
