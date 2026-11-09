@@ -46,9 +46,10 @@ jobs:
       - name: Prepare server directory
         uses: appleboy/ssh-action@v1.1.0
         env:
-          # drone-ssh v1.7.7 已从 GitHub Releases 下架（404），
-          # ssh-action 的 entrypoint.sh 默认写死 1.7.7，这里显式覆盖为现存版本。
+          # drone-ssh v1.7.7 已从 GitHub Releases 下架（404），且 GitHub 的
+          # release 下载 CDN 对 CI 不稳定（504）。走 ghproxy 镜像下载现存版本。
           DRONE_SSH_VERSION: 1.8.6
+          DRONE_SSH_RELEASE_URL: https://ghproxy.net/https://github.com/appleboy/drone-ssh/releases/download
         with:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
@@ -58,6 +59,9 @@ jobs:
 
       - name: Upload web build
         uses: appleboy/scp-action@v1.0.0
+        env:
+          # GitHub release 下载 CDN 对 CI 不稳定（504），走 ghproxy 镜像。
+          DRONE_SCP_RELEASE_URL: https://ghproxy.net/https://github.com/appleboy/drone-scp/releases/download
         with:
           # drone-scp v1.8.0 已从 GitHub Releases 下架（404）。
           # scp-action 是 composite action，action.yml 内部把
