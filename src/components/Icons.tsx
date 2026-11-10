@@ -1,5 +1,5 @@
 import React from 'react';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 interface IconProps {
   size?: number;
@@ -106,5 +106,27 @@ export const IconCheck = ({
     strokeLinejoin="round"
   >
     <Path d="m5 12 4 4L19 6" />
+  </Svg>
+);
+
+// ❓ 问号圆圈：聊天气泡下方「查看统计」入口
+export const IconHelpCircle = ({
+  size = 14,
+  color = 'currentColor',
+  strokeWidth = 2,
+}: IconProps) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth={strokeWidth}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Circle cx="12" cy="12" r="10" />
+    <Path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <Line x1="12" y1="17" x2="12.01" y2="17" />
   </Svg>
 );

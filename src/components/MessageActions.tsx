@@ -14,7 +14,7 @@ import Svg, { Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
 import { playText, stopSpeech } from '../services/speechPlayer';
 import { api } from '../services/api';
-import { IconSpeakerOff } from './Icons';
+import { IconSpeakerOff, IconHelpCircle } from './Icons';
 
 export interface MessageActionsTheme {
   isDark: boolean;
@@ -211,18 +211,12 @@ const MessageActions = memo(
                 accessibilityRole="button"
                 accessibilityLabel="查看统计说明"
               >
-                <Text
-                  style={[
-                    styles.infoText,
-                    {
-                      color: showDetail
-                        ? theme.historyActiveText
-                        : theme.textMuted,
-                    },
-                  ]}
-                >
-                  ?
-                </Text>
+                <IconHelpCircle
+                  size={14}
+                  color={
+                    showDetail ? theme.historyActiveText : theme.textMuted
+                  }
+                />
               </HoverTouchable>
 
               {useTooltip && showDetail ? (
@@ -371,11 +365,6 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 11,
     lineHeight: 16,
-  },
-  /** 「?」按钮里的小字；metaDetail 为空时整个按钮都不渲染 */
-  infoText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
   },
   /** tooltip 的定位锚点：只给「?」按钮这一层，不给整行 */
   tipAnchor: {

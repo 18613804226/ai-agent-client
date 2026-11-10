@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react'
 import {
+  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -57,6 +58,8 @@ export default function StatsDrawer({
   const t = useSharedValue(0)
   /** 手指下拉的实时位移（只允许向下，向上拖不动） */
   const dragY = useSharedValue(0)
+  /** 正文限高：屏高 62%，尽量整屏放下全部分节不滚动 */
+  const bodyMaxHeight = Dimensions.get('window').height * 0.62
 
   useEffect(() => {
     // 关闭时归零（此时不渲染，无退出动画），保证下次打开从底部重新滑入、
@@ -139,7 +142,7 @@ export default function StatsDrawer({
           {/* 字段全表 + 口径说明比较长，限高后内部滚动，别把抽屉顶到屏幕外。
               分节排版：标题一行、数据各自一行，不再糊成一整段缩进文本 */}
           <ScrollView
-            style={styles.bodyScroll}
+            style={{ maxHeight: bodyMaxHeight }}
             showsVerticalScrollIndicator={false}
           >
             {sections.map((s, idx) => (
@@ -197,19 +200,18 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 6,
     paddingBottom: 28
   },
-  grabArea: { paddingBottom: 4 },
+  grabArea: { paddingBottom: 2 },
   handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
+    width: 32,
+    height: 3,
+    borderRadius: 1.5,
     alignSelf: 'center',
-    marginBottom: 14
+    marginBottom: 6
   },
-  title: { fontSize: 15, fontWeight: '600', marginBottom: 12 },
-  bodyScroll: { maxHeight: 320 },
+  title: { fontSize: 14, fontWeight: '600', marginBottom: 6 },
   /** 脚注节（口径）与数据节之间的分隔线 */
   divider: {
     height: StyleSheet.hairlineWidth,
