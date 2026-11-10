@@ -1257,7 +1257,6 @@ export function useChatManager() {
     sendNotCountedRef.current = false
 
     let currentActiveId = activeId
-    let isBrandNewSession = false
 
     isAtBottomRef.current = true
     // 原生 inverted：offset 0 = 底部；Web：scrollToEnd
@@ -1268,7 +1267,6 @@ export function useChatManager() {
         const sessionData: any = await api.createSession()
         currentActiveId = sessionData.id
         setActiveId(currentActiveId)
-        isBrandNewSession = true
       } catch (error) {
         console.error('自动创建会话失败:', error)
         return false
@@ -1367,18 +1365,48 @@ export function useChatManager() {
     }
 
     const currentConv = conversations.find((c: any) => c.id === currentActiveId)
-    const isFirst = !currentConv || (currentConv.messages?.length || 0) <= 2
 
-    // 纯附件消息没有输入文本：标题退回第一个附件名，别生成一个 "..." 标题
+    /**
+     * 标题 = 第一条用户消息，只在「还没有真实标题」时生成：
+     * 全新会话，或仍叫「新对话」的老会话（后端空标题回显成默认名）。
+     * 旧口径「messages.length <= 2」两头都不合理：
+     * - 第二轮发送时已有 2 条消息，也判成第一轮 → 标题每轮被顶掉；
+     * - 历史回显过的老会话消息多、标题仍是「新对话」→ 反而永远起不了标题。
+     */
+    const needsTitle =
+      !currentConv || !currentConv.title || currentConv.title === '新对话'
+
+    // 标题来源：输入的第一条非空行，剥掉行首 markdown 标记（#/列表/引用/围栏）
+    const firstLine =
+      currentInput
+        .split('\n')
+        .map((l: string) => l.trim())
+        .find(Boolean) || ''
+    const stripped = firstLine
+      .replace(/^#{1,6}\s*/, '')
+      .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
+      .replace(/^>\s*/, '')
+      .replace(/^```.*$/, '')
+      .trim()
+
+    // 纯附件消息：标题退回第一个附件名（去扩展名）；纯图片退回「图片」
     const titleBase =
-      currentInput.trim() ||
-      attachments.find((a) => a.name)?.name ||
-      (imageUris.length > 0 ? '图片' : '') ||
-      ''
-    const updatedTitle =
-      isFirst || !currentConv?.title
-        ? titleBase.slice(0, 14) + '...'
-        : currentConv.title
+      stripped ||
+      (attachments.find((a) => a.name)?.name || '')
+        .replace(/\.[^.]+$/, '')
+        .trim() ||
+      (imageUris.length > 0 ? '图片' : '')
+
+    // 超 14 字才截断加省略号；短标题原样（不再无条件拼 "..."）
+    const derivedTitle = !titleBase
+      ? ''
+      : titleBase.length > 14
+        ? titleBase.slice(0, 14) + '…'
+        : titleBase
+
+    const updatedTitle = needsTitle
+      ? derivedTitle || currentConv?.title || '新对话'
+      : currentConv?.title || '新对话'
 
     setConversations((prev: any) => {
       const existsIndex = prev.findIndex((c: any) => c.id === currentActiveId)
@@ -1405,7 +1433,9 @@ export function useChatManager() {
       }
     })
 
-    if (isBrandNewSession || updatedTitle) {
+    // 只在标题真的变了才写后端（旧条件 isBrandNewSession || updatedTitle
+    // 里 updatedTitle 恒为真值，每轮都白发一次相同标题的 PUT）
+    if (updatedTitle && (!currentConv || updatedTitle !== currentConv.title)) {
       api.updateSessionTitle(currentActiveId, updatedTitle).catch((err) => {
         console.error('更新会话标题失败:', err)
       })
