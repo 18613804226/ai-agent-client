@@ -439,7 +439,7 @@ const ChatMessageItem = memo(
       if (stages.length) timeRows.push(stages.join(' · '))
       push('耗时', timeRows)
 
-      // ④ 速度：整体 / 思考 / 正文 / prefill 合并一行
+      // ④ 速度：每行最多两个指标，窄屏上比全部挤在一行更容易扫读
       const speed: string[] = []
       if (tps != null) speed.push(`整体 ${tps} t/s`)
       if (
@@ -467,7 +467,11 @@ const ChatMessageItem = memo(
           `prefill ${Math.round(input / (item.ttftMs / 1000))} t/s`
         )
       }
-      push('速度', speed.length ? [speed.join(' · ')] : [])
+      const speedRows: string[] = []
+      for (let i = 0; i < speed.length; i += 2) {
+        speedRows.push(speed.slice(i, i + 2).join(' · '))
+      }
+      push('速度', speedRows)
 
       // ⑤ 口径：短句 + 项目符号（hint 节，抽屉里以脚注样式收尾）
       push(

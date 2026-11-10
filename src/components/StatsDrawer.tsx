@@ -158,7 +158,7 @@ export default function StatsDrawer({
                 <Text
                   style={[
                     styles.sectionTitle,
-                    { color: s.hint ? theme.textMuted : theme.textMain }
+                    { color: theme.textMuted }
                   ]}
                 >
                   {s.title}
@@ -169,7 +169,7 @@ export default function StatsDrawer({
                     style={[
                       styles.row,
                       s.hint && styles.hintRow,
-                      { color: theme.textMuted }
+                      { color: s.hint ? theme.textMuted : theme.textMain }
                     ]}
                   >
                     {r}
@@ -199,30 +199,32 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 28
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 24
   },
-  grabArea: { paddingBottom: 2 },
+  grabArea: { paddingBottom: 4 },
   handle: {
     width: 32,
     height: 3,
     borderRadius: 1.5,
     alignSelf: 'center',
-    marginBottom: 6
+    marginBottom: 8
   },
-  title: { fontSize: 14, fontWeight: '600', marginBottom: 6 },
+  title: { fontSize: 15, fontWeight: '700', marginBottom: 10 },
   /** 脚注节（口径）与数据节之间的分隔线 */
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginTop: 18,
-    marginBottom: 10
+    marginTop: 16,
+    marginBottom: 12
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600'
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    marginBottom: 3
   },
-  sectionSpacing: { marginTop: 16 },
-  row: { fontSize: 13, lineHeight: 20 },
-  hintRow: { fontSize: 12, lineHeight: 18 }
+  sectionSpacing: { marginTop: 13 },
+  row: { fontSize: 13, lineHeight: 21 },
+  hintRow: { fontSize: 12, lineHeight: 19 }
 })
