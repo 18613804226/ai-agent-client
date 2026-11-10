@@ -105,6 +105,8 @@ const MessageActions = memo(
     const [preparing, setPreparing] = useState(false);
     /** 「?」打开的底部抽屉；状态留在本组件，切消息不会串（key 是 msgId） */
     const [showDetail, setShowDetail] = useState(false);
+    /** 桌面 Web 上复制 / 喇叭按钮的悬停小气泡：当前悬停哪个 */
+    const [btnTip, setBtnTip] = useState<'copy' | 'speaker' | null>(null);
     // 稳定引用：抽屉里的 Pan 手势在 worklet 里 runOnJS 调用它，
     // 每次渲染换函数会让 Gesture 对象白白重建
     const closeDetail = useCallback(() => setShowDetail(false), []);
@@ -266,7 +268,7 @@ const MessageActions = memo(
           ) : null}
 
           {/* 复制：hover 底色由 HoverTouchable 统一处理；颜色固定 textMuted */}
-          <View style={styles.item}>
+          <View style={[styles.item, useTooltip && styles.tipAnchor]}>
             <HoverTouchable
               style={styles.btn}
               hoverBg={hoverBg}
@@ -276,13 +278,43 @@ const MessageActions = memo(
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
               accessibilityLabel="复制内容"
+              {...(useTooltip
+                ? {
+                    onMouseEnter: () => setBtnTip('copy'),
+                    onMouseLeave: () => setBtnTip(null),
+                  }
+                : {})}
             >
               <CopyIcon color={copyColor} />
             </HoverTouchable>
+            {useTooltip && btnTip === 'copy' ? (
+              <View
+                style={[
+                  styles.miniTip,
+                  {
+                    backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
+                    borderColor:
+                      theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.miniTipText,
+                    {
+                      color:
+                        theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
+                    },
+                  ]}
+                >
+                  复制
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           {/* 喇叭：播放/加载时用高亮色 + 高亮底；hover 只影响非播放态 */}
-          <View style={styles.item}>
+          <View style={[styles.item, useTooltip && styles.tipAnchor]}>
             <HoverTouchable
               style={[
                 styles.btn,
@@ -303,6 +335,12 @@ const MessageActions = memo(
               accessibilityLabel={
                 preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读内容'
               }
+              {...(useTooltip
+                ? {
+                    onMouseEnter: () => setBtnTip('speaker'),
+                    onMouseLeave: () => setBtnTip(null),
+                  }
+                : {})}
             >
               {preparing ? (
                 <ActivityIndicator size="small" color={activeColor} />
@@ -312,6 +350,30 @@ const MessageActions = memo(
                 <IconSpeakerOff size={16} color={activeColor} />
               )}
             </HoverTouchable>
+            {useTooltip && btnTip === 'speaker' ? (
+              <View
+                style={[
+                  styles.miniTip,
+                  {
+                    backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
+                    borderColor:
+                      theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.miniTipText,
+                    {
+                      color:
+                        theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
+                    },
+                  ]}
+                >
+                  {preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读'}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -389,6 +451,22 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   tooltipSectionSpacing: { marginTop: 8 },
+  /** 复制 / 喇叭的迷你悬停气泡：小字，居中浮在按钮上方 */
+  miniTip: {
+    position: 'absolute' as const,
+    bottom: 30,
+    left: '50%' as const,
+    transform: [{ translateX: '-50%' }],
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    zIndex: 999,
+    ...(Platform.OS === 'web'
+      ? ({ boxShadow: '0 4px 14px rgba(0,0,0,0.18)' } as any)
+      : null),
+  },
+  miniTipText: { fontSize: 11, lineHeight: 16 },
   tooltipRow: { fontSize: 11, lineHeight: 17 },
   tooltipHintRow: { fontSize: 10, lineHeight: 15 },
   item: { marginLeft: 4 },

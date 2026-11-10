@@ -42,11 +42,30 @@ export const HoverTouchable = React.forwardRef<any, HoverTouchableProps>(
       activeOpacity = 0.7,
       rippleColor = 'rgba(128, 128, 128, 0.4)',
       children,
+      onMouseEnter,
+      onMouseLeave,
       ...props
     },
     ref
   ) {
     const [isHovered, setIsHovered] = useState(false);
+
+    // 悬停变色与调用方事件组合触发（此前调用方传同名 handler 会整个顶掉
+    // 内部处理，悬停底色就不生效了）。RN 类型没列 mouse 事件（RNW 支持），
+    // 用展开传入绕开 JSX 的属性多余检查
+    const hoverHandlers: { [key: string]: any } =
+      Platform.OS === 'web'
+        ? {
+            onMouseEnter: (e: any) => {
+              setIsHovered(true);
+              onMouseEnter?.(e);
+            },
+            onMouseLeave: (e: any) => {
+              setIsHovered(false);
+              onMouseLeave?.(e);
+            },
+          }
+        : {};
 
     // 📱 Android：Material 水波纹反馈（按压时从触点扩散涟漪）
     // overflow:hidden 让涟漪按按钮圆角裁剪
@@ -84,9 +103,7 @@ export const HoverTouchable = React.forwardRef<any, HoverTouchableProps>(
         ]}
         onPress={onPress}
         activeOpacity={activeOpacity}
-        // @ts-ignore
-        onMouseEnter={CAN_HOVER ? () => setIsHovered(true) : undefined}
-        onMouseLeave={CAN_HOVER ? () => setIsHovered(false) : undefined}
+        {...hoverHandlers}
         {...props}
       >
         {children}
