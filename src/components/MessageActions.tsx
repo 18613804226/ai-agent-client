@@ -253,7 +253,12 @@ const MessageActions = memo(
                             style={[
                               styles.tooltipRow,
                               s.hint && styles.tooltipHintRow,
-                              { color: theme.textMuted },
+                              {
+                                color:
+                                  theme.isDark
+                                    ? 'rgba(255,255,255,0.55)'
+                                    : 'rgba(0,0,0,0.5)',
+                              },
                             ]}
                           >
                             {r}
@@ -451,7 +456,10 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   tooltipSectionSpacing: { marginTop: 8 },
-  /** 复制 / 喇叭的迷你悬停气泡：小字，居中浮在按钮上方 */
+  /** 复制 / 喇叭的迷你悬停气泡：小字，居中浮在按钮上方。
+   *  nowrap 必须有：绝对定位的 shrink-to-fit 可用宽度被锚容器（24px 按钮）
+   *  减去 left 50% 后只剩十几像素，文字被迫逐字换行竖排；禁止换行后
+   *  最小内容宽 = 整行文字宽，气泡溢出居中、单行展示 */
   miniTip: {
     position: 'absolute' as const,
     bottom: 30,
@@ -463,12 +471,15 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     zIndex: 999,
     ...(Platform.OS === 'web'
-      ? ({ boxShadow: '0 4px 14px rgba(0,0,0,0.18)' } as any)
+      ? ({
+          whiteSpace: 'nowrap',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+        } as any)
       : null),
   },
   miniTipText: { fontSize: 11, lineHeight: 16 },
-  tooltipRow: { fontSize: 11, lineHeight: 17 },
-  tooltipHintRow: { fontSize: 10, lineHeight: 15 },
+  tooltipRow: { fontSize: 12, lineHeight: 18 },
+  tooltipHintRow: { fontSize: 11, lineHeight: 16 },
   item: { marginLeft: 4 },
   btn: {
     width: ACTION_BTN_SIZE,
