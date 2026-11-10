@@ -25,31 +25,28 @@ export interface Message {
   model?: string
   /** 服务端 done：生成 token 数（不含输入，含思考），算生成速度的分子 */
   completionTokens?: number
-  /**
-   * 服务端 done：输入 token 数（系统提示 + 历史 + 检索结果 + 本轮问题）。
-   * 新后端直接给；老后端没有时用 `tokens − completionTokens` 倒推。
-   */
+  /** 服务端 done：输入 token 数（系统提示 + 历史 + 检索结果 + 本轮问题） */
   inputTokens?: number
-  /**
-   * 服务端 done：输出里「思考」占的 token。
-   * 新后端直接给；没有时按思考/正文的字符权重把 completionTokens 分摊掉。
-   */
+  /** 服务端 done：输出里「思考」占的 token；正文 = completionTokens − 它 */
   reasoningTokens?: number
-  /**
-   * 服务端 done：**正文**第一个 token 的延迟（ms）。
-   * t/s 的分母要用它 —— ttftMs 可能是「思考首字」，拿它减会把思考那几秒
-   * 算进正文生成时间，速度被明显压低。
-   */
-  firstAnswerTokenMs?: number
   /** 服务端 done：命中 prompt cache 的输入 token；上游没上报时不存在 */
   cachedTokens?: number
+  /** 服务端 done：正文首字延迟（不含思考前缀）；用于详情里解释首字体感 */
+  firstAnswerTokenMs?: number | null
   /** 服务端 done：思考阶段耗时（首末思考 chunk 间隔，ms）；没有时为 null */
   thoughtDurationMs?: number | null
   /**
    * 服务端 done：正文阶段耗时（首末正文 chunk 间隔，ms）。
-   * 这是 t/s 最准确的分母 —— 已经剔掉了思考与工具调用占用的时间。
+   * 只做阶段指标展示用，**不要**拿它和 thoughtDurationMs 相加去算 t/s
+   * （两者之间还差着「思考切正文」的间隙）。
    */
   answerDurationMs?: number | null
+  /**
+   * 服务端 done：思考 + 正文的**吐字时长**（ms）。
+   * 各轮「首 token → 末 token」累加，不含检索、工具执行、轮次间隔与落库 ——
+   * t/s 的分母就是它，与分子 outputTokens（含思考）同一套口径。
+   */
+  generationDurationMs?: number
   /** 服务端 done：结束原因 stop / length / tool_calls / content_filter */
   finishReason?: string
   /** 服务端 done：是否被长度上限截断 */

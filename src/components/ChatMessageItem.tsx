@@ -18,6 +18,7 @@ import {
 import { StreamingMarkdown } from './markdown/StreamingMarkdown'
 import ThoughtCollapsible from './ThoughtCollapsible'
 import MessageActions from './MessageActions'
+import type { StatsSection } from './StatsDrawer'
 import { normalizeInlineEmphasis } from '../utils/normalizeEmphasis'
 import { EMPTY_CITATIONS, openSourceUrl, webCitations } from '../utils/citations'
 import { SourcesList } from './SourcesList'
@@ -25,24 +26,6 @@ import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageIte
 import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
-
-/**
- * 文本的「token 权重」粗估：CJK / 假名 / 全角标点按 1 token 1 字，
- * 其余（英文、数字、代码符号）按 0.28 token/字符（约 3.6 字符 1 token）。
- *
- * 只用来把 **准确的总量** 按比例分给思考段和正文段 —— 服务端 done 只给
- * total（含输入）与 completionTokens（输出总量），没有 reasoningTokens，
- * 所以拆分只能是估算；量级（谁占大头）是准的，个位数会有偏差。
- */
-function estimateTokenWeight(text: string): number {
-  if (!text) return 0
-  let weight = 0
-  for (const ch of text) {
-    const code = ch.codePointAt(0) ?? 0
-    weight += code >= 0x2e80 ? 1 : 0.28
-  }
-  return weight
-}
 
 /** 耗时格式化：<1s 显示 ms，<60s 显示 X.Xs，否则 m:ss */
 function formatDurationMs(ms: number): string {
@@ -250,139 +233,99 @@ const ChatMessageItem = memo(
       Platform.OS !== 'web' ||
       isMobileWebWidth(Dimensions.get('window').width)
     /**
-     * token 口径拆分。
-     *
-     * - 服务端 `tokens` 是 total_tokens（**含输入**），`completionTokens` 是本轮输出，
-     *   所以「输入 = tokens − completionTokens」是准的；
-     * - 「思考 / 正文」服务端没给 reasoningTokens，只能把准确的输出总量按**字符权重
-     *   分摊**给两段（见 estimateTokenWeight）。量级可信（谁占大头不会错），
-     *   个位数会有偏差。
-     *
-     * 流式期 done 还没到 → 提前返回，避免每帧遍历一次几千字的正文。
+     * token 拆分：字段全部由服务端 done 帧直接给出，客户端不再推算 ——
+     *   inputTokens（输入）/ completionTokens（输出，含思考）/ reasoningTokens（思考）。
+     * 正文 = 输出 − 思考。字段缺失就是缺失（旧历史消息），不做字符估算。
      */
     const tokenStats = useMemo(() => {
-      const empty = {
-        input: null as number | null,
-        output: null as number | null,
-        thought: null as number | null,
-        answer: null as number | null
-      }
-      if (item.completionTokens == null && item.tokens == null) return empty
-
       const output = item.completionTokens ?? null
-      // 输入：优先后端独立字段；老后端只有 total 时用 total − output 倒推
-      const input =
-        item.inputTokens ??
-        (item.tokens != null && output != null && item.tokens > output
-          ? item.tokens - output
-          : null)
-
-      let thought: number | null = null
-      let answer: number | null = null
-      if (output != null && output > 0) {
-        // 思考 token：优先后端 reasoningTokens；没有才按字符权重分摊。
-        // 越界（负数 / 大于输出）视为后端口径不同，不信它，走分摊。
-        const reasoning = item.reasoningTokens
-        if (reasoning != null && reasoning >= 0 && reasoning <= output) {
-          thought = reasoning
-          answer = output - reasoning
-        } else {
-          const thoughtWeight = estimateTokenWeight(item.thought || '')
-          const answerWeight = estimateTokenWeight(item.content || '')
-          const sum = thoughtWeight + answerWeight
-          if (sum > 0) {
-            thought = Math.round((output * thoughtWeight) / sum)
-            answer = output - thought
-          }
-        }
-      }
+      const input = item.inputTokens ?? null
+      const reasoning = item.reasoningTokens
+      const thought =
+        output != null && reasoning != null ? reasoning : null
+      const answer =
+        output != null && thought != null
+          ? Math.max(0, output - thought) // 防后端把思考算得比输出还大时出负数
+          : null
       return { input, output, thought, answer }
-    }, [
-      item.inputTokens,
-      item.tokens,
-      item.completionTokens,
-      item.reasoningTokens,
-      item.thought,
-      item.content
-    ])
+    }, [item.inputTokens, item.completionTokens, item.reasoningTokens])
+
+    /**
+     * t/s = 输出 token（含思考）÷ 吐字时长 generationDurationMs。
+     * 分子分母同一套口径：思考 token 计入分子，思考的吐字时间也计入分母；
+     * 分母不含检索 / 工具执行 / 轮次间隔 / 落库，多轮工具调用也不会压低速度。
+     * ⚠️ 不要用 thoughtDurationMs + answerDurationMs 代替：两者之间还差着
+     *    「思考切正文」的间隙，相加会偏小、速度偏高。
+     */
+    const tps = useMemo(() => {
+      const genMs = item.generationDurationMs
+      if (
+        tokenStats.output &&
+        tokenStats.output > 0 &&
+        genMs != null &&
+        genMs > 0
+      ) {
+        return Math.round(tokenStats.output / (genMs / 1000))
+      }
+      return null
+    }, [tokenStats, item.generationDurationMs])
+
+    // 耗时用服务端总耗时：客户端自算值还含 SSE 传输 + 打字机逐字揭示的时间，
+    // 长回答能差出几秒（服务端 0 / 缺失才回退客户端值）。
+    const durationMs = item.serverDurationMs || item.durationMs
+    const durationText = durationMs != null ? formatDurationMs(durationMs) : ''
+
+    /** 思考 / 正文两段都有量才显示括号，避免「思考 0 + 正文 66」这种噪声 */
+    const hasSplit =
+      tokenStats.thought != null &&
+      tokenStats.answer != null &&
+      tokenStats.thought > 0 &&
+      tokenStats.answer > 0
 
     /**
      * 气泡下方小字。两种排布：
-     *
-     * - 窄屏（APP / H5）：单行不折行，只留最常看的三项 ——
-     *   `耗时 4.5s · 输出 320 t（思考 293 + 正文 27）· 20t/s`
-     *   模型名、输入 token、引用/记忆等一律不占位。
-     * - 桌面 Web：信息全展开（模型 / 输入+输出 / 速度 / 耗时 / 首字 / 引用 / 记忆 / 状态），
-     *   模型名只在桌面留 —— 降级时靠它一眼可见。
-     *
-     * t/s 一律 = **输出 token ÷ 生成耗时**（总耗时剔除首字等待，见下）。
+     * - 窄屏（APP / H5）：单行 `2.7s · 45t/s · 66t（思 32 + 正 34）`，
+     *   标签词全省；放不下的字段与口径解释都在 metaDetail（点「?」展开）。
+     * - 桌面 Web：信息全展开，保持原样。
      */
     const metaText = (() => {
       if (isUser) return ''
-      const { input, output, thought, answer } = tokenStats
+      const { output, thought, answer } = tokenStats
 
-      // 两段都有量才加括号：没思考（或没正文）时括号里只会是噪声
-      const split =
-        thought != null && answer != null && thought > 0 && answer > 0
-          ? `（思考 ${thought} + 正文 ${answer}）`
-          : ''
-
-      // t/s = **输出 token（含思考）** ÷ 整体生成耗时。
-      // 分子必须含思考：思考链也是模型实打实逐字生成的 token，只算正文会
-      // 严重低估吞吐（320 输出里 293 是思考，只算 27 会显得模型几乎不动）。
-      // 分母优先「思考时长 + 正文时长」（服务端首末 chunk 间隔之和，最纯的
-      // 生成时间，不含检索/工具调用留下的空隙）；缺任一段就退回
-      // 「总耗时 − 首字」—— ttftMs 是首个 token（含思考），与分子口径一致。
-      const totalMs = item.serverDurationMs || item.durationMs
-      let tps: number | null = null
-      if (output && output > 0) {
-        let genMs =
-          item.thoughtDurationMs != null && item.answerDurationMs != null
-            ? item.thoughtDurationMs + item.answerDurationMs
-            : 0
-        if (genMs <= 0 && totalMs != null && totalMs > 0) {
-          genMs = Math.max(0, totalMs - (item.ttftMs ?? 0))
-        }
-        if (genMs > 0) tps = Math.round(output / (genMs / 1000))
-      }
-
-      const durationText =
-        item.durationMs != null ? formatDurationMs(item.durationMs) : ''
-      const outputText =
-        output != null
-          ? `输出 ${output} t${split}`
-          : item.tokens != null
-            ? `${item.tokens} tokens`
-            : ''
-
-      // 窄屏：单行、耗时在最前、不显示模型（用户指定顺序）
       if (compactMeta) {
         const compact: string[] = []
-        if (durationText) compact.push(`耗时 ${durationText}`)
-        if (outputText) compact.push(outputText)
+        if (durationText) compact.push(durationText)
         if (tps != null) compact.push(`${tps}t/s`)
+        if (output != null) {
+          compact.push(
+            hasSplit
+              ? `${output}t（思 ${thought} + 正 ${answer}）`
+              : `${output}t`
+          )
+        }
         return compact.join(' · ')
       }
 
-      // 桌面：信息全展开
       const parts: string[] = []
       if (item.model) {
         // 服务端 model 是「厂商:模型」：'zhipu:glm-4.5-flash'，降级时厂商会变
         // （如 'dashscope:qwen3.7-flash'）。去掉第一段只留模型名 —— 降级一眼
         // 可见，也省宽度。兼容旧格式 'zhipu|glm…'；无分隔符的老值原样显示。
-        // 只裁显示，原始值完整存着。
         const label = item.model.replace(/^[^:|]+[:|]\s*/, '').trim()
         if (label) parts.push(label)
       }
-      if (outputText) {
+      if (output != null) {
         // 命中 prompt cache 的输入量单独标出来：计费与「真实喂了多少新内容」
         // 都靠它，窄屏放不下就不显示
         const cacheNote = item.cachedTokens
           ? `（缓存 ${item.cachedTokens}）`
           : ''
+        const outputText = `输出 ${output} t${
+          hasSplit ? `（思考 ${thought} + 正文 ${answer}）` : ''
+        }`
         parts.push(
-          input != null && output != null
-            ? `输入 ${input}${cacheNote} / ${outputText}`
+          tokenStats.input != null
+            ? `输入 ${tokenStats.input}${cacheNote} / ${outputText}`
             : outputText
         )
       }
@@ -401,6 +344,144 @@ const ChatMessageItem = memo(
       else if (item.finishReason === 'content_filter') parts.push('内容过滤')
       else if (item.finishReason === 'tool_calls') parts.push('工具调用')
       return parts.join(' · ')
+    })()
+
+    /**
+     * 「?」详情（APP 底部抽屉 / 桌面 Web tooltip 共用）：done 帧字段全表 +
+     * 能算的派生指标 + 口径说明。
+     *
+     * 排版：分节结构（标题 + 数据行），渲染层把标题加粗、数据逐行排；
+     * 口径节标 hint，抽屉里以脚注样式收尾。
+     * 只有 done 帧真的带了统计数字才返回内容 —— 旧历史消息没有这些字段，
+     * 点开只剩口径文字，不该给一个空的「?」按钮。
+     */
+    const metaDetail = (() => {
+      if (isUser) return [] as StatsSection[]
+      // 只认服务端 done 帧上报的数字：客户端自算的 durationMs 每条回复都有，
+      // 若算进来「?」会常驻，旧历史消息点开就只剩口径文字。
+      // ttftMs / serverDurationMs 在 done 里缺值时是 null / 0，故要求 > 0。
+      const hasStats =
+        item.tokens != null ||
+        item.completionTokens != null ||
+        item.inputTokens != null ||
+        item.reasoningTokens != null ||
+        item.cachedTokens != null ||
+        item.generationDurationMs != null ||
+        item.thoughtDurationMs != null ||
+        item.answerDurationMs != null ||
+        (item.ttftMs != null && item.ttftMs > 0) ||
+        (item.serverDurationMs != null && item.serverDurationMs > 0)
+      if (!hasStats) return [] as StatsSection[]
+
+      const { input, output, thought, answer } = tokenStats
+      const sections: StatsSection[] = []
+      const push = (title: string, rows: string[], hint = false) => {
+        if (rows.length) sections.push({ title, rows, hint })
+      }
+
+      // ① 上下文：模型 / 引用 / 记忆 / 结束状态
+      const ctx: string[] = []
+      if (item.model) {
+        const label = item.model.replace(/^[^:|]+[:|]\s*/, '').trim()
+        if (label) ctx.push(label)
+      }
+      if (item.sourcesCount) ctx.push(`引用 ${item.sourcesCount}`)
+      if (item.historyKept || item.historyDropped) {
+        ctx.push(`记忆 ${item.historyKept ?? 0}/${item.historyDropped ?? 0}`)
+      }
+      if (item.digestUsed) ctx.push('滚动摘要')
+      if (item.truncated) ctx.push('已截断')
+      else if (item.finishReason === 'content_filter') ctx.push('内容过滤')
+      else if (item.finishReason === 'tool_calls') ctx.push('工具调用')
+      if (item.finishReason) ctx.push(`结束 ${item.finishReason}`)
+      push('上下文', ctx.length ? [ctx.join(' · ')] : [])
+
+      // ② token 全表（含缓存命中率）
+      const tokenRows: string[] = []
+      if (item.tokens != null) tokenRows.push(`共 ${item.tokens}`)
+      if (input != null) {
+        const hit =
+          item.cachedTokens && input > 0
+            ? ` · 缓存 ${item.cachedTokens}（${Math.round(
+                (item.cachedTokens / input) * 100
+              )}%）`
+            : ''
+        tokenRows.push(`输入 ${input}${hit}`)
+      }
+      if (output != null) {
+        tokenRows.push(
+          `输出 ${output} = 思考 ${thought ?? 0} + 正文 ${answer ?? 0}`
+        )
+      }
+      push('Token', tokenRows)
+
+      // ③ 耗时：整轮/首字一行，阶段时长一行
+      const timeRows: string[] = []
+      const overall: string[] = []
+      if (durationMs != null) overall.push(`整轮 ${formatDurationMs(durationMs)}`)
+      if (item.ttftMs != null && item.ttftMs > 0) {
+        overall.push(`首字 ${formatDurationMs(item.ttftMs)}`)
+      }
+      if (item.firstAnswerTokenMs != null && item.firstAnswerTokenMs > 0) {
+        overall.push(`正文首字 ${formatDurationMs(item.firstAnswerTokenMs)}`)
+      }
+      if (overall.length) timeRows.push(overall.join(' · '))
+      const stages: string[] = []
+      if (item.thoughtDurationMs != null && item.thoughtDurationMs > 0) {
+        stages.push(`思考 ${formatDurationMs(item.thoughtDurationMs)}`)
+      }
+      if (item.answerDurationMs != null && item.answerDurationMs > 0) {
+        stages.push(`正文 ${formatDurationMs(item.answerDurationMs)}`)
+      }
+      if (item.generationDurationMs != null && item.generationDurationMs > 0) {
+        stages.push(`纯吐字 ${formatDurationMs(item.generationDurationMs)}`)
+      }
+      if (stages.length) timeRows.push(stages.join(' · '))
+      push('耗时', timeRows)
+
+      // ④ 速度：整体 / 思考 / 正文 / prefill 合并一行
+      const speed: string[] = []
+      if (tps != null) speed.push(`整体 ${tps} t/s`)
+      if (
+        thought != null &&
+        thought > 0 &&
+        item.thoughtDurationMs != null &&
+        item.thoughtDurationMs > 0
+      ) {
+        speed.push(
+          `思考 ${Math.round(thought / (item.thoughtDurationMs / 1000))} t/s`
+        )
+      }
+      if (
+        answer != null &&
+        answer > 0 &&
+        item.answerDurationMs != null &&
+        item.answerDurationMs > 0
+      ) {
+        speed.push(
+          `正文 ${Math.round(answer / (item.answerDurationMs / 1000))} t/s`
+        )
+      }
+      if (input != null && item.ttftMs != null && item.ttftMs > 0) {
+        speed.push(
+          `prefill ${Math.round(input / (item.ttftMs / 1000))} t/s`
+        )
+      }
+      push('速度', speed.length ? [speed.join(' · ')] : [])
+
+      // ⑤ 口径：短句 + 项目符号（hint 节，抽屉里以脚注样式收尾）
+      push(
+        '口径',
+        [
+          '· 耗时 服务端整轮含检索/工具/落库，不含传输与打字机',
+          '· t/s 输出÷纯吐字，不含检索/工具/网络',
+          '· 首字含 prefill 与网络；缓存率 = 缓存÷输入',
+          '· 单 chunk 无阶段时长；未开思考链时思考为 0',
+        ],
+        true
+      )
+
+      return sections
     })()
 
     const bubbleStyle = useMemo(
@@ -636,6 +717,9 @@ const ChatMessageItem = memo(
                   onPlayingChange={setPlayingMsgId}
                   ready={!isStreaming}
                   metaText={metaText}
+                  metaDetail={metaDetail}
+                  // 桌面 Web 用轻量 tooltip，APP / H5 用底部抽屉
+                  useTooltip={!compactMeta}
                   // 窄屏单行（用户要求不折行）；桌面留 2 行放下完整统计
                   metaLines={compactMeta ? 1 : 2}
                 />
@@ -654,6 +738,7 @@ const ChatMessageItem = memo(
     prev.isStreaming === next.isStreaming &&
     prev.isLast === next.isLast &&
     prev.item.systemNote === next.item.systemNote &&
+    // 详情里要展示 total_tokens，done 帧到达时必须放行重渲染
     prev.item.tokens === next.item.tokens &&
     prev.item.durationMs === next.item.durationMs &&
     // done 统计字段：不进比较器的话 React.memo 会挡住气泡下方小字的刷新
@@ -662,10 +747,11 @@ const ChatMessageItem = memo(
     // token 细分字段：不进比较器的话 memo 会挡住 meta 行的刷新
     prev.item.inputTokens === next.item.inputTokens &&
     prev.item.reasoningTokens === next.item.reasoningTokens &&
-    prev.item.firstAnswerTokenMs === next.item.firstAnswerTokenMs &&
     prev.item.cachedTokens === next.item.cachedTokens &&
+    prev.item.firstAnswerTokenMs === next.item.firstAnswerTokenMs &&
     prev.item.thoughtDurationMs === next.item.thoughtDurationMs &&
-    // answerDurationMs 是 t/s 的分母，少了它结束态会一直显示旧速度
+    // generationDurationMs 是 t/s 的分母，少了它结束态会一直显示旧速度
+    prev.item.generationDurationMs === next.item.generationDurationMs &&
     prev.item.answerDurationMs === next.item.answerDurationMs &&
     prev.item.finishReason === next.item.finishReason &&
     prev.item.truncated === next.item.truncated &&

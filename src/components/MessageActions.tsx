@@ -2,11 +2,13 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { HoverTouchable } from './HoverTouchable';
+import StatsDrawer, { type StatsSection } from './StatsDrawer';
 import * as Clipboard from 'expo-clipboard';
 import Svg, { Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
@@ -18,6 +20,9 @@ export interface MessageActionsTheme {
   isDark: boolean;
   textMuted: string;
   historyActiveText: string;
+  /** 详情抽屉用：调用方传完整 theme 时带上，没带则用深浅色兜底 */
+  textMain?: string;
+  border?: string;
 }
 
 /** 操作行整体高度固定：吐字完成前后布局完全一致，不会把气泡顶下去造成抖动 */
@@ -36,6 +41,10 @@ interface MessageActionsProps {
   metaText?: string;
   /** 小字允许的行数：桌面 Web 统计项多用 2，APP / H5 保持单行（默认 1） */
   metaLines?: number;
+  /** 点「?」展开的多行详细统计与口径说明；空数组（无统计数字）不显示「?」按钮 */
+  metaDetail?: StatsSection[];
+  /** 桌面 Web：hover 出轻量 tooltip；false 则点「?」弹底部抽屉 */
+  useTooltip?: boolean;
 }
 
 const CopyIcon = ({ color, size = 14 }: { color: string; size?: number }) => (
@@ -89,10 +98,17 @@ const MessageActions = memo(
     ready = true,
     metaText,
     metaLines = 1,
+    metaDetail,
+    useTooltip = false,
   }: MessageActionsProps) {
     // 三个视觉状态：
     //   喇叭（未读） → 点击后「转圈」（正在请求/合成，还没出声）→ 「停止」（第一个音频真的开播）。
     const [preparing, setPreparing] = useState(false);
+    /** 「?」打开的底部抽屉；状态留在本组件，切消息不会串（key 是 msgId） */
+    const [showDetail, setShowDetail] = useState(false);
+    // 稳定引用：抽屉里的 Pan 手势在 worklet 里 runOnJS 调用它，
+    // 每次渲染换函数会让 Gesture 对象白白重建
+    const closeDetail = useCallback(() => setShowDetail(false), []);
 
     // 别的消息接管了播放 / 播放结束等 → 本条的「转圈」要复位，避免卡在转圈不消失
     useEffect(() => {
@@ -150,73 +166,174 @@ const MessageActions = memo(
     const activeBg = 'rgba(29, 161, 242, 0.1)';
 
     return (
-      <View
-        style={[
-          styles.row,
-          !ready && styles.hidden,
-          { pointerEvents: ready ? 'auto' : 'none' },
-        ]}
-      >
-        {/* 耗时 / tokens：靠左，把右侧两个按钮顶到行尾 */}
-        {metaText ? (
-          <View style={styles.meta}>
-            <Text
-              numberOfLines={metaLines}
-              style={[styles.metaText, { color: theme.textMuted }]}
+      <View>
+        <View
+          style={[
+            styles.row,
+            !ready && styles.hidden,
+            { pointerEvents: ready ? 'auto' : 'none' },
+          ]}
+        >
+          {/* 耗时 / tokens：靠左，把右侧按钮组顶到行尾 */}
+          {metaText ? (
+            <View style={styles.meta}>
+              <Text
+                numberOfLines={metaLines}
+                style={[styles.metaText, { color: theme.textMuted }]}
+              >
+                {metaText}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* 「?」：桌面 Web hover 出轻量 tooltip，APP / H5 点开底部抽屉。
+              只有服务端真的带了统计数字（metaDetail 非空）才有这个按钮 */}
+          {metaDetail && metaDetail.length > 0 ? (
+            <View style={[styles.item, useTooltip && styles.tipAnchor]}>
+              <HoverTouchable
+                style={[
+                  styles.btn,
+                  showDetail ? { backgroundColor: activeBg } : null,
+                ]}
+                hoverBg={showDetail ? activeBg : hoverBg}
+                rippleColor={
+                  theme.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'
+                }
+                onPress={() => setShowDetail((v) => (useTooltip ? !v : true))}
+                // RNW 支持这两个 props；只在桌面传，原生 / H5 不传
+                {...(useTooltip
+                  ? {
+                      onMouseEnter: () => setShowDetail(true),
+                      onMouseLeave: () => setShowDetail(false),
+                    }
+                  : {})}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="查看统计说明"
+              >
+                <Text
+                  style={[
+                    styles.infoText,
+                    {
+                      color: showDetail
+                        ? theme.historyActiveText
+                        : theme.textMuted,
+                    },
+                  ]}
+                >
+                  ?
+                </Text>
+              </HoverTouchable>
+
+              {useTooltip && showDetail ? (
+                <View
+                  style={[
+                    styles.tooltip,
+                    {
+                      backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
+                      borderColor:
+                        theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                    },
+                  ]}
+                >
+                  <ScrollView style={styles.tooltipScroll}>
+                    {metaDetail.map((s, idx) => (
+                      <View key={s.title} style={idx > 0 ? styles.tooltipSectionSpacing : null}>
+                        <Text
+                          style={[
+                            styles.tooltipTitle,
+                            {
+                              color:
+                                theme.textMain ||
+                                (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
+                            },
+                          ]}
+                        >
+                          {s.title}
+                        </Text>
+                        {s.rows.map((r, i) => (
+                          <Text
+                            key={i}
+                            style={[
+                              styles.tooltipRow,
+                              s.hint && styles.tooltipHintRow,
+                              { color: theme.textMuted },
+                            ]}
+                          >
+                            {r}
+                          </Text>
+                        ))}
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {/* 复制：hover 底色由 HoverTouchable 统一处理；颜色固定 textMuted */}
+          <View style={styles.item}>
+            <HoverTouchable
+              style={styles.btn}
+              hoverBg={hoverBg}
+              rippleColor={theme.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'}
+              onPress={handleCopy}
+              disabled={!ready}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="复制内容"
             >
-              {metaText}
-            </Text>
+              <CopyIcon color={copyColor} />
+            </HoverTouchable>
           </View>
-        ) : null}
 
-        {/* 复制：hover 底色由 HoverTouchable 统一处理；颜色固定 textMuted */}
-        <View style={styles.item}>
-          <HoverTouchable
-            style={styles.btn}
-            hoverBg={hoverBg}
-            rippleColor={theme.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'}
-            onPress={handleCopy}
-            disabled={!ready}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel="复制内容"
-          >
-            <CopyIcon color={copyColor} />
-          </HoverTouchable>
+          {/* 喇叭：播放/加载时用高亮色 + 高亮底；hover 只影响非播放态 */}
+          <View style={styles.item}>
+            <HoverTouchable
+              style={[
+                styles.btn,
+                active ? { backgroundColor: activeBg } : null,
+              ]}
+              hoverBg={active ? activeBg : hoverBg}
+              rippleColor={
+                active
+                  ? theme.historyActiveText
+                  : theme.isDark
+                    ? 'rgba(255,255,255,0.25)'
+                    : 'rgba(0,0,0,0.15)'
+              }
+              onPress={handleToggleSpeech}
+              disabled={!ready}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读内容'
+              }
+            >
+              {preparing ? (
+                <ActivityIndicator size="small" color={activeColor} />
+              ) : isPlaying ? (
+                <StopIcon color={activeColor} />
+              ) : (
+                <IconSpeakerOff size={16} color={activeColor} />
+              )}
+            </HoverTouchable>
+          </View>
         </View>
 
-        {/* 喇叭：播放/加载时用高亮色 + 高亮底；hover 只影响非播放态 */}
-        <View style={styles.item}>
-          <HoverTouchable
-            style={[
-              styles.btn,
-              active ? { backgroundColor: activeBg } : null,
-            ]}
-            hoverBg={active ? activeBg : hoverBg}
-            rippleColor={
-              active
-                ? theme.historyActiveText
-                : theme.isDark
-                  ? 'rgba(255,255,255,0.25)'
-                  : 'rgba(0,0,0,0.15)'
-            }
-            onPress={handleToggleSpeech}
-            disabled={!ready}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读内容'
-            }
-          >
-            {preparing ? (
-              <ActivityIndicator size="small" color={activeColor} />
-            ) : isPlaying ? (
-              <StopIcon color={activeColor} />
-            ) : (
-              <IconSpeakerOff size={16} color={activeColor} />
-            )}
-          </HoverTouchable>
-        </View>
+        {/* 详细统计与口径说明：挂到根视图的底部抽屉，不占聊天流布局 */}
+        <StatsDrawer
+          visible={!useTooltip && showDetail && !!metaDetail?.length}
+          onClose={closeDetail}
+          sections={metaDetail || []}
+          theme={{
+            isDark: theme.isDark,
+            textMain:
+              theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
+            textMuted: theme.textMuted,
+            border: theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+          }}
+        />
       </View>
     );
   },
@@ -227,7 +344,9 @@ const MessageActions = memo(
     prev.isPlaying === next.isPlaying &&
     prev.ready === next.ready &&
     prev.metaText === next.metaText &&
-    prev.metaLines === next.metaLines,
+    prev.metaLines === next.metaLines &&
+    prev.metaDetail === next.metaDetail &&
+    prev.useTooltip === next.useTooltip,
 );
 
 export default MessageActions;
@@ -253,6 +372,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
   },
+  /** 「?」按钮里的小字；metaDetail 为空时整个按钮都不渲染 */
+  infoText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  /** tooltip 的定位锚点：只给「?」按钮这一层，不给整行 */
+  tipAnchor: {
+    position: 'relative' as const,
+  },
+  /** 桌面 Web 的轻量浮层，浮在按钮上方，不弹抽屉、不占聊天流布局 */
+  tooltip: {
+    position: 'absolute' as const,
+    bottom: 32,
+    right: 0,
+    width: 340,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    zIndex: 999,
+    ...(Platform.OS === 'web'
+      ? ({ boxShadow: '0 8px 28px rgba(0,0,0,0.22)' } as any)
+      : null),
+  },
+  tooltipScroll: { maxHeight: 280 },
+  tooltipTitle: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  tooltipSectionSpacing: { marginTop: 8 },
+  tooltipRow: { fontSize: 11, lineHeight: 17 },
+  tooltipHintRow: { fontSize: 10, lineHeight: 15 },
   item: { marginLeft: 4 },
   btn: {
     width: ACTION_BTN_SIZE,

@@ -14,77 +14,30 @@ const makeId = (prefix = 'm') =>
   `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 
 /**
- * 依次取第一个有限数字。
- * done 帧的 token 细分可能有三种下发形态，这里统一收口：
- *   ① 扁平 camelCase：inputTokens / outputTokens / reasoningTokens
- *   ② 扁平 snake_case：prompt_tokens / completion_tokens / reasoning_tokens
- *   ③ 上游 usage 原样嵌套（OpenAI 兼容）：
- *      usage.prompt_tokens / usage.completion_tokens /
- *      usage.completion_tokens_details.reasoning_tokens
- * 全部字段可选：老后端一个都不给时，客户端按原办法降级推算。
+ * done 帧 / 历史消息上的 token 统计字段。
+ * 后端已固定下发 camelCase（见 `chat.controller.ts` 的 done 帧），客户端
+ * 只做挑拣，不再做别名兼容与缺失推算。
  */
-const firstFiniteNumber = (...values: any[]): number | undefined => {
-  for (const v of values) {
-    if (typeof v === 'number' && Number.isFinite(v)) return v
-  }
-  return undefined
-}
+const TOKEN_FIELDS = [
+  'completionTokens',
+  'inputTokens',
+  'reasoningTokens',
+  'cachedTokens',
+  'firstAnswerTokenMs',
+  'thoughtDurationMs',
+  'answerDurationMs',
+  'generationDurationMs'
+] as const
 
-/**
- * 把 done 帧 / 历史消息上的 token 统计归一到 Message 的 camelCase 字段。
- * 实时流与历史回显共用，避免两处各写一套解析。
- */
+/** 只挑出有值的 token 字段，避免用 undefined 覆盖已有值 */
 const normalizeTokenFields = (raw: any): Record<string, number> => {
   const row = raw ?? {}
-  const usage = row.usage ?? {}
-  const outputTokens = firstFiniteNumber(
-    row.outputTokens,
-    row.completionTokens,
-    row.completion_tokens,
-    usage.completion_tokens,
-    usage.output_tokens
-  )
-  const inputTokens = firstFiniteNumber(
-    row.inputTokens,
-    row.promptTokens,
-    row.prompt_tokens,
-    usage.prompt_tokens,
-    usage.input_tokens
-  )
-  const reasoningTokens = firstFiniteNumber(
-    row.reasoningTokens,
-    row.reasoning_tokens,
-    usage.completion_tokens_details?.reasoning_tokens,
-    usage.output_tokens_details?.reasoning_tokens,
-    usage.reasoning_tokens
-  )
-  const firstAnswerTokenMs = firstFiniteNumber(
-    row.firstAnswerTokenMs,
-    row.first_answer_token_ms
-  )
-  const cachedTokens = firstFiniteNumber(
-    row.cachedTokens,
-    row.cached_tokens,
-    usage.prompt_tokens_details?.cached_tokens,
-    usage.input_tokens_details?.cached_tokens
-  )
-  const thoughtDurationMs = firstFiniteNumber(
-    row.thoughtDurationMs,
-    row.thought_duration_ms
-  )
-  const answerDurationMs = firstFiniteNumber(
-    row.answerDurationMs,
-    row.answer_duration_ms
-  )
-  return {
-    ...(outputTokens != null ? { completionTokens: outputTokens } : {}),
-    ...(inputTokens != null ? { inputTokens } : {}),
-    ...(reasoningTokens != null ? { reasoningTokens } : {}),
-    ...(firstAnswerTokenMs != null ? { firstAnswerTokenMs } : {}),
-    ...(cachedTokens != null ? { cachedTokens } : {}),
-    ...(thoughtDurationMs != null ? { thoughtDurationMs } : {}),
-    ...(answerDurationMs != null ? { answerDurationMs } : {})
+  const picked: Record<string, number> = {}
+  for (const key of TOKEN_FIELDS) {
+    const value = row[key]
+    if (typeof value === 'number' && Number.isFinite(value)) picked[key] = value
   }
+  return picked
 }
 
 /** 服务端历史 id 可能是毫秒时间戳且重复；补成唯一且稳定的 id，避免 FlashList/React duplicate key */
@@ -599,14 +552,16 @@ export function useChatManager() {
         inputTokens?: number
         /** done：输出里思考占的 token（缺了按字符权重分摊） */
         reasoningTokens?: number
-        /** done：正文首 token 延迟 */
-        firstAnswerTokenMs?: number
         /** done：命中 prompt cache 的输入 token */
         cachedTokens?: number
+        /** done：正文首字延迟（不含思考前缀） */
+        firstAnswerTokenMs?: number
         /** done：思考阶段耗时（首末思考 chunk 间隔） */
         thoughtDurationMs?: number
-        /** done：正文阶段耗时（首末正文 chunk 间隔），t/s 的首选分母 */
+        /** done：正文阶段耗时（首末正文 chunk 间隔） */
         answerDurationMs?: number
+        /** done：思考 + 正文的吐字时长，t/s 的分母 */
+        generationDurationMs?: number
         finishReason?: string
         truncated?: boolean
         ttftMs?: number | null
