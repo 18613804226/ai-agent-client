@@ -83,6 +83,12 @@ const StopIcon = ({ color, size = 12 }: { color: string; size?: number }) => (
   </Svg>
 );
 
+/** 迷你气泡宽度按字数算（11px 字号、中文等宽）。
+ *  必须给显式宽度：绝对定位的自动宽走 shrink-to-fit，可用宽度被
+ *  「锚容器 24px − left 50%」卡到十几像素，文字被迫逐字换行竖排；
+ *  RNW 的 StyleSheet 又会丢弃 whiteSpace 这类原生 CSS 属性，堵死 nowrap 路线 */
+const miniTipWidth = (label: string) => 22 + label.length * 11;
+
 /**
  * AI 气泡底部操作区：复制 icon + 喇叭 icon。
  * 组件自身保持固定高度，外部只需切换 opacity，避免「吐字完成」瞬间整条气泡重排。
@@ -254,10 +260,11 @@ const MessageActions = memo(
                               styles.tooltipRow,
                               s.hint && styles.tooltipHintRow,
                               {
-                                color:
-                                  theme.isDark
-                                    ? 'rgba(255,255,255,0.55)'
-                                    : 'rgba(0,0,0,0.5)',
+                                // 深色主题正文用纯白；浅色主题白底卡片
+                                // 纯白会隐形，退到深灰保持可读
+                                color: theme.isDark
+                                  ? '#FFFFFF'
+                                  : 'rgba(0,0,0,0.65)',
                               },
                             ]}
                           >
@@ -297,6 +304,7 @@ const MessageActions = memo(
                 style={[
                   styles.miniTip,
                   {
+                    width: miniTipWidth('复制'),
                     backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
                     borderColor:
                       theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
@@ -360,6 +368,9 @@ const MessageActions = memo(
                 style={[
                   styles.miniTip,
                   {
+                    width: miniTipWidth(
+                      preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读'
+                    ),
                     backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
                     borderColor:
                       theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
@@ -477,7 +488,7 @@ const styles = StyleSheet.create({
         } as any)
       : null),
   },
-  miniTipText: { fontSize: 11, lineHeight: 16 },
+  miniTipText: { fontSize: 11, lineHeight: 16, textAlign: 'center' as const },
   tooltipRow: { fontSize: 12, lineHeight: 18 },
   tooltipHintRow: { fontSize: 11, lineHeight: 16 },
   item: { marginLeft: 4 },
