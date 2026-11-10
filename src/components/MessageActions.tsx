@@ -2,7 +2,6 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -230,7 +229,8 @@ const MessageActions = memo(
                     },
                   ]}
                 >
-                  <ScrollView style={styles.tooltipScroll}>
+                  {/* 不套 ScrollView：内容全量展示，不出滚动条 */}
+                  <View>
                     {metaDetail.map((s, idx) => (
                       <View key={s.title} style={idx > 0 ? styles.tooltipSectionSpacing : null}>
                         <Text
@@ -259,7 +259,7 @@ const MessageActions = memo(
                         ))}
                       </View>
                     ))}
-                  </ScrollView>
+                  </View>
                 </View>
               ) : null}
             </View>
@@ -384,7 +384,6 @@ const styles = StyleSheet.create({
       ? ({ boxShadow: '0 8px 28px rgba(0,0,0,0.22)' } as any)
       : null),
   },
-  tooltipScroll: { maxHeight: 280 },
   tooltipTitle: {
     fontSize: 12,
     fontWeight: '600' as const,
