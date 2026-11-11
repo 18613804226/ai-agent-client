@@ -12,7 +12,10 @@
       "reactCompiler": true
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "提问天气时用于获取你当前所在的城市，提供当地天气"
+      }
     },
     "android": {
       "softwareKeyboardLayoutMode": "pan",
@@ -28,6 +31,8 @@
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
@@ -41,6 +46,7 @@
       "expo-router",
       "expo-status-bar",
       "expo-audio",
+      "expo-location",
       "expo-system-ui",
       "react-native-blob-util",
       "@config-plugins/react-native-pdf",

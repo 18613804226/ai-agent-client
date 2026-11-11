@@ -79,6 +79,7 @@ import { chatDistanceFromBottom, scrollChatToBottom } from '../utils/chatScroll'
 import { getDeviceInfo } from '../utils/deviceInfo'
 import { isMobileWebWidth } from '../constants/theme'
 import { normalizeSources, type ChatSource } from '../utils/citations'
+import { getCurrentCityForWeather } from '../utils/weatherLocation'
 
 /**
  * 服务端「按端分流提示词」用的 platform。
@@ -923,7 +924,9 @@ export function useChatManager() {
     queryText: string,
     images: string[] = [],
     knowledgeFileIds: string[] = [],
-    attachmentIds: string[] = []
+    attachmentIds: string[] = [],
+    // 天气类提问时定位到的城市（如「广东省 深圳市」）；空串 = 不带位置
+    location = ''
   ) => {
     // 重置状态
     resetTypewriter()
@@ -955,7 +958,8 @@ export function useChatManager() {
       images: imageUrls,
       fileIds: knowledgeFileIds,
       ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-      ...(chatPlatform ? { platform: chatPlatform } : {})
+      ...(chatPlatform ? { platform: chatPlatform } : {}),
+      ...(location ? { location } : {})
     })
 
     // ========== WEB：fetch + ReadableStream ==========
@@ -1445,6 +1449,10 @@ export function useChatManager() {
     abortControllerRef.current = controller
     setIsGenerating(true)
 
+    // 提问天气时拿当前城市随请求带给服务端（命中关键词才定位；
+    // 拒绝授权 / 定位失败静默降级为不带位置，不挡发送）
+    const location = await getCurrentCityForWeather(currentInput)
+
     try {
       await runTypewriterEffect(
         thinkingMsgId,
@@ -1452,7 +1460,8 @@ export function useChatManager() {
         currentInput,
         uploadedImageUrls,
         knowledgeFileIds,
-        attachmentIds
+        attachmentIds,
+        location
       )
     } catch (error: any) {
       // 请求异常这一轮大概率没被服务端计数：标为不计费（真值由下次登录校准）
