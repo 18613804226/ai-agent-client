@@ -11,6 +11,7 @@ import { IconCheck, IconCopy } from '../Icons';
 import { MyToast } from '../GlobalToast';
 import {
   linkifyCitations,
+  toSuperscriptCitations,
   type CitationMap,
 } from '../../utils/citations';
 
@@ -154,6 +155,8 @@ const BLOCKQUOTE_VIEW_FIX = {
  * code_inline / fence 节点，不会被误链；产物全是 <Text>/字符串，不破坏
  * body 规则「Text 内绝不能嵌 View」的防线。
  *
+ * 角标只用弱化色区分：不改文本形态、不加背景、不叠字号 ——
+ * 缩字号会贴基线变下标，嵌套 <Text> 上的背景色块在原生端会变成突兀小方块。
  * 无角标时保持与原来一模一样的单 <Text>，字号线高不变 —— 结束态换 rules
  * 不会产生行高跳变。selectable 传 undefined 表示 Web（库默认 text 无该属性）。
  */
@@ -177,10 +180,12 @@ export const citationTextRule = (
   const selectableProp = selectable === undefined ? {} : { selectable };
   const baseStyle = [inheritedStyles, styles.text];
 
+  // 流式期与落定期输出同一份「上标数字 + 前导空格」文本，
+  // 切点落定 / 吐完时字宽不变，不会重排。
   if (!hasLink) {
     return (
       <Text key={node.key} {...selectableProp} style={baseStyle}>
-        {content}
+        {toSuperscriptCitations(content)}
       </Text>
     );
   }
@@ -193,10 +198,12 @@ export const citationTextRule = (
             onPress={() => onPress!(seg.url!)}
             style={styles.citation}
           >
-            {seg.text}
+            {toSuperscriptCitations(seg.text)}
           </Text>
         ) : (
-          <React.Fragment key={`text-${i}`}>{seg.text}</React.Fragment>
+          <React.Fragment key={`text-${i}`}>
+            {toSuperscriptCitations(seg.text)}
+          </React.Fragment>
         ),
       )}
     </Text>
@@ -265,11 +272,25 @@ export const createMarkdownRules = (
   },
   // 段落：块间由 body 规则统一补**单换行**（见上），这里不再自己补 ——
   // 各块规则自己补的话，run 起始处的换行数会和 run 内部对不上。
-  paragraph: (node, children, _parent, styles) => (
-    <Text key={node.key} selectable={selectable} style={styles.paragraph}>
-      {children}
-    </Text>
-  ),
+  // ⚠️ 直属 body 的段落渲染在文本 run 里（外层是 <Text style={styles.body}>）：
+  //    嵌套 Text 的 marginBottom 不可靠，且末段的 8px 会在气泡底部多出一截，
+  //    与流式期（纯 Text 单换行、无外边距）高度对不上 —— 表现为「吐完/冷启动
+  //    后气泡底部多一行空白」。这类段落把外边距归零，段距靠单换行（行高 24）
+  //    表达；只有列表/引用回退成 View 盒子时，段落才是独立块，保留 8px 段距。
+  paragraph: (node, children, parent, styles) => {
+    const ancestors = parent as any[] | undefined;
+    const directInBody =
+      ancestors?.[ancestors.length - 1]?.type === 'body';
+    return (
+      <Text
+        key={node.key}
+        selectable={selectable}
+        style={[styles.paragraph, directInBody ? { marginBottom: 0 } : null]}
+      >
+        {children}
+      </Text>
+    );
+  },
   heading1: (node, children, _parent, styles) => (
     <Text key={node.key} selectable={selectable} style={styles.heading1}>
       {children}
@@ -461,15 +482,18 @@ export const createMarkdownRules = (
       {children}
     </Text>
   ),
-  hardbreak: (node, _children, _parent, styles) => (
-    <Text key={node.key} selectable={selectable} style={styles.hardbreak}>
-      {'\n'}
-    </Text>
+  // 软换行 / 硬换行：直接输出**纯文本**换行，不能包 <Text>。
+  // 包 <Text>（哪怕只装一个 '\n'）在 RN 里会被当成一个有行高的行内块：
+  // 换行本身仍占一行，内层 Text 又占一行 → 每个单换行多出一整行。
+  // 表现：多段回复（如天气）有几个单换行，气泡底部/段间就多几行空白，
+  // 单段回复完全正常 —— 正是「偶发、查天气就多一行」的根因。
+  // 用 Fragment 展开字符串 '\n'：与正文字符串同一条文本流，只换行、不加高，
+  // 也与流式期尾巴（纯 <Text> 内的 '\n'）高度完全一致。
+  hardbreak: (node) => (
+    <React.Fragment key={node.key}>{'\n'}</React.Fragment>
   ),
-  softbreak: (node, _children, _parent, styles) => (
-    <Text key={node.key} selectable={selectable} style={styles.softbreak}>
-      {'\n'}
-    </Text>
+  softbreak: (node) => (
+    <React.Fragment key={node.key}>{'\n'}</React.Fragment>
   ),
   code_inline: (node, _children, _parent, styles, inheritedStyles = {}) => (
     <Text
@@ -527,6 +551,8 @@ export const nonSelectableMarkdownRules = createMarkdownRules(false);
 // 默认规则把 fence/code_block 渲染成 Text，这里把它们包在 View 里加按钮
 export const webMarkdownRules: RenderRules = {
   ...renderRules,
+  // Web 流式期也做同样的上标转换，否则落定换 rules 时文本会变、换行重排。
+  text: citationTextRule(undefined, undefined, undefined),
   fence: (node, children, parent, styles) => {
     let { content } = node;
     if (typeof content === 'string' && content.endsWith('\n')) {

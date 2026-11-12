@@ -102,11 +102,28 @@ const ChatMessageItem = memo(
      *   - 图片     → 缩略图网格（可点全屏预览）
      * 两者放进同一个「附件列」，紧跟其后的才是正文气泡 —— 不论用户发的是
      * 图片、文档还是视频，布局完全一致。
+     *
+     * ⚠️ 历史回显要合并 item.images：服务端落库时图片进 messages.images，
+     *    attachments 只存文档/视频。只按 attachments 渲染的话，刚发完能看图，
+     *    冷启动/重开会话后用户消息里的图片就整条消失（历史里「图不见了」）。
+     *    新消息本地 images 与 attachments 带同一批 url → 按 url 去重，不会渲染两份。
      */
-    const allAttachments =
-      isUser && item.attachments && item.attachments.length > 0
-        ? item.attachments
+    const allAttachments = (() => {
+      if (!isUser) return []
+      const base = Array.isArray(item.attachments)
+        ? (item.attachments as any[])
         : []
+      const knownUrls = new Set(
+        base
+          .map((a) => (typeof a?.url === 'string' ? a.url : ''))
+          .filter(Boolean)
+      )
+      const fromImages = (Array.isArray(item.images) ? item.images : [])
+        .filter((u): u is string => typeof u === 'string' && !!u)
+        .filter((u) => !knownUrls.has(u))
+        .map((url, i) => ({ kind: 'image' as const, name: `image-${i + 1}`, url }))
+      return [...base, ...fromImages]
+    })()
     // 图片源：新鲜消息的本地 blob / file://，或服务端 url（消息落库后
     // 本地来源已丢弃，只剩 url/fileRef）
     const imageSourceOf = (a: any): string => a.uri || a.url || ''

@@ -96,6 +96,28 @@ export interface CitationSegment {
   url?: string
 }
 
+const SUPER_DIGITS = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹']
+
+/**
+ * 把 [n] 显示成 Unicode 上标数字，每个角标前留一个空格：
+ * [2][1][0] → " ² ¹ ⁰"，既不贴着正文，也把相邻角标分开。
+ *
+ * RN 嵌套 <Text> 没有可靠的上标排版：缩字号会贴基线变下标，
+ * verticalAlign / transform 在 inline span 上都不生效，只有字符本身可靠。
+ * 刻意不加背景色块 —— 原生 inline <Text> 上的背景会变成突兀的小方块。
+ *
+ * ⚠️ 流式期（纯文本尾巴 + 无 citations 的 rules）与落定期（带链接的
+ *    rules）必须都调用它，两边文本一致才不会在吐完那一刻重排。
+ * ⚠️ 只用于显示：linkifyCitations 仍按原始 [n] 匹配，不依赖字符形态。
+ */
+export function toSuperscriptCitations(text: string): string {
+  return text.replace(/ ?\[(\d{1,2})\]/g, (_, digits: string) =>
+    ` ${Array.from(digits)
+      .map((d) => SUPER_DIGITS[Number(d)])
+      .join('')}`
+  )
+}
+
 /**
  * 把一段纯文本切成「文本 / 可点角标」片段。
  * 找不到对应来源的 [n] 保留原文，不做死链（联网降级时正文可能残留角标）。

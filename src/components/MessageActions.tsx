@@ -431,7 +431,13 @@ const styles = StyleSheet.create({
     // 桌面 Web 的小字允许两行：用 minHeight 让行高随内容长到 32px，
     // 单行时仍严格是 ACTION_ROW_HEIGHT，不改动任何一端的既有高度
     minHeight: ACTION_ROW_HEIGHT,
-    marginTop: 1,
+    // 正文末行 → 操作栏的间距：1 太贴、8 显得空一行，取 4（统计文字在
+    // 行内垂直居中，实际视觉间隙约 12px）
+    marginTop: 4,
+    // 气泡底部 padding 是 14，叠加这一栏的图标后离底边太远；
+    // 用负外边距把这一栏往下收 6px（等效底距 ≈ 8px），只动这一栏，
+    // 正文/其它气泡的内边距不受影响
+    marginBottom: -6,
   },
   hidden: { opacity: 0 },
   /** 左侧小字容器：auto 右外边距把按钮组顶到行尾，长文本可收缩 */

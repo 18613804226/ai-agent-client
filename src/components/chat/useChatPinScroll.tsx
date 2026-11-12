@@ -169,8 +169,6 @@ export function useChatPinScroll({
   const lastFrameOffsetSV = useSharedValue(0)
   /** 首次贴底待办：历史刚落盘时允许一次「从顶部到底部」的跟随 */
   const pendingFollowSV = useSharedValue(0)
-  /** 上次跟随时的内容总高：只有内容又长高了才继续跟（避免无谓地抢滚动） */
-  const lastFollowContentHSV = useSharedValue(0)
   /**
    * 距上一次滚动事件过了多少帧（UI 线程可读）。
    * 用户手指刚按下时 JS 的 touch 事件有延迟，这段时间里 offset 还是陈旧的，
@@ -474,7 +472,6 @@ export function useChatPinScroll({
       touchedSV.value = false
       userTouchedRef.current = false
       pendingFollowSV.value = 0
-      lastFollowContentHSV.value = 0
       lastFrameOffsetSV.value = 0
       return
     }
@@ -956,18 +953,17 @@ export function useChatPinScroll({
     // 首次贴底：历史刚落盘，列表可能还停在顶部 → 直接滚到底
     if (pendingFollowSV.value === 1) {
       pendingFollowSV.value = 0
-      lastFollowContentHSV.value = contentHeightSV.value
       scrollToWorklet(scrollViewRef, 0, target, false)
       return
     }
-    // 之后只有「内容又长高了」才继续跟：用户停在底部时图片/Markdown
-    // 陆续完成测量，内容一点点变高，这里保持贴底；没有长高就不动，
-    // 避免任何无谓的抢滚动。
-    const grew = contentHeightSV.value - lastFollowContentHSV.value
-    if (grew > 0.5) {
-      lastFollowContentHSV.value = contentHeightSV.value
-      scrollToWorklet(scrollViewRef, 0, target, false)
-    }
+    // 之后跟随判据盯「offset 是否真的到了 target」，而不是只认「内容长高」。
+    // 冷启动 + 末条超长气泡：initialScrollIndex 按估算高度定位，末条实测后
+    // outerMaxSV 变大，但总高此后可能不再变化（grew=0）—— 旧的 grew-only
+    // 判据就永远补不上 offset < target 的缺口，停在离底部一屏内的地方。
+    // 走到这里已经确认 target 还没对齐（上面的 <=0.5 早退了）；用户一碰列表
+    // （onTouchStart / onScrollBeginDrag → endHistoryBottom）就退出本模式，
+    // 这里「保持贴底」不会抢任何人的滚动。
+    scrollToWorklet(scrollViewRef, 0, target, false)
   })
 
   /**

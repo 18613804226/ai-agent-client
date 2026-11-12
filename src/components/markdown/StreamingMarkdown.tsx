@@ -13,6 +13,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets'
 import { splitStableBlocks } from './streamingSplit'
 import { normalizeInlineEmphasis } from '../../utils/normalizeEmphasis'
+import { toSuperscriptCitations } from '../../utils/citations'
 import {
   hasInlineMarkup,
   splitInlineSegments,
@@ -234,7 +235,17 @@ const TailText = memo(function TailText({
   //    节流省不掉这次提交，只省尾巴内部那点活；
   // ③ 真正贵的 splitInlineSegments 前面还有 hasInlineMarkup 这道廉价闸门。
   // 代价（少量重复的 O(n) 切分）远小于它引入的状态机复杂度。
-  const tailSegs = useMemo(() => splitTailSegments(text), [text])
+  // 流式尾巴也要显示上标角标，与落定期文本一致，避免吐完重排。
+  // 代码围栏段不动：代码里的 [1] 是内容。
+  const tailSegs = useMemo(
+    () =>
+      splitTailSegments(text).map((seg) =>
+        seg.kind === 'text'
+          ? { ...seg, text: toSuperscriptCitations(seg.text) }
+          : seg
+      ),
+    [text]
+  )
 
   // 栅栏刚打开、还没吐到代码行时按普通文本渲染（见下），此时它也算「文本段」。
   const rendersAsText = (seg: TailSeg) =>
@@ -431,8 +442,11 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   // ⚠️ 升格时还要 trimEnd()：模型偶发在结尾带 1~2 个换行，`tail.trim()` 只用来
   //    判断「有没有内容」，原样把 `'…靠谱。\n\n'` 交给 markdown 会在气泡底部
   //    渲染出末尾空行（有的一行、有的多行）。
-  const finalBlocks =
+  // ⚠️ 末尾再过滤一道空白块：any 来源的空块都会在 map 里被补一条
+  //    <BlockSeparator />（24px 行高）→ 气泡底部多一行。这里不让空块进渲染。
+  const finalBlocks = (
     !streaming && tail.trim() ? [...blocks, tail.trimEnd()] : blocks
+  ).filter((b) => b.trim() !== '')
   const finalTail = streaming ? tail : ''
 
   return (

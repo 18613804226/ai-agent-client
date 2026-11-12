@@ -124,31 +124,21 @@ export const createDynamicMarkdownStyles = (
     textMain: string
     textMuted: string
     border: string
-    /** [n] 角标链接色；老 theme 对象没有该字段时回退主题蓝 */
-    sendBtnActive?: string
   },
   rowWidth = 0
 ) =>
   StyleSheet.create({
     body: { fontSize: 15, lineHeight: 24, color: theme.textMain },
     strong: { fontWeight: 'bold' as const, color: theme.textMain },
-    // 正文里的 [n] 可点角标：只靠蓝色表明可点，不加下划线。
-    // 刻意不动 fontSize / lineHeight ——
-    // 结束态换 rules 时行高一变就会看到整段文字跳一下。
+    // 角标只做颜色弱化：不加背景色块、不叠字号（缩字号会贴基线变下标）。
+    // 上标效果由 toSuperscriptCitations 的 Unicode 上标字符实现。
     citation: {
-      color: theme.sendBtnActive || '#4b92ee'
+      color: theme.textMuted
     },
-    // 显式覆盖库默认 hardbreak: { width: '100%', height: 1 }。模型用「行尾两空格
-    // + 换行」表示硬换行时，这个样式会让 <Text> 内联树里多撑出一整行空白，
-    // 而且只在含硬换行的回答里出现（正是「有的回答底部多一行」的来源之一）。
-    // 流式期尾巴是纯 <Text>，没有这一层 → 落定后才会冒出来。
-    softbreak: { fontSize: 15, lineHeight: 24 },
-    hardbreak: {
-      width: undefined,
-      height: undefined,
-      fontSize: 15,
-      lineHeight: 24
-    },
+    // 软换行 / 硬换行不再配样式：对应规则直接返回纯文本 '\n'（见
+    // markdownRules.hardbreak/softbreak）。此前包在 <Text lineHeight:24>
+    // 里会让每个单换行额外撑出一行（多段回复底部凭空多一行的根因）。
+    // 保留库默认即可，这里刻意不写 softbreak/hardbreak 键。
     paragraph: {
       marginTop: 0,
       marginBottom: 8,
