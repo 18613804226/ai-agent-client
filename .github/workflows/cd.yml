@@ -43,35 +43,37 @@ jobs:
       - name: Build web
         run: pnpm exec expo export --platform web
 
-      - name: Prepare server directory
-        uses: appleboy/ssh-action@v1.1.0
+      # 部署走 runner 自带的 ssh/scp，不再用 appleboy/ssh-action / scp-action：
+      # 那两个 action 运行时要从 GitHub Releases 下载 drone-ssh / drone-scp 二进制，
+      # 版本下架（404）、官方 CDN（504）、ghproxy.net 镜像（502）已经轮着挂过一轮，
+      # 换任何公共代理仍是同一个坑。ubuntu-latest 自带 openssh-client，零下载。
+      # 写法与 android-release.yml 的 Configure SSH / Upload APK 保持一致。
+      - name: Configure SSH
         env:
-          # drone-ssh v1.7.7 已从 GitHub Releases 下架（404），且 GitHub 的
-          # release 下载 CDN 对 CI 不稳定（504）。走 ghproxy 镜像下载现存版本。
-          DRONE_SSH_VERSION: 1.8.6
-          DRONE_SSH_RELEASE_URL: https://ghproxy.net/https://github.com/appleboy/drone-ssh/releases/download
-        with:
-          host: ${{ secrets.ALIYUN_HOST }}
-          username: ${{ secrets.ALIYUN_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.ALIYUN_PORT || 22 }}
-          script: mkdir -p /home/deploy/ai-agent-web
+          SSH_HOST: ${{ secrets.ALIYUN_HOST }}
+          SSH_PORT: ${{ secrets.ALIYUN_PORT || 22 }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Upload web build
-        uses: appleboy/scp-action@v1.0.0
+      - name: Deploy web build
         env:
-          # GitHub release 下载 CDN 对 CI 不稳定（504），走 ghproxy 镜像。
-          DRONE_SCP_RELEASE_URL: https://ghproxy.net/https://github.com/appleboy/drone-scp/releases/download
-        with:
-          # drone-scp v1.8.0 已从 GitHub Releases 下架（404）。
-          # scp-action 是 composite action，action.yml 内部把
-          # DRONE_SCP_VERSION: ${{ inputs.version }} 写死，step 级 env 会被覆盖，
-          # 所以必须用 with.version 传版本。
-          version: 1.8.3
-          host: ${{ secrets.ALIYUN_HOST }}
-          username: ${{ secrets.ALIYUN_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.ALIYUN_PORT || 22 }}
-          source: 'dist/'
-          target: '/home/deploy/ai-agent-web'
-          strip_components: 1
+          SSH_HOST: ${{ secrets.ALIYUN_HOST }}
+          SSH_USER: ${{ secrets.ALIYUN_USER }}
+          SSH_PORT: ${{ secrets.ALIYUN_PORT || 22 }}
+          REMOTE_DIR: /home/deploy/ai-agent-web
+        run: |
+          ssh -p "$SSH_PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_DIR'"
+          # 等价原 scp-action 的 source: dist/ + strip_components: 1：
+          # 把 dist 目录内容（含隐藏文件）铺到目标根，不带 dist 这一层。
+          # 用 tar 单连接传输，避免 scp -r 在 OpenSSH 9 的 SFTP 模式下对 `.` 的歧义。
+          tar -czf - -C dist . | ssh -p "$SSH_PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" "tar -xzf - -C '$REMOTE_DIR'"
+          # 不加 `| head`：Actions 的 bash 开了 pipefail，head 提前退出会让
+          # ls 收 SIGPIPE 返回 141，部署成功却被判失败。
+          ssh -p "$SSH_PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" "ls -la '$REMOTE_DIR'"
