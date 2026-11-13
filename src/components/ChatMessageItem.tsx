@@ -664,7 +664,7 @@ const ChatMessageItem = memo(
                       { color: theme.textMuted, fontStyle: 'italic' }
                     ]}
                   >
-                    思考中...
+                    答案正在系鞋带，马上跑过来…...
                   </Text>
                 </View>
               ) : isUser ? (
