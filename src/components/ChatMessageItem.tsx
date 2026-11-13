@@ -683,6 +683,8 @@ const ChatMessageItem = memo(
                 <View>
                   {hasThought ? (
                     <ThoughtCollapsible
+                      key={item.id}
+                      messageId={item.id}
                       thought={item.thought!}
                       theme={theme}
                       isStreaming={isStreaming}

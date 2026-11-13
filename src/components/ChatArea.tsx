@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback, useMemo } from 'react'
 import { StyleSheet, View, Platform, ActivityIndicator } from 'react-native'
 import { FlashList } from '@shopify/flash-list'
 import { useChat, useStreamingRenderMsg } from '../context/appContexts'
-import { APP_PIN_USER_MESSAGE } from '../utils/chatScroll'
+import { APP_PIN_USER_MESSAGE, clearThoughtOpen } from '../utils/chatScroll'
 import ChatMessageItem from './ChatMessageItem'
 import ImageViewer from './ImageViewer'
 import FilePreviewer from './FilePreviewer'
@@ -53,6 +53,15 @@ export default function ChatArea({
 
   // 三指下滑截图等系统手势：一指落在 selectable 文本上会拉出原生选区并被截进图里
   const { selectionSuppressed, guardProps } = useSelectionGestureGuard()
+
+  // 切会话清掉上个会话的思考框展开记录（按 msgId 存在 React 树外，不会自动释放）。
+  // 读初值不写 Map，所以这里清理不会影响本会话已挂载的组件。
+  const prevActiveIdRef = useRef(activeId)
+  useEffect(() => {
+    if (prevActiveIdRef.current === activeId) return
+    prevActiveIdRef.current = activeId
+    clearThoughtOpen()
+  }, [activeId])
 
   // 🧹 抽屉打开 / 多指手势时清掉 Web 端已选中的蓝色文本选择框
   // （App 端靠 textSelectable=false 让原生选择自动收起）

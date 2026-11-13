@@ -18,10 +18,14 @@ import type { ThemeType } from '../types/chat'
 import { InkTailText } from './markdown/inkTail'
 import {
   THOUGHT_ANIM_MS,
-  THOUGHT_ANIM_BEZIER
+  THOUGHT_ANIM_BEZIER,
+  getThoughtOpen,
+  setThoughtOpen
 } from '../utils/chatScroll'
 
 interface ThoughtCollapsibleProps {
+  /** 消息 ID：展开状态按它持久化，FlashList 回收 cell 重新挂载后能读回来 */
+  messageId: string
   thought: string
   theme: ThemeType
   /** 是否正在流式吐字：吐字结束自动收起思考框（兜底路径） */
@@ -35,18 +39,28 @@ interface ThoughtCollapsibleProps {
 /** 时长与曲线参数来自 utils/chatScroll（与钉顶补偿单点定义），这里只把曲线对象缓存一次 */
 const THOUGHT_EASING = Easing.bezier(...THOUGHT_ANIM_BEZIER)
 
+/** 一次点击允许的纵向位移：超过就当滑动，不翻转思考框 */
+const TAP_SLOP_Y = 12
+
 // ===================== ThoughtCollapsible =====================
 const ThoughtCollapsible = memo(
   function ThoughtCollapsible({
+    messageId,
     thought,
     theme,
     isStreaming = false,
     thoughtDone = false,
     onToggle
   }: ThoughtCollapsibleProps) {
-    const [isOpen, setIsOpen] = useState(true)
+    /** 惰性初值：挂载时按 msgId 读回上次状态；没记录则流式展开 / 历史收起。
+     *  刻意不走 toggleOpen —— 初始化绝不能触发 onToggle 的钉顶补偿。 */
+    const [isOpen, setIsOpen] = useState(() =>
+      getThoughtOpen(messageId, isStreaming)
+    )
     const contentHeightRef = useRef(0)
-    const progress = useSharedValue(1)
+    const progress = useSharedValue(isOpen ? 1 : 0)
+    /** 按下时的纵坐标，用于把滑动误触挡在 onPress 之外 */
+    const pressStartYRef = useRef<number | null>(null)
 
     // 服务端（模型）偶发在 thought 末尾带换行符（1~2 个），直接进 <Text> 会
     // 渲染成末尾空行（有的一行、有的多行）。渲染前统一裁掉末尾空白。
@@ -115,6 +129,7 @@ const ThoughtCollapsible = memo(
             ? Math.min(contentHeightRef.current, THOUGHT_SCROLL_MAX)
             : THOUGHT_SCROLL_MAX
       onToggle?.(nextState, expandedH)
+      setThoughtOpen(messageId, nextState)
       setIsOpen(nextState)
       animateTo(nextState)
     }
@@ -145,10 +160,16 @@ const ThoughtCollapsible = memo(
           // 延迟窗口内用户已手动收起 → 尊重当前状态，不重复动作
           if (isOpenRef.current) toggleOpenRef.current()
         }, AUTO_COLLAPSE_DELAY_MS)
-      } else if (isStreaming && autoCollapseTimerRef.current) {
+      } else if (!was && isStreaming) {
         // 重新开始吐字（重新生成）：取消还没触发的折叠
-        clearTimeout(autoCollapseTimerRef.current)
-        autoCollapseTimerRef.current = null
+        if (autoCollapseTimerRef.current) {
+          clearTimeout(autoCollapseTimerRef.current)
+          autoCollapseTimerRef.current = null
+        }
+        // 同一 msgId 原地重新生成时组件不卸载，Map 里还记着上一轮的「收起」——
+        // 不清掉的话这一轮思考全程看不见。走 toggleOpen 带钉顶补偿，
+        // 它内部会把新状态写回 Map。
+        if (!isOpenRef.current) toggleOpenRef.current()
       }
       return () => {
         // 依赖只有 isStreaming：普通重渲染不会重跑本 effect，不会误杀定时器；
@@ -208,7 +229,23 @@ const ThoughtCollapsible = memo(
       >
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => toggleOpen()}
+          onPressIn={(e) => {
+            pressStartYRef.current = e.nativeEvent?.pageY ?? null
+          }}
+          onPress={(e) => {
+            const startY = pressStartYRef.current
+            pressStartYRef.current = null
+            const endY = e.nativeEvent?.pageY
+            // 滑动经过标题栏时 RN 偶发把 touch 判成 tap：纵向位移超阈值就不算点击
+            if (
+              startY != null &&
+              endY != null &&
+              Math.abs(endY - startY) > TAP_SLOP_Y
+            ) {
+              return
+            }
+            toggleOpen()
+          }}
           style={styles.thoughtHeader}
         >
           <Text style={[styles.thoughtTitle, { color: theme.textMuted }]}>
@@ -309,6 +346,7 @@ const ThoughtCollapsible = memo(
     )
   },
   (prev, next) =>
+    prev.messageId === next.messageId &&
     prev.thought === next.thought &&
     prev.theme === next.theme &&
     prev.isStreaming === next.isStreaming &&

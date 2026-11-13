@@ -51,6 +51,34 @@ export const THOUGHT_ANIM_MS = 250;
 export const THOUGHT_ANIM_BEZIER: [number, number, number, number] = [0.25, 0.1, 0.5, 1];
 
 /**
+ * 思考框展开状态：按消息 ID 存，刻意放在 React 树之外。
+ *
+ * FlashList 会回收视口外 cell，组件重新挂载时内部 useState 会复位 ——
+ * 默认「展开」会导致滑动回来自己打开、冷启动历史消息也全展开。
+ * 这里让挂载时按 id 读回上次状态（没有记录则流式展开 / 历史收起），
+ * 不必塞进 extraData：那样每次 toggle 都会重渲染整列，且初始化会
+ * 误触发 handleThoughtToggle 的钉顶补偿。
+ *
+ * ⚠️ 读初值不写回 Map：只有 toggle 才落记录，切会话 clearThoughtOpen()
+ *    不会误删刚挂载的状态。
+ */
+const thoughtOpenMap = new Map<string, boolean>();
+
+/** 挂载时读：没记录过 → 流式期间展开、历史消息收起 */
+export function getThoughtOpen(messageId: string, isStreaming: boolean): boolean {
+  return thoughtOpenMap.get(messageId) ?? !!isStreaming;
+}
+
+export function setThoughtOpen(messageId: string, open: boolean): void {
+  thoughtOpenMap.set(messageId, open);
+}
+
+/** 切会话：清掉上个会话的记录，避免 id 复用与无限累积 */
+export function clearThoughtOpen(): void {
+  thoughtOpenMap.clear();
+}
+
+/**
  * 翻转视图用的 transform。
  * Android 与 RN 自带实现保持一致用 `scale: -1`（X/Y 都翻，两层叠加即抵消水平方向），
  * iOS 用 `scaleY: -1`。
