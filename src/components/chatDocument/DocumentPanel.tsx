@@ -82,6 +82,25 @@ export default function DocumentPanel({
     transform: [{ translateX: (1 - progress.value) * width }]
   }))
 
+  // Web：预览窗滚动条与聊天列表同款 —— 默认隐藏，鼠标移入才显示
+  useEffect(() => {
+    if (Platform.OS !== 'web') return
+    const d = (globalThis as any).document
+    if (!d || d.getElementById('doc-panel-scrollbar')) return
+    const style = d.createElement('style')
+    style.id = 'doc-panel-scrollbar'
+    style.textContent = `
+      #doc-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+      #doc-scroll:hover { scrollbar-color: rgba(128,128,128,0.5) transparent; }
+      #doc-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+      #doc-scroll::-webkit-scrollbar-track { background: transparent; }
+      #doc-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+      #doc-scroll:hover::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.45); }
+      #doc-scroll::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.65); }
+    `
+    d.head.appendChild(style)
+  }, [])
+
   const handleExport = async (kind: 'md' | 'docx') => {
     if (!doc || busy) return
     setBusy(kind)
@@ -154,6 +173,7 @@ export default function DocumentPanel({
       </View>
 
       <ScrollView
+        nativeID="doc-scroll"
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator

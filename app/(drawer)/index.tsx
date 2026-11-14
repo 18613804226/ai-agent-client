@@ -30,7 +30,6 @@ import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts' 
 import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme'
 import CustomActionSheet from '../../src/components/CustomActionSheet'
 import DocumentPanel from '../../src/components/chatDocument/DocumentPanel'
-import { createDocumentFromLocalSend } from '../../src/components/chatDocument/localDocument'
 import {
   clearChatDocument,
   extractDocument,
@@ -59,7 +58,6 @@ export default function ChatScreen() {
     handleSelectChat,
     handleDeleteChat,
     handleSend,
-    appendMessage,
     handleStopGeneration,
     autoRead, // 💡 新增
     toggleAutoRead,
@@ -148,28 +146,8 @@ export default function ChatScreen() {
     insets.bottom
 
   const handleSendWithImages = useCallback(async (overrideText?: string) => {
-    // C：「整理成 word / md」是本地文件转换，不是问答。直接把 TXT 附件或
-    // 上一轮回复转成右侧文档，不发请求 —— 零联网、零 token、零等待。
-    // 没有可整理素材时才回退到正常发送（交给后端）。
-    if (Platform.OS === 'web') {
-      const localDoc = await createDocumentFromLocalSend({
-        text: overrideText ?? inputText,
-        attachments: selectedAttachments,
-        messages: currentChat?.messages ?? []
-      })
-      if (localDoc) {
-        // 右侧面板只是预览：用户输入与文档正文仍要落在聊天正文里，成为对话的一部分
-        appendMessage({
-          role: 'user',
-          content: (overrideText ?? inputText).trim()
-        })
-        appendMessage({ role: 'assistant', content: localDoc.content })
-        openChatDocument(localDoc)
-        setInputText('')
-        clearImages()
-        return
-      }
-    }
+    // 文档需求一律交给大模型：先整理内容，再按 ```markdown / ```docx 输出，
+    // 落定后自动弹右侧面板预览（面板只做预览，正文照常展示整理后的内容）。
     const knowledgeFileIds = uploadedFiles
       .filter(
         (f) =>
@@ -193,11 +171,7 @@ export default function ChatScreen() {
     uploadedFiles,
     selectedAttachments,
     clearImages,
-    handleSend,
-    appendMessage,
-    inputText,
-    setInputText,
-    currentChat?.messages
+    handleSend
   ])
 
   // 💡 三端精准判断
@@ -252,10 +226,10 @@ export default function ChatScreen() {
         }
       }
       if (!aiId || lastAutoDocMsgRef.current === aiId) return
+      // 用户点名了格式就按用户的，没点名就让模型的围栏语言决定；
+      // 面板只预览模型真正产出的文档（```markdown / ```docx），
+      // 普通回答留在聊天正文，不再整篇塞进右侧面板。
       const requested = wantsDocument(userText)
-      if (!requested) return
-      // 面板只预览模型真正产出的文档（```markdown / ```docx 围栏）；
-      // 普通回答留在聊天正文，不再整篇塞进右侧面板
       const document = extractDocument(aiContent, requested, aiId, {
         allowWholeReply: false
       })
