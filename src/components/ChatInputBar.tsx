@@ -42,6 +42,7 @@ import {
   useTextareaAutoHeight,
   useWebImagePaste
 } from './chatInputBar/webInputHelpers'
+import { useLongTextAsFile } from './chatInputBar/longTextAsFile'
 import {
   useAttachmentPreview,
   AttachmentPreviewList
@@ -231,6 +232,14 @@ function ChatInputBar({
   }, [])
 
   useWebImagePaste(isDesktopWeb, setAttachments, inputRef)
+  // 粘贴超长文本 → 输入栏里的 TXT 附件卡片（输入框只留用户另写的短指令）
+  const handleInputChange = useLongTextAsFile({
+    inputRef,
+    inputText,
+    setInputText,
+    setAttachments,
+    enabled: !isVoiceMode
+  })
   useTextareaAutoHeight(inputRef, inputText, width, isVoiceMode)
 
   const {
@@ -408,7 +417,7 @@ function ChatInputBar({
             }
             placeholderTextColor={theme.textMuted}
             value={inputText}
-            onChangeText={setInputText}
+            onChangeText={handleInputChange}
             editable={!isGenerating}
             multiline
             // Web：iOS Safari 要求表单控件计算字号 ≥16px 才不自动放大；

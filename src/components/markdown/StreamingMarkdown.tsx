@@ -407,7 +407,10 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
   }>({ content: '', blocks: [], tail: '', lastCut: 0, lastCompute: 0 })
 
   const { blocks, tail } = useMemo(() => {
-    const c = content
+    // 渲染层归一化：流式期 trimStart() 消掉模型偶发的前导空行/空格；落定期 trim()
+    // 同时清掉结尾的换行与空格。文本只增不减，trimStart 后的结果仍随 token 单调
+    // 增长，下面的增量缓存判据（startsWith / lastCut）不受影响。
+    const c = streaming ? content.trimStart() : content.trim()
     const cache = cacheRef.current
     if (c === cache.content) {
       return { blocks: cache.blocks, tail: cache.tail }
