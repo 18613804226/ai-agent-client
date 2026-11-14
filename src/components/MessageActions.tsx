@@ -11,6 +11,7 @@ import StatsDrawer, { type StatsSection } from './StatsDrawer';
 import * as Clipboard from 'expo-clipboard';
 import Svg, { Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
+import { markdownToPlainText } from '../utils/markdownToPlain';
 import { playText, stopSpeech } from '../services/speechPlayer';
 import { api } from '../services/api';
 import { IconSpeakerOff, IconHelpCircle } from './Icons';
@@ -124,7 +125,8 @@ const MessageActions = memo(
 
     const handleCopy = useCallback(async () => {
       try {
-        await Clipboard.setStringAsync(content);
+        // 复制纯文本：用户粘贴出来是正常文字，不再带 **/#/``` 等 Markdown 标记
+        await Clipboard.setStringAsync(markdownToPlainText(content));
         MyToast.show('已复制到剪贴板');
       } catch {
         MyToast.show('复制失败，请稍后重试');
