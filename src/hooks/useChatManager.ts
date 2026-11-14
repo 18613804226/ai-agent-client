@@ -1542,6 +1542,7 @@ export function useChatManager() {
     handleSelectChat,
     handleDeleteChat,
     handleSend,
+    appendMessage,
     handleStopGeneration,
     autoRead,
     setAutoRead,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Modal,
@@ -8,6 +8,12 @@ import {
   TouchableOpacity,
   View
 } from 'react-native'
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming
+} from 'react-native-reanimated'
 import { StreamingMarkdown } from '../markdown/StreamingMarkdown'
 import { webMarkdownRules } from '../markdown/markdownRules'
 import { createDynamicMarkdownStyles } from '../ChatMessageItem.styles'
@@ -39,6 +45,21 @@ export default function DocumentPanel({
     [theme]
   )
 
+  // 弹出动画：面板/弹层出现时从右侧滑入 + 淡入（宽屏右侧面板与窄屏全屏 Modal 共用）
+  const progress = useSharedValue(0)
+  useEffect(() => {
+    if (!visible) return
+    progress.value = 0
+    progress.value = withTiming(1, {
+      duration: 240,
+      easing: Easing.out(Easing.cubic)
+    })
+  }, [visible, doc?.id, progress])
+  const popStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateX: (1 - progress.value) * DOC_PANEL_WIDTH }]
+  }))
+
   const handleExport = async (kind: 'md' | 'docx') => {
     if (!doc || busy) return
     setBusy(kind)
@@ -58,10 +79,11 @@ export default function DocumentPanel({
   const subtle = theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
 
   const body = (
-    <View
+    <Animated.View
       style={[
         styles.panel,
         isPCWeb ? styles.panelDesktop : styles.panelModal,
+        popStyle,
         { backgroundColor: bg, borderColor: theme.border }
       ]}
     >
@@ -132,7 +154,7 @@ export default function DocumentPanel({
           .md 为原文；.docx 由 Markdown 转换，可在 Word 中继续编辑
         </Text>
       </View>
-    </View>
+    </Animated.View>
   )
 
   if (!isPCWeb) {

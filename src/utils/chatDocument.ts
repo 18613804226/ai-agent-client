@@ -125,7 +125,10 @@ function deriveTitle(text: string): string {
 export function extractDocument(
   content: string,
   requested?: DocFormat | null,
-  messageId = ''
+  messageId = '',
+  /** 面板只做「文档预览」：从模型回复里取文档时不要整篇兜底，
+   *  否则一句普通回答也会被塞进面板（正文才是对话，面板只是预览）。 */
+  options?: { allowWholeReply?: boolean }
 ): ChatDocument | null {
   if (!content || content.length < 20) return null
   const blocks = findFencedBlocks(content)
@@ -143,7 +146,11 @@ export function extractDocument(
       .filter((b) => !b.lang || /^(?:text|txt|plaintext|plain)$/i.test(b.lang))
       .sort((a, b) => b.body.length - a.body.length)[0]
     if (plain && plain.body.length >= 80) body = plain.body.trim()
-    else if (looksLikeDocument(content)) body = content.trim()
+    else if (
+      options?.allowWholeReply !== false &&
+      looksLikeDocument(content)
+    )
+      body = content.trim()
   }
 
   // 带明确文档围栏的，哪怕内容很短也算；整篇兜底要够长，

@@ -60,6 +60,7 @@ export default function ChatScreen() {
     handleSelectChat,
     handleDeleteChat,
     handleSend,
+    appendMessage,
     handleStopGeneration,
     autoRead, // 💡 新增
     toggleAutoRead,
@@ -158,6 +159,12 @@ export default function ChatScreen() {
         messages: currentChat?.messages ?? []
       })
       if (localDoc) {
+        // 右侧面板只是预览：用户输入与文档正文仍要落在聊天正文里，成为对话的一部分
+        appendMessage({
+          role: 'user',
+          content: (overrideText ?? inputText).trim()
+        })
+        appendMessage({ role: 'assistant', content: localDoc.content })
         openChatDocument(localDoc)
         setInputText('')
         clearImages()
@@ -188,6 +195,7 @@ export default function ChatScreen() {
     selectedAttachments,
     clearImages,
     handleSend,
+    appendMessage,
     inputText,
     setInputText,
     currentChat?.messages
@@ -246,7 +254,11 @@ export default function ChatScreen() {
       if (!aiId || lastAutoDocMsgRef.current === aiId) return
       const requested = wantsDocument(userText)
       if (!requested) return
-      const document = extractDocument(aiContent, requested, aiId)
+      // 面板只预览模型真正产出的文档（```markdown / ```docx 围栏）；
+      // 普通回答留在聊天正文，不再整篇塞进右侧面板
+      const document = extractDocument(aiContent, requested, aiId, {
+        allowWholeReply: false
+      })
       if (!document) return
       lastAutoDocMsgRef.current = aiId
       openChatDocument(document)
