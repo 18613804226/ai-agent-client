@@ -8,6 +8,7 @@ import ImageViewer from './ImageViewer'
 import FilePreviewer from './FilePreviewer'
 import type { ChatAreaProps } from '../types/chat'
 import type { Message } from '../types/chat'
+import { wantsDocument } from '../utils/chatDocument'
 import {
   FLASHLIST_MVCP,
   createRenderCell
@@ -225,9 +226,20 @@ export default function ChatArea({
   const renderItem = useCallback(
     ({ item, index, extraData }: any) => {
       const extra = extraData ?? listExtraData
+      // 上一条用户消息决定文档卡片的格式：用户要 Word 时卡片显示 .docx，
+      // 要 Markdown 时显示 .md（模型常把 Word 需求也写成 ```markdown 围栏）。
+      let docRequested: ReturnType<typeof wantsDocument> = null
+      for (let i = index - 1; i >= 0; i--) {
+        const prev = messages[i]
+        if (prev?.role === 'user') {
+          docRequested = wantsDocument(prev.content ?? '')
+          break
+        }
+      }
       return (
         <ChatMessageItem
           item={item}
+          docRequested={docRequested}
           theme={theme}
           isMobile={isMobile}
           isStreaming={!!item.isStreaming}
@@ -257,6 +269,7 @@ export default function ChatArea({
       theme,
       isMobile,
       listExtraData,
+      messages,
       handlePlayingChange,
       openPreview,
       openFilePreview,

@@ -26,7 +26,7 @@ import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageIte
 import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
-import { extractDocument, openChatDocument, stripDocumentFences } from '../utils/chatDocument'
+import { extractDocument, openChatDocument, stripDocumentFences, type DocFormat } from '../utils/chatDocument'
 
 /** 耗时格式化：<1s 显示 ms，<60s 显示 X.Xs，否则 m:ss */
 function formatDurationMs(ms: number): string {
@@ -49,6 +49,7 @@ const ChatMessageItem = memo(
     isLast = false,
     isPlaying = false,
     setPlayingMsgId,
+    docRequested = null,
     onPreviewImage,
     onPreviewFile,
     textSelectable = true,
@@ -66,6 +67,8 @@ const ChatMessageItem = memo(
     /** 本条消息是否正在播放（由父组件根据 playingMsgId 计算） */
     isPlaying?: boolean
     setPlayingMsgId: (id: string | null) => void
+    /** 上一条用户消息要的文档格式：Word / Markdown，决定卡片下载后缀 */
+    docRequested?: DocFormat | null
     onPreviewImage?: (images: string[], index: number) => void
     /** 点气泡附件行 → 应用内真预览（与图片 onPreviewImage 同款交互） */
     onPreviewFile?: (att: PickedAttachment) => void
@@ -260,9 +263,9 @@ const ChatMessageItem = memo(
     const docEntry = useMemo(
       () =>
         !isUser && !isStreaming && Platform.OS === 'web'
-          ? extractDocument(item.content, undefined, item.id)
+          ? extractDocument(item.content, docRequested, item.id)
           : null,
-      [isUser, isStreaming, item.content, item.id]
+      [isUser, isStreaming, item.content, item.id, docRequested]
     )
 
     // 现读视口宽度：桌面 Web 才有空间展开完整统计（并允许小字折成两行）
@@ -776,7 +779,9 @@ const ChatMessageItem = memo(
                         { color: theme.textMuted }
                       ]}
                     >
-                      {'文档 · 在右侧预览，可下载 MD / DOCX'}
+                      {docEntry.format === 'doc'
+                        ? 'Word 文档 · 在右侧预览，可下载 .docx'
+                        : 'Markdown 文档 · 在右侧预览，可下载 .md'}
                     </Text>
                   </View>
                   <Text
