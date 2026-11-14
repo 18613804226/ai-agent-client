@@ -22,6 +22,8 @@ import { createDynamicMarkdownStyles } from '../ChatMessageItem.styles'
 import { MyToast } from '../GlobalToast'
 import type { ThemeType } from '../../types/chat'
 import {
+  DOC_PANEL_MAX_WIDTH,
+  DOC_PANEL_MIN_WIDTH,
   DOC_PANEL_WIDTH,
   closeChatDocument,
   setChatDocumentWidth,
@@ -53,10 +55,15 @@ export default function DocumentPanel({
     [theme, width]
   )
 
-  // 拖左边缘调宽度：拖动起点宽度 + dx 反向（向左拖 = 变宽）
+  // 拖左边缘调宽度：拖动起点宽度 + dx 反向（向左拖 = 变宽）。
+  // ⚠️ 拖动过程只改本地 previewWidth（面板自身），聊天区 inset 不动：
+  //    每帧都改全局宽度会让聊天列表/文档页跟着重排，Web 上 FlashList 来不及回收
+  //    单元格 → 文字重影、拖拽发飘；松手时才提交一次真实宽度。
   const widthRef = useRef(width)
   widthRef.current = width
   const dragStartRef = useRef(width)
+  const previewWidthRef = useRef<number | null>(null)
+  const [previewWidth, setPreviewWidth] = useState<number | null>(null)
   const resizeResponder = useMemo(
     () =>
       PanResponder.create({
@@ -67,9 +74,47 @@ export default function DocumentPanel({
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
           dragStartRef.current = widthRef.current
+          // 拖动期间禁止文本选中：否则指针扫过正文会连带选中聊天里的文字
+          try {
+            const d = (globalThis as any).document
+            if (d?.body) {
+              d.body.style.userSelect = 'none'
+              d.body.style.webkitUserSelect = 'none'
+            }
+          } catch {}
         },
         onPanResponderMove: (_e, g) => {
-          setChatDocumentWidth(dragStartRef.current - g.dx)
+          const next = Math.min(
+            DOC_PANEL_MAX_WIDTH,
+            Math.max(DOC_PANEL_MIN_WIDTH, Math.round(dragStartRef.current - g.dx))
+          )
+          previewWidthRef.current = next
+          setPreviewWidth(next)
+        },
+        onPanResponderRelease: () => {
+          if (previewWidthRef.current != null) {
+            setChatDocumentWidth(previewWidthRef.current)
+          }
+          previewWidthRef.current = null
+          setPreviewWidth(null)
+          try {
+            const d = (globalThis as any).document
+            if (d?.body) {
+              d.body.style.userSelect = ''
+              d.body.style.webkitUserSelect = ''
+            }
+          } catch {}
+        },
+        onPanResponderTerminate: () => {
+          previewWidthRef.current = null
+          setPreviewWidth(null)
+          try {
+            const d = (globalThis as any).document
+            if (d?.body) {
+              d.body.style.userSelect = ''
+              d.body.style.webkitUserSelect = ''
+            }
+          } catch {}
         }
       }),
     []
@@ -204,7 +249,7 @@ export default function DocumentPanel({
       style={[
         styles.panel,
         isPCWeb ? styles.panelDesktop : styles.panelModal,
-        isPCWeb ? { width } : null,
+        isPCWeb ? { width: previewWidth ?? width } : null,
         popStyle,
         { backgroundColor: bg, borderColor: theme.border }
       ]}
