@@ -29,6 +29,15 @@ import { useImagePicker } from '../../src/hooks/useImagePicker'
 import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts' // 💡 全局 Context（与 app/_layout 共用）
 import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme'
 import CustomActionSheet from '../../src/components/CustomActionSheet'
+import DocumentPanel from '../../src/components/chatDocument/DocumentPanel'
+import {
+  DOC_PANEL_WIDTH,
+  clearChatDocument,
+  extractDocument,
+  openChatDocument,
+  useChatDocumentState,
+  wantsDocument
+} from '../../src/utils/chatDocument'
 export default function ChatScreen() {
   const insets = useSafeAreaInsets()
   const navigation = useNavigation()
@@ -163,6 +172,62 @@ export default function ChatScreen() {
   const screenWidth = Dimensions.get('window').width
   const isPCWeb = Platform.OS === 'web' && isPCWebWidth(screenWidth) // 电脑端网页
   const isMobileWeb = Platform.OS === 'web' && isMobileWebWidth(screenWidth) // 手机 H5 网页
+
+  // 右侧文档面板：宽屏 Web 打开时，聊天区与悬浮输入栏同步收缩，给面板让位
+  const { doc, visible } = useChatDocumentState()
+  const docPanelOpen = Platform.OS === 'web' && isPCWeb && visible && !!doc
+  const panelInset = docPanelOpen ? { right: DOC_PANEL_WIDTH } : null
+
+  const wasGeneratingRef = useRef(false)
+  const lastAutoDocMsgRef = useRef<string | null>(null)
+  // 生成结束那一刻 messages 可能还在收敛（流合并 / 打字机），延迟后从 ref 取最新值
+  const messagesRef = useRef(currentChat?.messages ?? [])
+  messagesRef.current = currentChat?.messages ?? []
+
+  // 切会话：面板连内容一起清掉，避免显示上一会话的文档
+  useEffect(() => {
+    clearChatDocument()
+    lastAutoDocMsgRef.current = null
+  }, [activeId])
+
+  // 用户明确要求「整理成 md / doc」时，本轮回复落定后自动把文档推到右侧。
+  // 只在「生成结束」这一瞬触发：切会话 / 翻历史不会误弹。
+  useEffect(() => {
+    const justFinished = wasGeneratingRef.current && !isGenerating
+    wasGeneratingRef.current = isGenerating
+    if (!justFinished || Platform.OS !== 'web' || isHistoryLoading) return
+    const timer = setTimeout(() => {
+      const msgs = messagesRef.current
+      let aiId = ''
+      let aiContent = ''
+      let userText = ''
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i]
+        if (!aiId) {
+          if (
+            m.role === 'assistant' &&
+            !m.systemNote &&
+            m.content &&
+            m.content !== '...'
+          ) {
+            aiId = m.id
+            aiContent = m.content
+          }
+        } else if (m.role === 'user' && m.content) {
+          userText = m.content
+          break
+        }
+      }
+      if (!aiId || lastAutoDocMsgRef.current === aiId) return
+      const requested = wantsDocument(userText)
+      if (!requested) return
+      const document = extractDocument(aiContent, requested, aiId)
+      if (!document) return
+      lastAutoDocMsgRef.current = aiId
+      openChatDocument(document)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [isGenerating, isHistoryLoading, activeId])
 
   // 💡 针对三端各自配置不同的悬浮菜单坐标样式
   const sheetPositionStyle = isPCWeb
@@ -302,7 +367,7 @@ export default function ChatScreen() {
             style={[styles.chatMainWrapper, keyboardHeightStyle]}
           >
             <View
-              style={styles.chatBlurTarget}
+              style={[styles.chatBlurTarget, panelInset]}
               pointerEvents="box-none"
             >
               {/* 不透明底色 + 科幻风动态光晕背景：垫底一层，消息区/输入栏盖在上面 */}
@@ -367,7 +432,10 @@ export default function ChatScreen() {
               </View>
             </View>
             {/* 悬浮输入栏层：绝对覆盖在聊天区之上，box-none 让间隙的触摸穿透给消息列表 */}
-            <View style={styles.chatOverlayLayer} pointerEvents="box-none">
+            <View
+              style={[styles.chatOverlayLayer, panelInset]}
+              pointerEvents="box-none"
+            >
               <View
                 style={styles.chatCenterContainer}
                 pointerEvents="box-none"
@@ -396,6 +464,10 @@ export default function ChatScreen() {
                 />
               </View>
             </View>
+            {/* 桌面 Web 常驻右侧；窄屏 Web 由组件自己退化成 Modal */}
+            {Platform.OS === 'web' && (
+              <DocumentPanel theme={theme} isPCWeb={isPCWeb} />
+            )}
             </Reanimated.View>
         </View>
       </View>

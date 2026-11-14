@@ -1,0 +1,209 @@
+import React, { useMemo, useState } from 'react'
+import {
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native'
+import { StreamingMarkdown } from '../markdown/StreamingMarkdown'
+import { webMarkdownRules } from '../markdown/markdownRules'
+import { createDynamicMarkdownStyles } from '../ChatMessageItem.styles'
+import { MyToast } from '../GlobalToast'
+import type { ThemeType } from '../../types/chat'
+import {
+  DOC_PANEL_WIDTH,
+  closeChatDocument,
+  useChatDocumentState
+} from '../../utils/chatDocument'
+import { exportMarkdown, exportDocx } from './docDownload'
+
+/**
+ * 文档面板：宽屏 Web 常驻在聊天区右侧（聊天区/输入栏由主页面同步收缩），
+ * 窄屏 Web 退化成全屏 Modal。内容就是本轮回复里抽出来的 Markdown 原文，
+ * .md 原样下载，.docx 由 md 转换生成。
+ */
+export default function DocumentPanel({
+  theme,
+  isPCWeb
+}: {
+  theme: ThemeType
+  isPCWeb: boolean
+}) {
+  const { doc, visible } = useChatDocumentState()
+  const [busy, setBusy] = useState<'md' | 'docx' | null>(null)
+  const mdStyles = useMemo(
+    () => createDynamicMarkdownStyles(theme, DOC_PANEL_WIDTH - 48),
+    [theme]
+  )
+
+  const handleExport = async (kind: 'md' | 'docx') => {
+    if (!doc || busy) return
+    setBusy(kind)
+    try {
+      if (kind === 'md') await exportMarkdown(doc)
+      else await exportDocx(doc)
+    } catch (e: any) {
+      MyToast.show(e?.message || '导出失败，请重试')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!doc) return null
+
+  const bg = theme.isDark ? '#0E0F11' : '#FFFFFF'
+  const subtle = theme.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
+
+  const body = (
+    <View
+      style={[
+        styles.panel,
+        isPCWeb ? styles.panelDesktop : styles.panelModal,
+        { backgroundColor: bg, borderColor: theme.border }
+      ]}
+    >
+      <View style={[styles.header, { borderColor: theme.border }]}>
+        <Text style={styles.headerIcon}>📄</Text>
+        <View style={styles.headerText}>
+          <Text numberOfLines={1} style={[styles.title, { color: theme.textMain }]}>
+            {doc.title}
+          </Text>
+          <Text style={[styles.subtitle, { color: theme.textMuted }]}>
+            {doc.format === 'doc' ? 'Word 文档' : 'Markdown 文档'} · 来自本轮回复
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={closeChatDocument}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[styles.closeBtn, { backgroundColor: subtle }]}
+        >
+          <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.actions}>
+        <TouchableOpacity
+          onPress={() => handleExport('md')}
+          disabled={!!busy}
+          style={[styles.actionBtn, { borderColor: theme.border }]}
+        >
+          {busy === 'md' ? (
+            <ActivityIndicator size="small" color={theme.textMain} />
+          ) : (
+            <Text style={[styles.actionText, { color: theme.textMain }]}>
+              下载 .md
+            </Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => handleExport('docx')}
+          disabled={!!busy}
+          style={[styles.actionBtn, { borderColor: theme.border }]}
+        >
+          {busy === 'docx' ? (
+            <ActivityIndicator size="small" color={theme.textMain} />
+          ) : (
+            <Text style={[styles.actionText, { color: theme.textMain }]}>
+              下载 .docx
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator
+      >
+        <StreamingMarkdown
+          content={doc.content}
+          streaming={false}
+          style={mdStyles}
+          rules={webMarkdownRules}
+          selectable
+        />
+      </ScrollView>
+
+      <View style={[styles.footer, { borderColor: theme.border }]}>
+        <Text style={[styles.footerText, { color: theme.textMuted }]}>
+          .md 为原文；.docx 由 Markdown 转换，可在 Word 中继续编辑
+        </Text>
+      </View>
+    </View>
+  )
+
+  if (!isPCWeb) {
+    return (
+      <Modal
+        visible={visible}
+        animationType="slide"
+        onRequestClose={closeChatDocument}
+      >
+        {body}
+      </Modal>
+    )
+  }
+  return visible ? body : null
+}
+
+const styles = StyleSheet.create({
+  panel: {
+    borderLeftWidth: 1,
+    overflow: 'hidden'
+  },
+  panelDesktop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: DOC_PANEL_WIDTH
+  },
+  panelModal: {
+    flex: 1
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1
+  },
+  headerIcon: { fontSize: 20, marginRight: 10 },
+  headerText: { flex: 1 },
+  title: { fontSize: 14, fontWeight: '600' },
+  subtitle: { fontSize: 11, marginTop: 2 },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  closeText: { fontSize: 14 },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12
+  },
+  actionBtn: {
+    flex: 1,
+    height: 34,
+    borderWidth: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  actionText: { fontSize: 12, fontWeight: '600' },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 24, paddingBottom: 32 },
+  footer: {
+    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  footerText: { fontSize: 11, lineHeight: 16 }
+})

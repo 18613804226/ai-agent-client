@@ -26,6 +26,7 @@ import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageIte
 import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
+import { extractDocument, openChatDocument } from '../utils/chatDocument'
 
 /** 耗时格式化：<1s 显示 ms，<60s 显示 X.Xs，否则 m:ss */
 function formatDurationMs(ms: number): string {
@@ -244,6 +245,16 @@ const ChatMessageItem = memo(
         ? createWebMarkdownRules(citations, openSourceUrl)
         : createMarkdownRules(textSelectable, citations, openSourceUrl)
     }, [isStreaming, citations, textSelectable])
+
+    // 带 ```markdown / ```docx 标记的回复 → 气泡里挂一张可点开的文档卡片。
+    // 只在 Web 且吐字结束后算：普通回答（哪怕带代码框）不会冒出入口。
+    const docEntry = useMemo(
+      () =>
+        !isUser && !isStreaming && Platform.OS === 'web'
+          ? extractDocument(item.content, undefined, item.id)
+          : null,
+      [isUser, isStreaming, item.content, item.id]
+    )
 
     // 现读视口宽度：桌面 Web 才有空间展开完整统计（并允许小字折成两行）
     const compactMeta =
@@ -722,6 +733,52 @@ const ChatMessageItem = memo(
                     rules={markdownRules}
                   />
                 </View>
+              )}
+
+              {/* 文档卡片：模型按 ```markdown / ```docx 输出的文档，点开右侧面板看全文并下载 */}
+              {docEntry && (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() => openChatDocument(docEntry)}
+                  style={[
+                    chatMessageStyles.docCard,
+                    {
+                      borderColor: theme.border,
+                      backgroundColor: theme.isDark
+                        ? 'rgba(255,255,255,0.05)'
+                        : 'rgba(0,0,0,0.03)'
+                    }
+                  ]}
+                >
+                  <Text style={chatMessageStyles.docCardIcon}>📄</Text>
+                  <View style={chatMessageStyles.docCardText}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        chatMessageStyles.docCardTitle,
+                        { color: theme.textMain }
+                      ]}
+                    >
+                      {docEntry.title}
+                    </Text>
+                    <Text
+                      style={[
+                        chatMessageStyles.docCardHint,
+                        { color: theme.textMuted }
+                      ]}
+                    >
+                      {docEntry.format === 'doc' ? 'Word' : 'Markdown'} · 在右侧查看，可下载 MD / DOCX
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      chatMessageStyles.docCardArrow,
+                      { color: theme.textMuted }
+                    ]}
+                  >
+                    ›
+                  </Text>
+                </TouchableOpacity>
               )}
 
               {/* 来源列表：正文角标之外的兜底入口。只在吐字结束后挂载，

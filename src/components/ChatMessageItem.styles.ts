@@ -112,6 +112,21 @@ export const chatMessageStyles = StyleSheet.create({
     fontStyle: 'italic',
     opacity: 0.6
   },
+  /** AI 回复里抽出来的文档：点开右侧文档面板 */
+  docCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderRadius: 10
+  },
+  docCardIcon: { fontSize: 18, marginRight: 10 },
+  docCardText: { flex: 1 },
+  docCardTitle: { fontSize: 13, fontWeight: '600' },
+  docCardHint: { fontSize: 11, marginTop: 2 },
+  docCardArrow: { fontSize: 16, marginLeft: 8 },
 })
 
 /**
