@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 
-/** 桌面 Web 右侧文档面板宽度（聊天区/输入栏会同步收缩这么多） */
+/** 桌面 Web 右侧文档面板默认宽度（聊天区/输入栏会同步收缩这么多） */
 export const DOC_PANEL_WIDTH = 420
+/** 拖拽调整宽度的上下限 */
+export const DOC_PANEL_MIN_WIDTH = 320
+export const DOC_PANEL_MAX_WIDTH = 760
 
 export type DocFormat = 'md' | 'doc'
 
@@ -17,9 +20,10 @@ export interface ChatDocument {
   sourceMessageId: string
 }
 
-const MD_WORD = /(?:markdown|\.md\b|md\s*文件|md\s*格式)/gi
+const MD_WORD = /(?:markdown|\.md\b|\bmd\b|md\s*文件|md\s*格式)/gi
 const DOC_WORD = /(?:word|\.docx?\b|docx\s*文件|文档)/gi
-const ACTION = /(整理|生成|导出|转成|转换为|输出|做成|写成|保存|下载|给我|来一份|制作|写一份|转一份)/
+const ACTION =
+  /(整理|生成|导出|转成|转换为|输出|做成|写成|保存|下载|给我|来一份|制作|写一份|转一份|我要|我想|想要|需要)/
 const DOC_LANG = /^(?:markdown|md|docx|doc|word|document)$/i
 
 /**
@@ -140,7 +144,11 @@ export function extractDocument(
   if (marked.length) {
     const best = marked.reduce((a, b) => (b.body.length > a.body.length ? b : a))
     body = best.body.trim()
-    format = /^(?:docx|doc|word|document)$/i.test(best.lang) ? 'doc' : 'md'
+    // 用户明确要的格式优先：模型常把 Word 需求也写成 ```markdown，
+    // 这时标注成「Word 文档」（.docx 本来就由 md 转换生成）
+    format =
+      requested ||
+      (/^(?:docx|doc|word|document)$/i.test(best.lang) ? 'doc' : 'md')
   } else if (requested) {
     const plain = blocks
       .filter((b) => !b.lang || /^(?:text|txt|plaintext|plain)$/i.test(b.lang))
@@ -167,6 +175,42 @@ export function extractDocument(
 }
 
 /**
+ * 把回复里的文档围栏（```markdown / ```docx）剥成普通正文，交给聊天正文渲染。
+ * 右侧面板只做预览，正文里不该出现围栏源码；没有文档围栏时原样返回。
+ * 闭合行从全文末尾往前找（文档里可能嵌着代码块），未闭合的围栏保持原样。
+ */
+export function stripDocumentFences(content: string): string {
+  const lines = content.split('\n')
+  const out: string[] = []
+  let i = 0
+  while (i < lines.length) {
+    const open = lines[i].trim().match(/^(`{3,})([A-Za-z0-9_-]*)\s*$/)
+    if (!open || !DOC_LANG.test(open[2])) {
+      out.push(lines[i])
+      i++
+      continue
+    }
+    const fenceLen = open[1].length
+    let end = -1
+    for (let j = lines.length - 1; j > i; j--) {
+      const close = lines[j].trim().match(/^(`{3,})\s*$/)
+      if (close && close[1].length >= fenceLen) {
+        end = j
+        break
+      }
+    }
+    if (end < 0) {
+      out.push(lines[i])
+      i++
+      continue
+    }
+    out.push(lines.slice(i + 1, end).join('\n'))
+    i = end + 1
+  }
+  return out.join('\n')
+}
+
+/**
  * 本地文档转换（C）：用户说「整理成 word / md」时不再请求模型，
  * 直接把素材（TXT 附件 / 上一轮回复）变成可预览、可下载的文档。
  * 与 extractDocument 的区别是不依赖模型输出、没有 messageId 来源。
@@ -189,8 +233,13 @@ export function createLocalDocument(
 
 // ── React 树外的轻量状态：ChatMessageItem / 右侧面板 / 主页面都能读写，
 //    不用给 ChatArea → createRenderCell → ChatMessageItem 层层透传回调。
-type DocState = { doc: ChatDocument | null; visible: boolean }
-let state: DocState = { doc: null, visible: false }
+type DocState = {
+  doc: ChatDocument | null
+  visible: boolean
+  /** 面板宽度（桌面 Web 可拖左边缘调整）；随会话保留 */
+  width: number
+}
+let state: DocState = { doc: null, visible: false, width: DOC_PANEL_WIDTH }
 const listeners = new Set<() => void>()
 
 function emit() {
@@ -198,7 +247,7 @@ function emit() {
 }
 
 export function openChatDocument(doc: ChatDocument): void {
-  state = { doc, visible: true }
+  state = { ...state, doc, visible: true }
   emit()
 }
 
@@ -208,10 +257,21 @@ export function closeChatDocument(): void {
   emit()
 }
 
-/** 切会话：连内容一起清，避免上个会话的文档留在面板里 */
+/** 切会话：连内容一起清，避免上个会话的文档留在面板里（宽度保留） */
 export function clearChatDocument(): void {
   if (!state.doc && !state.visible) return
-  state = { doc: null, visible: false }
+  state = { ...state, doc: null, visible: false }
+  emit()
+}
+
+/** 拖拽左边缘调整面板宽度：夹在 [MIN, MAX] 之间，聊天区同步收缩 */
+export function setChatDocumentWidth(width: number): void {
+  const next = Math.min(
+    DOC_PANEL_MAX_WIDTH,
+    Math.max(DOC_PANEL_MIN_WIDTH, Math.round(width))
+  )
+  if (next === state.width) return
+  state = { ...state, width: next }
   emit()
 }
 

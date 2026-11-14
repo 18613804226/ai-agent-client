@@ -32,7 +32,6 @@ import CustomActionSheet from '../../src/components/CustomActionSheet'
 import DocumentPanel from '../../src/components/chatDocument/DocumentPanel'
 import { createDocumentFromLocalSend } from '../../src/components/chatDocument/localDocument'
 import {
-  DOC_PANEL_WIDTH,
   clearChatDocument,
   extractDocument,
   openChatDocument,
@@ -207,9 +206,10 @@ export default function ChatScreen() {
   const isMobileWeb = Platform.OS === 'web' && isMobileWebWidth(screenWidth) // 手机 H5 网页
 
   // 右侧文档面板：宽屏 Web 打开时，聊天区与悬浮输入栏同步收缩，给面板让位
-  const { doc, visible } = useChatDocumentState()
+  // （宽度可拖拽调整，跟随面板状态实时变化）
+  const { doc, visible, width: docPanelWidth } = useChatDocumentState()
   const docPanelOpen = Platform.OS === 'web' && isPCWeb && visible && !!doc
-  const panelInset = docPanelOpen ? { right: DOC_PANEL_WIDTH } : null
+  const panelInset = docPanelOpen ? { right: docPanelWidth } : null
 
   const wasGeneratingRef = useRef(false)
   const lastAutoDocMsgRef = useRef<string | null>(null)

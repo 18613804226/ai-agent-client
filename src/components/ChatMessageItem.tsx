@@ -26,7 +26,7 @@ import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageIte
 import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
-import { extractDocument, openChatDocument } from '../utils/chatDocument'
+import { extractDocument, openChatDocument, stripDocumentFences } from '../utils/chatDocument'
 
 /** 耗时格式化：<1s 显示 ms，<60s 显示 X.Xs，否则 m:ss */
 function formatDurationMs(ms: number): string {
@@ -208,17 +208,26 @@ const ChatMessageItem = memo(
         : null;
 
     /**
-     * 最终渲染前的两件归一化：
+     * 最终渲染前的归一化：
+     * 0. 回复里的文档围栏（```markdown / ```docx）剥成普通正文，按正常 markdown
+     *    渲染标题/列表/表格；围栏源码与下载交给右侧面板（面板只做预览）。
      * 1. 剥掉末尾的空白/换行。模型结尾常带 \n：流式尾巴是纯文本，末尾换行不产生
      *    可见空行；但切到最终 Markdown 后，末尾 \n 会被解析成一个额外空行 →
      *    气泡底部多出一段空白。剥掉它，吐完那一刻与流式期一致、不留空白。
      * 2. 修掉 `** xx **`（定界符内侧带空格）→ `**xx**`：CommonMark 规定闭定界符前
      *    不能是空白，否则整段当字面量、加粗不生效，而模型很爱输出带空格版。
      */
+    const docBody = useMemo(
+      () =>
+        isUser || Platform.OS !== 'web'
+          ? null
+          : stripDocumentFences(item.content || ''),
+      [isUser, item.content]
+    )
     const renderContent =
       isStreaming || !item.content
         ? item.content || ''
-        : normalizeInlineEmphasis(item.content.trimEnd())
+        : normalizeInlineEmphasis((docBody ?? item.content).trimEnd())
 
     /**
      * [n] 角标来源映射。
@@ -767,7 +776,7 @@ const ChatMessageItem = memo(
                         { color: theme.textMuted }
                       ]}
                     >
-                      {docEntry.format === 'doc' ? 'Word' : 'Markdown'} · 在右侧查看，可下载 MD / DOCX
+                      {'文档 · 在右侧预览，可下载 MD / DOCX'}
                     </Text>
                   </View>
                   <Text

@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Modal,
+  PanResponder,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,6 +24,7 @@ import type { ThemeType } from '../../types/chat'
 import {
   DOC_PANEL_WIDTH,
   closeChatDocument,
+  setChatDocumentWidth,
   useChatDocumentState
 } from '../../utils/chatDocument'
 import { exportMarkdown, exportDocx } from './docDownload'
@@ -38,11 +41,30 @@ export default function DocumentPanel({
   theme: ThemeType
   isPCWeb: boolean
 }) {
-  const { doc, visible } = useChatDocumentState()
+  const { doc, visible, width } = useChatDocumentState()
   const [busy, setBusy] = useState<'md' | 'docx' | null>(null)
   const mdStyles = useMemo(
-    () => createDynamicMarkdownStyles(theme, DOC_PANEL_WIDTH - 48),
-    [theme]
+    () => createDynamicMarkdownStyles(theme, width - 48),
+    [theme, width]
+  )
+
+  // 拖左边缘调宽度：拖动起点宽度 + dx 反向（向左拖 = 变宽）
+  const widthRef = useRef(width)
+  widthRef.current = width
+  const dragStartRef = useRef(width)
+  const resizeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          dragStartRef.current = widthRef.current
+        },
+        onPanResponderMove: (_e, g) => {
+          setChatDocumentWidth(dragStartRef.current - g.dx)
+        }
+      }),
+    []
   )
 
   // 弹出动画：面板/弹层出现时从右侧滑入 + 淡入（宽屏右侧面板与窄屏全屏 Modal 共用）
@@ -57,7 +79,7 @@ export default function DocumentPanel({
   }, [visible, doc?.id, progress])
   const popStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateX: (1 - progress.value) * DOC_PANEL_WIDTH }]
+    transform: [{ translateX: (1 - progress.value) * width }]
   }))
 
   const handleExport = async (kind: 'md' | 'docx') => {
@@ -83,10 +105,17 @@ export default function DocumentPanel({
       style={[
         styles.panel,
         isPCWeb ? styles.panelDesktop : styles.panelModal,
+        isPCWeb ? { width } : null,
         popStyle,
         { backgroundColor: bg, borderColor: theme.border }
       ]}
     >
+      {/* 拖拽条：桌面宽屏下拖左边缘调整面板宽度，聊天区同步收缩 */}
+      {isPCWeb && (
+        <View {...resizeResponder.panHandlers} style={styles.resizeHandle}>
+          <View style={[styles.resizeLine, { backgroundColor: theme.border }]} />
+        </View>
+      )}
       <View style={[styles.header, { borderColor: theme.border }]}>
         <Text style={styles.headerIcon}>📄</Text>
         <View style={styles.headerText}>
@@ -106,30 +135,19 @@ export default function DocumentPanel({
         </TouchableOpacity>
       </View>
 
+      {/* 用户要什么格式就给什么格式：只露出目标格式的下载按钮
+          （没指定时 doc.format 由模型输出的围栏语言决定） */}
       <View style={styles.actions}>
         <TouchableOpacity
-          onPress={() => handleExport('md')}
+          onPress={() => handleExport(doc.format === 'doc' ? 'docx' : 'md')}
           disabled={!!busy}
           style={[styles.actionBtn, { borderColor: theme.border }]}
         >
-          {busy === 'md' ? (
+          {busy ? (
             <ActivityIndicator size="small" color={theme.textMain} />
           ) : (
             <Text style={[styles.actionText, { color: theme.textMain }]}>
-              下载 .md
-            </Text>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => handleExport('docx')}
-          disabled={!!busy}
-          style={[styles.actionBtn, { borderColor: theme.border }]}
-        >
-          {busy === 'docx' ? (
-            <ActivityIndicator size="small" color={theme.textMain} />
-          ) : (
-            <Text style={[styles.actionText, { color: theme.textMain }]}>
-              下载 .docx
+              {doc.format === 'doc' ? '下载 .docx' : '下载 .md'}
             </Text>
           )}
         </TouchableOpacity>
@@ -151,7 +169,9 @@ export default function DocumentPanel({
 
       <View style={[styles.footer, { borderColor: theme.border }]}>
         <Text style={[styles.footerText, { color: theme.textMuted }]}>
-          .md 为原文；.docx 由 Markdown 转换，可在 Word 中继续编辑
+          {doc.format === 'doc'
+            ? '.docx 由 Markdown 转换，可在 Word 中继续编辑'
+            : '.md 为原始 Markdown，可在任意编辑器继续编辑'}
         </Text>
       </View>
     </Animated.View>
@@ -185,6 +205,24 @@ const styles = StyleSheet.create({
   },
   panelModal: {
     flex: 1
+  },
+  resizeHandle: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 8,
+    zIndex: 3,
+    justifyContent: 'center',
+    ...(Platform.OS === 'web' ? { cursor: 'col-resize' as any } : {})
+  },
+  resizeLine: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    opacity: 0.7
   },
   header: {
     flexDirection: 'row',
