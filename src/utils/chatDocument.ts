@@ -178,7 +178,10 @@ export function extractDocument(
  * 右侧面板只做预览，正文里不该出现围栏源码；没有文档围栏时原样返回。
  * 闭合行从全文末尾往前找（文档里可能嵌着代码块），未闭合的围栏保持原样。
  */
-export function stripDocumentFences(content: string): string {
+export function stripDocumentFences(
+  content: string,
+  options?: { streaming?: boolean }
+): string {
   const lines = content.split('\n')
   const out: string[] = []
   let i = 0
@@ -199,6 +202,12 @@ export function stripDocumentFences(content: string): string {
       }
     }
     if (end < 0) {
+      // 流式输出中闭合围栏还没吐出来：先剥掉开围栏、把余下内容当正文渲染，
+      // 否则整篇文档会被渲染成黑色代码块，吐完才突然变正常。
+      if (options?.streaming) {
+        out.push(lines.slice(i + 1).join('\n'))
+        break
+      }
       out.push(lines[i])
       i++
       continue

@@ -229,7 +229,11 @@ const ChatMessageItem = memo(
     )
     const renderContent =
       isStreaming || !item.content
-        ? item.content || ''
+        ? !isUser && Platform.OS === 'web'
+          ? // 流式期同样剥掉文档围栏（含未闭合的开围栏），
+            // 避免吐字过程中整篇文档被渲染成黑色代码块
+            stripDocumentFences(item.content || '', { streaming: true })
+          : item.content || ''
         : normalizeInlineEmphasis((docBody ?? item.content).trimEnd())
 
     /**
