@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
 /** 桌面 Web 右侧文档面板默认宽度（聊天区/输入栏会同步收缩这么多） */
-export const DOC_PANEL_WIDTH = 420
+export const DOC_PANEL_WIDTH = 520
 /** 拖拽调整宽度的上下限 */
 export const DOC_PANEL_MIN_WIDTH = 320
-export const DOC_PANEL_MAX_WIDTH = 760
+export const DOC_PANEL_MAX_WIDTH = 960
 
 export type DocFormat = 'md' | 'doc'
 
@@ -142,7 +142,9 @@ export function extractDocument(
   let format: DocFormat = requested || 'md'
 
   if (marked.length) {
-    const best = marked.reduce((a, b) => (b.body.length > a.body.length ? b : a))
+    const best = marked.reduce((a, b) =>
+      b.body.length > a.body.length ? b : a
+    )
     body = best.body.trim()
     // 用户明确要的格式优先：模型常把 Word 需求也写成 ```markdown，
     // 这时标注成「Word 文档」（.docx 本来就由 md 转换生成）
@@ -154,10 +156,7 @@ export function extractDocument(
       .filter((b) => !b.lang || /^(?:text|txt|plaintext|plain)$/i.test(b.lang))
       .sort((a, b) => b.body.length - a.body.length)[0]
     if (plain && plain.body.length >= 80) body = plain.body.trim()
-    else if (
-      options?.allowWholeReply !== false &&
-      looksLikeDocument(content)
-    )
+    else if (options?.allowWholeReply !== false && looksLikeDocument(content))
       body = content.trim()
   }
 

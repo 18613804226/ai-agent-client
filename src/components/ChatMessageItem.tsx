@@ -772,6 +772,7 @@ const ChatMessageItem = memo(
                       ]}
                     >
                       {docEntry.title}
+                      {docEntry.format === 'doc' ? '.docx' : '.md'}
                     </Text>
                     <Text
                       style={[
@@ -780,8 +781,8 @@ const ChatMessageItem = memo(
                       ]}
                     >
                       {docEntry.format === 'doc'
-                        ? 'Word 文档 · 在右侧预览，可下载 .docx'
-                        : 'Markdown 文档 · 在右侧预览，可下载 .md'}
+                        ? 'Word 文档 · 在右侧预览'
+                        : 'Markdown 文档 · 在右侧预览'}
                     </Text>
                   </View>
                   <Text

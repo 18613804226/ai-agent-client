@@ -116,7 +116,17 @@ export default function DocumentPanel({
           width: 100% !important;
           min-width: 0 !important;
           margin: 0 0 16px 0 !important;
+          /* Word 默认 1 英寸页边距在窄面板里像一大块内边距，收窄到常规留白 */
+          padding: 20px !important;
           box-shadow: none !important;
+        }
+        #doc-scroll .docx-wrapper > section.docx h1,
+        #doc-scroll .docx-wrapper > section.docx h2,
+        #doc-scroll .docx-wrapper > section.docx h3,
+        #doc-scroll .docx-wrapper > section.docx h4,
+        #doc-scroll .docx-wrapper > section.docx h5,
+        #doc-scroll .docx-wrapper > section.docx h6 {
+          color: #000000 !important;
         }
       `
       d.head.appendChild(style)
@@ -192,6 +202,7 @@ export default function DocumentPanel({
         <View style={styles.headerText}>
           <Text numberOfLines={1} style={[styles.title, { color: theme.textMain }]}>
             {doc.title}
+            {doc.format === 'doc' ? '.docx' : '.md'}
           </Text>
           <Text style={[styles.subtitle, { color: theme.textMuted }]}>
             {doc.format === 'doc' ? 'Word 文档' : 'Markdown 文档'} · 来自本轮回复
@@ -227,7 +238,11 @@ export default function DocumentPanel({
       <ScrollView
         nativeID="doc-scroll"
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={
+          doc.format === 'doc' && Platform.OS === 'web'
+            ? styles.scrollContentDocx
+            : styles.scrollContent
+        }
         showsVerticalScrollIndicator
       >
         {doc.format === 'doc' && Platform.OS === 'web' ? (
@@ -364,6 +379,8 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 12, fontWeight: '600' },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingBottom: 32 },
+  /** docx 页面自带内边距，外层不再重复加左右 padding */
+  scrollContentDocx: { paddingBottom: 32, paddingHorizontal: 0 },
   docxHost: { width: '100%' },
   docxLoading: {
     paddingVertical: 24,

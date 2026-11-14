@@ -24,32 +24,32 @@ function downloadBlob(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 2000)
 }
 
-/** 行内 markdown：**粗体** / *斜体* / `代码` / [文字](链接) → TextRun */
-function inlineRuns(text: string, D: any): any[] {
+/** 行内 markdown：**粗体** / *斜体* / `代码` / [文字](链接) → TextRun
+ *  extra：给整段所有 run 的默认样式（标题用它强制黑色，避免 docx-preview
+ *  套用 Word 默认主题的蓝色标题） */
+function inlineRuns(text: string, D: any, extra?: Record<string, any>): any[] {
+  const mk = (t: string, opts: Record<string, any> = {}) =>
+    new D.TextRun({ text: t, ...extra, ...opts })
   const runs: any[] = []
   const re = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
-    if (m.index > last) runs.push(new D.TextRun(text.slice(last, m.index)))
+    if (m.index > last) runs.push(mk(text.slice(last, m.index)))
     const token = m[0]
     if (token.startsWith('**') || token.startsWith('__')) {
-      runs.push(new D.TextRun({ text: token.slice(2, -2), bold: true }))
+      runs.push(mk(token.slice(2, -2), { bold: true }))
     } else if (token.startsWith('`')) {
-      runs.push(
-        new D.TextRun({ text: token.slice(1, -1), font: 'Consolas', color: 'A31515' })
-      )
+      runs.push(mk(token.slice(1, -1), { font: 'Consolas', color: 'A31515' }))
     } else if (token.startsWith('[')) {
-      runs.push(
-        new D.TextRun({ text: token.slice(1, token.indexOf(']')), color: '0563C1' })
-      )
+      runs.push(mk(token.slice(1, token.indexOf(']')), { color: '0563C1' }))
     } else {
-      runs.push(new D.TextRun({ text: token.slice(1, -1), italics: true }))
+      runs.push(mk(token.slice(1, -1), { italics: true }))
     }
     last = m.index + token.length
   }
-  if (last < text.length) runs.push(new D.TextRun(text.slice(last)))
-  return runs.length ? runs : [new D.TextRun('')]
+  if (last < text.length) runs.push(mk(text.slice(last)))
+  return runs.length ? runs : [mk('')]
 }
 
 /**
@@ -142,7 +142,12 @@ function markdownToDocx(md: string, D: any): any[] {
               : level === 2
                 ? D.HeadingLevel.HEADING_2
                 : D.HeadingLevel.HEADING_3,
-          children: inlineRuns(heading[2], D)
+          children: inlineRuns(heading[2], D, {
+            // Word 正规文档标题是黑色：docx-preview 会套用内置标题样式的
+            // 主题蓝，这里逐 run 指定颜色压掉
+            color: '000000',
+            bold: true
+          })
         })
       )
       i++
