@@ -500,11 +500,11 @@ export function useChatScroll({
   const scrollViewStyle: any = {
     // 翻转 ScrollView 自身：offset 0 = 视觉底部，吐字期零滚动命令
     ...(INVERTED_CHAT_LIST ? CHAT_INVERSION_STYLE : null),
-    // RNW 才认这两个滚动条样式
+    // RNW 才认这两个滚动条样式：隐藏原生滚动条，避免 8px 经典滚动条
+    // 常驻占走聊天区右侧宽度（滚轮/触摸滚动不受影响）
     ...(Platform.OS === 'web'
       ? {
-          scrollbarWidth: 'thin',
-          scrollbarColor: 'rgba(255,255,255,0.3) transparent',
+          scrollbarWidth: 'none',
         }
       : null),
   }

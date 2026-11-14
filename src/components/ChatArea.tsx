@@ -139,8 +139,8 @@ export default function ChatArea({
     bottomContentInset
   })
 
-  // Web：聊天列表滚动条默认隐藏，鼠标移入才显示（Firefox scrollbar-color /
-  // Chromium webkit-scrollbar 双写）。nativeID="chat-scroll" 落在可滚动节点上。
+  // Web：隐藏聊天列表原生滚动条（Firefox scrollbar-width / Chromium
+  // webkit-scrollbar 双写）。经典滚动条会常驻占走右侧 8px 宽度，正文因此被挤窄。
   useEffect(() => {
     if (Platform.OS !== 'web') return
     const doc = (globalThis as any).document
@@ -148,13 +148,8 @@ export default function ChatArea({
     const style = doc.createElement('style')
     style.id = 'chat-scroll-hover-bar'
     style.textContent = `
-      #chat-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-      #chat-scroll:hover { scrollbar-color: rgba(128,128,128,0.5) transparent; }
-      #chat-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-      #chat-scroll::-webkit-scrollbar-track { background: transparent; }
-      #chat-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
-      #chat-scroll:hover::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.45); }
-      #chat-scroll::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.65); }
+      #chat-scroll { scrollbar-width: none; }
+      #chat-scroll::-webkit-scrollbar { width: 0; height: 0; }
     `
     doc.head.appendChild(style)
   }, [])

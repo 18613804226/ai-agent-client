@@ -28,11 +28,23 @@ export async function renderDocxPreview(
   host: HTMLElement,
   dark: boolean,
 ): Promise<void> {
+  const data = await toBuffer(att);
+  return renderDocxBufferPreview(data, host, dark);
+}
+
+/**
+ * 直接渲染内存里的 .docx 字节（右侧文档面板预览用：Markdown → docx Blob
+ * 与下载产物同一份，不再拿 Markdown 冒充 Word 预览）。
+ */
+export async function renderDocxBufferPreview(
+  data: ArrayBuffer,
+  host: HTMLElement,
+  dark: boolean,
+): Promise<void> {
   const mod: any = await import('docx-preview');
   const docx = mod?.renderAsync ? mod : mod?.default;
   if (!docx?.renderAsync) throw new Error('docx-preview 加载失败');
 
-  const data = await toBuffer(att);
   host.innerHTML = '';
   await docx.renderAsync(data, host, host, {
     // 图片转 base64 内嵌：避免库内部 createObjectURL 的 blob 地址反复累积不回收

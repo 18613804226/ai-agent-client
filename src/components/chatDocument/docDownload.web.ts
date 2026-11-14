@@ -215,7 +215,11 @@ export async function exportMarkdown(doc: ChatDocument): Promise<void> {
   )
 }
 
-export async function exportDocx(doc: ChatDocument): Promise<void> {
+/**
+ * Markdown → .docx Blob。下载与「右侧面板的 Word 真预览」共用同一份产物，
+ * 保证预览看到的就是下载到的那份文档。
+ */
+export async function buildDocxBlob(doc: ChatDocument): Promise<Blob> {
   const D: any = await import('docx')
   const document = new D.Document({
     sections: [
@@ -225,6 +229,9 @@ export async function exportDocx(doc: ChatDocument): Promise<void> {
       }
     ]
   })
-  const blob: Blob = await D.Packer.toBlob(document)
-  downloadBlob(blob, safeName(doc.title, 'docx'))
+  return await D.Packer.toBlob(document)
+}
+
+export async function exportDocx(doc: ChatDocument): Promise<void> {
+  downloadBlob(await buildDocxBlob(doc), safeName(doc.title, 'docx'))
 }

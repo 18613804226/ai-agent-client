@@ -11,3 +11,7 @@ export async function exportMarkdown(_doc: ChatDocument): Promise<void> {
 export async function exportDocx(_doc: ChatDocument): Promise<void> {
   throw new Error('文档下载仅支持网页端')
 }
+
+export async function buildDocxBlob(_doc: ChatDocument): Promise<Blob> {
+  throw new Error('文档预览仅支持网页端')
+}

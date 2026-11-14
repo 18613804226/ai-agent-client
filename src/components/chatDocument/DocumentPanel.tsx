@@ -27,7 +27,11 @@ import {
   setChatDocumentWidth,
   useChatDocumentState
 } from '../../utils/chatDocument'
-import { exportMarkdown, exportDocx } from './docDownload'
+import { exportMarkdown, exportDocx, buildDocxBlob } from './docDownload'
+import { renderDocxBufferPreview } from '../../utils/officePreview'
+
+/** Web 真实 DOM 容器：docx 预览由 docx-preview 命令式注入 HTML */
+const DivTag: any = 'div'
 
 /**
  * 文档面板：宽屏 Web 常驻在聊天区右侧（聊天区/输入栏由主页面同步收缩），
@@ -86,20 +90,68 @@ export default function DocumentPanel({
   useEffect(() => {
     if (Platform.OS !== 'web') return
     const d = (globalThis as any).document
-    if (!d || d.getElementById('doc-panel-scrollbar')) return
-    const style = d.createElement('style')
-    style.id = 'doc-panel-scrollbar'
-    style.textContent = `
-      #doc-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
-      #doc-scroll:hover { scrollbar-color: rgba(128,128,128,0.5) transparent; }
-      #doc-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-      #doc-scroll::-webkit-scrollbar-track { background: transparent; }
-      #doc-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
-      #doc-scroll:hover::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.45); }
-      #doc-scroll::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.65); }
-    `
-    d.head.appendChild(style)
+    if (!d) return
+    if (!d.getElementById('doc-panel-scrollbar')) {
+      const style = d.createElement('style')
+      style.id = 'doc-panel-scrollbar'
+      style.textContent = `
+        #doc-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+        #doc-scroll:hover { scrollbar-color: rgba(128,128,128,0.5) transparent; }
+        #doc-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+        #doc-scroll::-webkit-scrollbar-track { background: transparent; }
+        #doc-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 8px; }
+        #doc-scroll:hover::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.45); }
+        #doc-scroll::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.65); }
+      `
+      d.head.appendChild(style)
+    }
+    // Word 真预览：docx-preview 渲染出的 A4 页面按面板宽度收缩，
+    // 避免 21cm 固定页宽在窄面板里横向溢出
+    if (!d.getElementById('doc-panel-docx-fit')) {
+      const style = d.createElement('style')
+      style.id = 'doc-panel-docx-fit'
+      style.textContent = `
+        #doc-scroll .docx-wrapper { padding: 0 !important; background: transparent !important; }
+        #doc-scroll .docx-wrapper > section.docx {
+          width: 100% !important;
+          min-width: 0 !important;
+          margin: 0 0 16px 0 !important;
+          box-shadow: none !important;
+        }
+      `
+      d.head.appendChild(style)
+    }
   }, [])
+
+  // Word 预览：用「下载 .docx」同一份字节做真渲染，而不是拿 Markdown 冒充 Word
+  const docxHostRef = useRef<any>(null)
+  const [docxState, setDocxState] = useState<'idle' | 'loading' | 'error'>('idle')
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !doc || doc.format !== 'doc') return
+    const host = docxHostRef.current
+    if (!host) return
+    let cancelled = false
+    setDocxState('loading')
+    ;(async () => {
+      try {
+        const blob = await buildDocxBlob(doc)
+        if (cancelled) return
+        const buf = await blob.arrayBuffer()
+        if (cancelled) return
+        await renderDocxBufferPreview(buf, host, !!theme.isDark)
+        if (!cancelled) setDocxState('idle')
+      } catch {
+        if (!cancelled) setDocxState('error')
+      }
+    })()
+    return () => {
+      cancelled = true
+      // 清掉内嵌 base64 图片，切文档/关面板不占内存
+      try {
+        host.innerHTML = ''
+      } catch {}
+    }
+  }, [doc, theme.isDark])
 
   const handleExport = async (kind: 'md' | 'docx') => {
     if (!doc || busy) return
@@ -178,13 +230,45 @@ export default function DocumentPanel({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator
       >
-        <StreamingMarkdown
-          content={doc.content}
-          streaming={false}
-          style={mdStyles}
-          rules={webMarkdownRules}
-          selectable
-        />
+        {doc.format === 'doc' && Platform.OS === 'web' ? (
+          <>
+            <DivTag
+              ref={docxHostRef}
+              className="docx-host"
+              style={styles.docxHost}
+            />
+            {docxState === 'loading' && (
+              <View style={styles.docxLoading}>
+                <ActivityIndicator color={theme.textMuted} />
+                <Text style={[styles.footerText, { color: theme.textMuted }]}>
+                  正在生成 Word 预览…
+                </Text>
+              </View>
+            )}
+            {docxState === 'error' && (
+              <>
+                <Text style={[styles.footerText, { color: theme.textMuted }]}>
+                  Word 预览生成失败，下面是 Markdown 内容
+                </Text>
+                <StreamingMarkdown
+                  content={doc.content}
+                  streaming={false}
+                  style={mdStyles}
+                  rules={webMarkdownRules}
+                  selectable
+                />
+              </>
+            )}
+          </>
+        ) : (
+          <StreamingMarkdown
+            content={doc.content}
+            streaming={false}
+            style={mdStyles}
+            rules={webMarkdownRules}
+            selectable
+          />
+        )}
       </ScrollView>
 
       <View style={[styles.footer, { borderColor: theme.border }]}>
@@ -280,6 +364,12 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 12, fontWeight: '600' },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingBottom: 32 },
+  docxHost: { width: '100%' },
+  docxLoading: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    gap: 8
+  },
   footer: {
     borderTopWidth: 1,
     paddingHorizontal: 16,

@@ -17,6 +17,14 @@ export async function renderDocxPreview(
   throw new Error('当前平台不支持在线预览');
 }
 
+export async function renderDocxBufferPreview(
+  _data: ArrayBuffer,
+  _host: HTMLElement,
+  _dark: boolean,
+): Promise<void> {
+  throw new Error('当前平台不支持在线预览');
+}
+
 export async function spreadsheetToHtml(
   _att: PickedAttachment,
 ): Promise<{ html: string; truncated: boolean }> {
