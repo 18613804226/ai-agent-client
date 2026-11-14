@@ -30,6 +30,7 @@ import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts' 
 import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme'
 import CustomActionSheet from '../../src/components/CustomActionSheet'
 import DocumentPanel from '../../src/components/chatDocument/DocumentPanel'
+import { createDocumentFromLocalSend } from '../../src/components/chatDocument/localDocument'
 import {
   DOC_PANEL_WIDTH,
   clearChatDocument,
@@ -147,6 +148,22 @@ export default function ChatScreen() {
     insets.bottom
 
   const handleSendWithImages = useCallback(async (overrideText?: string) => {
+    // C：「整理成 word / md」是本地文件转换，不是问答。直接把 TXT 附件或
+    // 上一轮回复转成右侧文档，不发请求 —— 零联网、零 token、零等待。
+    // 没有可整理素材时才回退到正常发送（交给后端）。
+    if (Platform.OS === 'web') {
+      const localDoc = await createDocumentFromLocalSend({
+        text: overrideText ?? inputText,
+        attachments: selectedAttachments,
+        messages: currentChat?.messages ?? []
+      })
+      if (localDoc) {
+        openChatDocument(localDoc)
+        setInputText('')
+        clearImages()
+        return
+      }
+    }
     const knowledgeFileIds = uploadedFiles
       .filter(
         (f) =>
@@ -166,7 +183,15 @@ export default function ChatScreen() {
       selectedAttachments,
       clearImages
     )
-  }, [uploadedFiles, selectedAttachments, clearImages, handleSend])
+  }, [
+    uploadedFiles,
+    selectedAttachments,
+    clearImages,
+    handleSend,
+    inputText,
+    setInputText,
+    currentChat?.messages
+  ])
 
   // 💡 三端精准判断
   const screenWidth = Dimensions.get('window').width

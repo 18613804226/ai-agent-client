@@ -186,6 +186,25 @@ export function useChatScroll({
       const previousY = lastScrollOffsetRef.current;
       if (typeof y === 'number') lastScrollOffsetRef.current = y;
 
+      // ── Web：用户主动上滚 → 立刻取消自动跟随（灵敏度关键） ──────────────
+      // 必须放在保护窗 / 冷启动闸「之前」：那两道闸本意是屏蔽程序化平滑贴底
+      // 的 onScroll 噪声，却会把脱钩判定整段 skip 900ms；这期间下一个 token
+      // 的 layout effect 照样把 scrollTop 写回底部，表现就是「滚上去又被拽下来」。
+      // 程序化贴底是 y 递增（往底部走），不会命中 y < previousY；容差 1px
+      // 用于吃掉子像素/浮点抖动。所有滚动来源（滚轮、滚动条、键盘、触摸）
+      // 都会产生 y 变小的 onScroll，一处即可覆盖。
+      const scrolledUp =
+        typeof y === 'number' &&
+        typeof previousY === 'number' &&
+        y < previousY - 1;
+      if (Platform.OS === 'web' && scrolledUp && autoFollowRef.current) {
+        autoFollowRef.current = false;
+        // 用户已接管滚动：别再等平滑动画保护窗 / 冷启动闸过期，
+        // 让「回到底部」按钮和后续判定立刻生效
+        pinAnimUntilRef.current = 0;
+        initialBottomDoneRef.current = true;
+      }
+
       // 程序化平滑贴底动画进行中：此时的高 distance 是动画本身，不是用户上滑
       if (Date.now() < pinAnimUntilRef.current) return;
 
@@ -205,35 +224,32 @@ export function useChatScroll({
         }
       }
 
-      // 上滑超过 120px 才显示按钮；只在跨阈值时 setState，避免滚动中反复调度
-      const shouldShow = distanceFromBottom > 120;
+      // Web：按钮直接跟随 autoFollowRef —— 用户一上滚脱钩就出现，
+      // 滚回底部恢复跟随时消失（不再等 120px）；原生沿用原迟滞。
+      // 只在跨阈值时 setState，避免滚动中反复调度
+      const shouldShow =
+        Platform.OS === 'web'
+          ? !autoFollowRef.current
+          : distanceFromBottom > 120;
       if (shouldShow !== showScrollToBottomRef.current) {
         showScrollToBottomRef.current = shouldShow;
         setShowScrollToBottom(shouldShow);
       }
 
-      // 迟滞区间 [40, 120]：远离底部才脱钩，滑回底部附近才重新跟随。
-      // 这样吐字时那几十毫秒的高度误差不会误判成「用户上滑了」而突然停住。
-      // ⚠️ 必须保留「重新跟随」这条分支：只置 false 不复位的话，
-      //    用户碰一次列表，本轮会话的吐字就再也吸不了底。
-      // ⚠️ autoFollowRef 是唯一权威值：原生 inverted 下贴底本身是自动的，
-      //    它只决定「回到底部」按钮的显隐和吐字期要不要额外插手（见 followBottom）。
-      if (autoFollowRef.current) {
-        // Web：只有「向上滚」(y 变小) 才是用户主动离开底部。
-        // 程序化 smooth 贴底、发送后消息追加撑高内容时 y 是递增的，
-        // 但 distanceFromBottom 在动画途中仍可能 >120 —— 旧逻辑据此脱钩，
-        // 首个 content chunk 正好落在这个窗口 → 第一行不贴底、第二行才贴。
-        // 下面复位分支早就用 y > previousY 判方向，这里补上对称判定即可。
-        // 原生 inverted 的 offset 语义不同，保持原逻辑。
-        const userScrolledUp =
-          Platform.OS !== 'web' ||
-          (typeof y === 'number' &&
-            typeof previousY === 'number' &&
-            y < previousY);
-        if (distanceFromBottom > 120 && userScrolledUp) {
-          autoFollowRef.current = false;
-        }
-      } else if (
+      // Web 的脱钩已在上面按方向即时完成，不再受 120px / footer 占位影响；
+      // 原生 inverted 的 offset 语义相反，仍沿用「离底 >120px」迟滞，
+      // 避免吐字期那几十毫秒的高度误差被误判成用户上滑。
+      if (
+        Platform.OS !== 'web' &&
+        autoFollowRef.current &&
+        distanceFromBottom > 120
+      ) {
+        autoFollowRef.current = false;
+      }
+      // ⚠️ 必须保留「重新跟随」：只置 false 不复位的话，用户碰一次列表
+      //    后本轮会话的吐字就再也吸不了底。滑回底部附近才恢复。
+      if (
+        !autoFollowRef.current &&
         distanceFromBottom < 40 &&
         (Platform.OS !== 'web' ||
           (typeof y === 'number' &&
@@ -301,12 +317,15 @@ export function useChatScroll({
     wasStreamingRef.current = isStreamingNow;
     if (!finished) return;
     if (APP_PIN_USER_MESSAGE) return; // 钉顶模式：不自动贴底，保持用户消息在顶部
+    // 用户上滚后已经脱钩：吐字结束这一下也不能把他拽回底部。
+    // 这是原本唯一绕过 autoFollowRef 闸门的贴底点。
+    if (!autoFollowRef.current) return;
     pinToBottom(false);
     if (INVERTED_CHAT_LIST) {
       // 原生：内容尺寸回调可能晚一帧，下一帧再兜一次，确保 offset 回到 0。
       requestAnimationFrame(() => pinToBottom(false));
     }
-  }, [isStreamingNow, pinToBottom]);
+  }, [isStreamingNow, pinToBottom, autoFollowRef]);
 
   // 关掉浏览器的「滚动锚定」：它会和逐帧写 scrollTop 互相抢，表现为贴底后又自己弹一下。
   // RNW 的样式表透传不到这个属性，直接写 DOM（此时 ref 已在本轮 commit 里挂好）。
@@ -320,13 +339,37 @@ export function useChatScroll({
   // effect 抢在滚动事件后执行，把用户刚滚上去的位置又拉回底部。
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    const node = getScrollNodeSafe(scrollViewRef.current);
-    if (!node) return;
+    let cancelled = false;
+    let raf = 0;
+    let tries = 0;
+    let node: any = null;
     const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0) autoFollowRef.current = false;
+      if (event.deltaY < 0) {
+        autoFollowRef.current = false;
+        // 滚轮比 onScroll 早一拍：顺手撤掉保护窗与冷启动闸，
+        // 免得下一帧的按钮判定还被 900ms 窗口挡着
+        pinAnimUntilRef.current = 0;
+        initialBottomDoneRef.current = true;
+      }
     };
-    node.addEventListener('wheel', handleWheel, { passive: true });
-    return () => node.removeEventListener('wheel', handleWheel);
+    // ChatArea 按 activeId remount，DOM 节点常常晚几帧才挂好。
+    // 旧写法拿不到节点就直接 return、之后不再重试 → 这条「抢先脱钩」
+    // 的兜底会永久失效。重试到节点就绪为止。
+    const attach = () => {
+      if (cancelled) return;
+      node = getScrollNodeSafe(scrollViewRef.current);
+      if (!node) {
+        if (tries++ < 30) raf = requestAnimationFrame(attach);
+        return;
+      }
+      node.addEventListener('wheel', handleWheel, { passive: true });
+    };
+    attach();
+    return () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (node) node.removeEventListener('wheel', handleWheel);
+    };
   }, [activeId, autoFollowRef, scrollViewRef]);
 
   // 用户手指一碰上去 → 立即取消自动跟随（两端一致：原生也走 JS 的 onScrollBeginDrag）

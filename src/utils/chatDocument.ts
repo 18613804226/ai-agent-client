@@ -159,6 +159,27 @@ export function extractDocument(
   }
 }
 
+/**
+ * 本地文档转换（C）：用户说「整理成 word / md」时不再请求模型，
+ * 直接把素材（TXT 附件 / 上一轮回复）变成可预览、可下载的文档。
+ * 与 extractDocument 的区别是不依赖模型输出、没有 messageId 来源。
+ */
+export function createLocalDocument(
+  content: string,
+  format: DocFormat,
+  title?: string
+): ChatDocument | null {
+  const cleaned = content?.trim()
+  if (!cleaned || cleaned.length < 8) return null
+  return {
+    id: `local-${Date.now()}-${format}`,
+    title: title?.trim() || deriveTitle(cleaned),
+    content: cleaned,
+    format,
+    sourceMessageId: ''
+  }
+}
+
 // ── React 树外的轻量状态：ChatMessageItem / 右侧面板 / 主页面都能读写，
 //    不用给 ChatArea → createRenderCell → ChatMessageItem 层层透传回调。
 type DocState = { doc: ChatDocument | null; visible: boolean }
