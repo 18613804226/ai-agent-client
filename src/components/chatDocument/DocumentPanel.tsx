@@ -60,7 +60,10 @@ export default function DocumentPanel({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
         onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
           dragStartRef.current = widthRef.current
         },
@@ -134,12 +137,12 @@ export default function DocumentPanel({
   }, [])
 
   // Word 预览：用「下载 .docx」同一份字节做真渲染，而不是拿 Markdown 冒充 Word
-  const docxHostRef = useRef<any>(null)
+  // （callback ref：节点真正挂载后才触发 effect，避免首帧 ref 为空导致一直空白）
+  const [docxHost, setDocxHost] = useState<any>(null)
   const [docxState, setDocxState] = useState<'idle' | 'loading' | 'error'>('idle')
   useEffect(() => {
-    if (Platform.OS !== 'web' || !doc || doc.format !== 'doc') return
-    const host = docxHostRef.current
-    if (!host) return
+    if (Platform.OS !== 'web' || !doc || doc.format !== 'doc' || !docxHost)
+      return
     let cancelled = false
     setDocxState('loading')
     ;(async () => {
@@ -148,7 +151,7 @@ export default function DocumentPanel({
         if (cancelled) return
         const buf = await blob.arrayBuffer()
         if (cancelled) return
-        await renderDocxBufferPreview(buf, host, !!theme.isDark)
+        await renderDocxBufferPreview(buf, docxHost, !!theme.isDark)
         if (!cancelled) setDocxState('idle')
       } catch {
         if (!cancelled) setDocxState('error')
@@ -158,10 +161,10 @@ export default function DocumentPanel({
       cancelled = true
       // 清掉内嵌 base64 图片，切文档/关面板不占内存
       try {
-        host.innerHTML = ''
+        docxHost.innerHTML = ''
       } catch {}
     }
-  }, [doc, theme.isDark])
+  }, [docxHost, doc, theme.isDark])
 
   const handleExport = async (kind: 'md' | 'docx') => {
     if (!doc || busy) return
@@ -235,56 +238,59 @@ export default function DocumentPanel({
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        nativeID="doc-scroll"
-        style={styles.scroll}
-        contentContainerStyle={
-          doc.format === 'doc' && Platform.OS === 'web'
-            ? styles.scrollContentDocx
-            : styles.scrollContent
-        }
-        showsVerticalScrollIndicator
-      >
-        {doc.format === 'doc' && Platform.OS === 'web' ? (
-          <>
-            <DivTag
-              ref={docxHostRef}
-              className="docx-host"
-              style={styles.docxHost}
+      <View style={styles.scrollWrap}>
+        <ScrollView
+          nativeID="doc-scroll"
+          style={styles.scroll}
+          contentContainerStyle={
+            doc.format === 'doc' && Platform.OS === 'web'
+              ? styles.scrollContentDocx
+              : styles.scrollContent
+          }
+          showsVerticalScrollIndicator
+        >
+          {doc.format === 'doc' && Platform.OS === 'web' ? (
+            <>
+              <DivTag
+                ref={setDocxHost}
+                className="docx-host"
+                style={styles.docxHost}
+              />
+              {docxState === 'error' && (
+                <>
+                  <Text style={[styles.footerText, { color: theme.textMuted }]}>
+                    Word 预览生成失败，下面是 Markdown 内容
+                  </Text>
+                  <StreamingMarkdown
+                    content={doc.content}
+                    streaming={false}
+                    style={mdStyles}
+                    rules={webMarkdownRules}
+                    selectable
+                  />
+                </>
+              )}
+            </>
+          ) : (
+            <StreamingMarkdown
+              content={doc.content}
+              streaming={false}
+              style={mdStyles}
+              rules={webMarkdownRules}
+              selectable
             />
-            {docxState === 'loading' && (
-              <View style={styles.docxLoading}>
-                <ActivityIndicator color={theme.textMuted} />
-                <Text style={[styles.footerText, { color: theme.textMuted }]}>
-                  正在生成 Word 预览…
-                </Text>
-              </View>
-            )}
-            {docxState === 'error' && (
-              <>
-                <Text style={[styles.footerText, { color: theme.textMuted }]}>
-                  Word 预览生成失败，下面是 Markdown 内容
-                </Text>
-                <StreamingMarkdown
-                  content={doc.content}
-                  streaming={false}
-                  style={mdStyles}
-                  rules={webMarkdownRules}
-                  selectable
-                />
-              </>
-            )}
-          </>
-        ) : (
-          <StreamingMarkdown
-            content={doc.content}
-            streaming={false}
-            style={mdStyles}
-            rules={webMarkdownRules}
-            selectable
-          />
+          )}
+        </ScrollView>
+        {/* 加载遮罩放在滚动区外层：无论 docx 解析多久，用户都能看到明确状态 */}
+        {docxState === 'loading' && doc.format === 'doc' && Platform.OS === 'web' && (
+          <View style={[styles.docxOverlay, { backgroundColor: bg }]}>
+            <ActivityIndicator color={theme.textMuted} />
+            <Text style={[styles.footerText, { color: theme.textMuted }]}>
+              正在生成 Word 预览…
+            </Text>
+          </View>
         )}
-      </ScrollView>
+      </View>
 
       <View style={[styles.footer, { borderColor: theme.border }]}>
         <Text style={[styles.footerText, { color: theme.textMuted }]}>
@@ -330,10 +336,12 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: 8,
+    width: 12,
     zIndex: 3,
     justifyContent: 'center',
-    ...(Platform.OS === 'web' ? { cursor: 'col-resize' as any } : {})
+    ...(Platform.OS === 'web'
+      ? ({ cursor: 'col-resize', touchAction: 'none' } as any)
+      : {})
   },
   resizeLine: {
     position: 'absolute',
@@ -378,14 +386,20 @@ const styles = StyleSheet.create({
   },
   actionText: { fontSize: 12, fontWeight: '600' },
   scroll: { flex: 1 },
+  scrollWrap: { flex: 1 },
   scrollContent: { paddingHorizontal: 24, paddingBottom: 32 },
   /** docx 页面自带内边距，外层不再重复加左右 padding */
   scrollContentDocx: { paddingBottom: 32, paddingHorizontal: 0 },
   docxHost: { width: '100%' },
-  docxLoading: {
-    paddingVertical: 24,
+  docxOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     alignItems: 'center',
-    gap: 8
+    justifyContent: 'center',
+    gap: 10
   },
   footer: {
     borderTopWidth: 1,
