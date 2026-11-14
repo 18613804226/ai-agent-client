@@ -1,5 +1,5 @@
 import React from 'react';
-import Svg, { Circle, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
 interface IconProps {
   size?: number;
@@ -128,5 +128,25 @@ export const IconHelpCircle = ({
     <Circle cx="12" cy="12" r="10" />
     <Path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
     <Line x1="12" y1="17" x2="12.01" y2="17" />
+  </Svg>
+);
+
+// ?? ²à±ßÀ¸£¨Ãæ°å£©Í¼±ê£ºÔ²½Ç·½¿ò + ÓÒ²àÊúÌõ£¬ÓÃÓÚ¡¸¹Ø±Õ/ÊÕÆð²àÀ¸¡¹
+export const IconSidebarClose = ({
+  size = 16,
+  color = 'currentColor',
+  strokeWidth = 2,
+}: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect
+      x="3"
+      y="4"
+      width="18"
+      height="16"
+      rx="4.5"
+      stroke={color}
+      strokeWidth={strokeWidth}
+    />
+    <Rect x="14.6" y="7.2" width="3.2" height="9.6" rx="1.6" fill={color} />
   </Svg>
 );

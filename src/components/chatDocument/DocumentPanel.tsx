@@ -29,6 +29,7 @@ import {
 } from '../../utils/chatDocument'
 import { exportMarkdown, exportDocx, buildDocxBlob } from './docDownload'
 import { renderDocxBufferPreview } from '../../utils/officePreview'
+import { IconSidebarClose } from '../Icons'
 
 /** Web 真实 DOM 容器：docx 预览由 docx-preview 命令式注入 HTML */
 const DivTag: any = 'div'
@@ -74,16 +75,30 @@ export default function DocumentPanel({
     []
   )
 
-  // 弹出动画：面板/弹层出现时从右侧滑入 + 淡入（宽屏右侧面板与窄屏全屏 Modal 共用）
+  // 弹出/收起动画：出现时从右侧滑入 + 淡入，关闭时反向滑出 + 淡出（等动画播完再真正卸载）
   const progress = useSharedValue(0)
+  const [closing, setClosing] = useState(false)
   useEffect(() => {
     if (!visible) return
+    setClosing(false)
     progress.value = 0
     progress.value = withTiming(1, {
       duration: 240,
       easing: Easing.out(Easing.cubic)
     })
   }, [visible, doc?.id, progress])
+  const handleClose = () => {
+    if (closing) return
+    setClosing(true)
+    progress.value = withTiming(0, {
+      duration: 220,
+      easing: Easing.in(Easing.cubic)
+    })
+    setTimeout(() => {
+      closeChatDocument()
+      setClosing(false)
+    }, 220)
+  }
   const popStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [{ translateX: (1 - progress.value) * width }]
@@ -212,11 +227,12 @@ export default function DocumentPanel({
           </Text>
         </View>
         <TouchableOpacity
-          onPress={closeChatDocument}
+          onPress={handleClose}
+          accessibilityLabel="关闭预览"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={[styles.closeBtn, { backgroundColor: subtle }]}
         >
-          <Text style={[styles.closeText, { color: theme.textMuted }]}>✕</Text>
+          <IconSidebarClose size={16} color={theme.textMuted} strokeWidth={1.8} />
         </TouchableOpacity>
       </View>
 
@@ -307,7 +323,7 @@ export default function DocumentPanel({
       <Modal
         visible={visible}
         animationType="slide"
-        onRequestClose={closeChatDocument}
+        onRequestClose={handleClose}
       >
         {body}
       </Modal>
