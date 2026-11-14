@@ -209,8 +209,12 @@ export default function RootLayout() {
                    screenOptions={{
                      headerShown: false,
                      // 侧滑进出场；JS Stack 映射为 SlideFromRightIOS：
-                     // 卡片连内容一起滑出，底层页面 parallax 揭示，手势侧滑返回跟手
-                     animation: 'slide_from_right',
+                     // 卡片连内容一起滑出，底层页面 parallax 揭示，手势侧滑返回跟手。
+                     // Web 例外：聊天页是 position:fixed 的大 DOM（长列表 + 动效输入栏），
+                     // JS Stack 转场每帧都要重排/重绘这层固定布局，切 admin 登录页明显掉帧；
+                     // 网页端改为瞬时切换（无动画），原生端保留跟手侧滑。
+                     animation:
+                       Platform.OS === 'web' ? 'none' : 'slide_from_right',
                      // 卡片内容底色：转场时露出的底不会是白的（JS Stack 选项名是 cardStyle）
                      cardStyle: { backgroundColor: theme.bgApp },
                    }}
