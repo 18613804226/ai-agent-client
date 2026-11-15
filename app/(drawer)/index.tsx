@@ -30,6 +30,7 @@ import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts' 
 import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme'
 import CustomActionSheet from '../../src/components/CustomActionSheet'
 import DocumentPanel from '../../src/components/chatDocument/DocumentPanel'
+import SelectionAskMenu from '../../src/components/SelectionAskMenu'
 import {
   clearChatDocument,
   extractDocument,
@@ -37,6 +38,7 @@ import {
   useChatDocumentState,
   wantsDocument
 } from '../../src/utils/chatDocument'
+import { clearChatQuote } from '../../src/utils/chatQuote'
 export default function ChatScreen() {
   const insets = useSafeAreaInsets()
   const navigation = useNavigation()
@@ -191,9 +193,10 @@ export default function ChatScreen() {
   const messagesRef = useRef(currentChat?.messages ?? [])
   messagesRef.current = currentChat?.messages ?? []
 
-  // 切会话：面板连内容一起清掉，避免显示上一会话的文档
+  // 切会话：面板连内容与输入框引用一起清掉，避免串到上一会话
   useEffect(() => {
     clearChatDocument()
+    clearChatQuote()
     lastAutoDocMsgRef.current = null
   }, [activeId])
 
@@ -481,6 +484,7 @@ export default function ChatScreen() {
             )}
             </Reanimated.View>
         </View>
+        <SelectionAskMenu />
       </View>
     </RootSiblingParent>
   )

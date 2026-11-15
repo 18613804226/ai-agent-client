@@ -48,6 +48,11 @@ import {
   AttachmentPreviewList
 } from './chatInputBar/attachmentPreview'
 import { VoiceModeUI } from './chatInputBar/VoiceModeUI'
+import {
+  useChatQuote,
+  clearChatQuote,
+  registerInputFocusHandler
+} from '../utils/chatQuote'
 
 // 保持原有公开 API：使用方从本文件导入 INPUT_BAR
 export { INPUT_BAR } from './chatInputBar/inputBarStyles'
@@ -100,6 +105,20 @@ function ChatInputBar({
   const [isHovered, setIsHovered] = useState(false)
   const [isVoiceMode, setIsVoiceMode] = useState(false) // 语音/键盘模式
   const inputRef = useRef<any>(null)
+  const quoteText = useChatQuote()
+
+  useEffect(() => {
+    registerInputFocusHandler(() => {
+      setIsVoiceMode(false)
+      const raf = (globalThis as any).requestAnimationFrame
+      if (typeof raf === 'function') {
+        raf(() => inputRef.current?.focus?.())
+      } else {
+        inputRef.current?.focus?.()
+      }
+    })
+    return () => registerInputFocusHandler(null)
+  }, [])
 
   // ---- 语音结果：识别完成后直接发送到聊天区（不回填输入框）----
   const handleVoiceResult = useCallback(
@@ -376,6 +395,56 @@ function ChatInputBar({
           }
         ]}
       >
+        {/* 划词引用追问胶囊条 */}
+        {Boolean(quoteText) && (
+          <View
+            style={[
+              inputBarStyles.quoteBar,
+              {
+                backgroundColor: theme.isDark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'rgba(0,0,0,0.05)'
+              }
+            ]}
+          >
+            <View style={inputBarStyles.quoteBarIcon}>
+              <InputBarIcon
+                name="corner-down-right"
+                size={14}
+                color={theme.textMuted}
+              />
+            </View>
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={[inputBarStyles.quoteBarText, { color: theme.textMain }]}
+            >
+              {quoteText.replace(/\s+/g, ' ')}
+            </Text>
+            <TouchableOpacity
+              onPress={clearChatQuote}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel="取消引用"
+              style={[
+                inputBarStyles.quoteCloseBtn,
+                {
+                  backgroundColor: theme.isDark
+                    ? 'rgba(255,255,255,0.85)'
+                    : 'rgba(0,0,0,0.55)'
+                }
+              ]}
+            >
+              <InputBarIcon
+                name="x"
+                size={12}
+                color={theme.isDark ? '#1A1A1A' : '#FFFFFF'}
+              />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={inputBarStyles.inputRow}>
         {/* 附件按钮（语音模式下隐藏）*/}
         {!isVoiceMode && (!isDesktopWeb || onPickImage) && (
           <HoverTouchable
@@ -509,6 +578,7 @@ function ChatInputBar({
             />
           </TouchableOpacity>
         )}
+        </View>
       </GlassSurface>
 
       {/* 外围保持透明，仅显示提示文字；底部安全区不放文字。 */}

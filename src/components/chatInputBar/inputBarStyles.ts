@@ -112,11 +112,8 @@ export const inputBarStyles = StyleSheet.create({
   },
   inputBar: {
     minHeight: 56,
-    flexDirection: 'row',
-    // 多行时让左右按钮贴底（而不是浮在 pill 垂直中间）。
-    // 单行时 pill 高 = 40(按钮) + 8×2(paddingVertical) = 56 = minHeight，
-    // center 与 flex-end 算出来完全一样，所以单行观感零变化。
-    alignItems: 'flex-end',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     borderWidth: 1,
     borderRadius: 24,
     paddingVertical: 8,
@@ -124,6 +121,42 @@ export const inputBarStyles = StyleSheet.create({
     paddingRight: 8,
     // 不做投影：白色主题下白底 + 深色阴影显得脏，浅色描边已足够勾勒浮起感。
     // elevation 也永久拿掉：安卓上它生成额外原生层，半透明底下透出白条（已实锤）
+  },
+  inputRow: {
+    flexDirection: 'row',
+    // 多行时让左右按钮贴底（而不是浮在 pill 垂直中间）。
+    // 单行时 row 高 = 40(按钮)，加上 inputBar 上下 padding 8×2 = 56 = minHeight，
+    // 无引用时单行观感零变化。
+    alignItems: 'flex-end',
+    minHeight: 40,
+  },
+  quoteBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginHorizontal: 4,
+    marginTop: 2,
+    marginBottom: 6,
+    gap: 8,
+  },
+  quoteBarIcon: {
+    flexShrink: 0,
+  },
+  quoteBarText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  quoteCloseBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : null),
   },
   panelTipZone: {
     justifyContent: 'center',

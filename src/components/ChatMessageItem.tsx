@@ -27,6 +27,7 @@ import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
 import { extractDocument, openChatDocument, stripDocumentFences, type DocFormat } from '../utils/chatDocument'
+import { parseQuotedMessage } from '../utils/chatQuote'
 
 /** 耗时格式化：<1s 显示 ms，<60s 显示 X.Xs，否则 m:ss */
 function formatDurationMs(ms: number): string {
@@ -549,6 +550,72 @@ const ChatMessageItem = memo(
       [isUser, theme]
     )
 
+    const parsedUserQuote = useMemo(
+      () => (isUser && item.content ? parseQuotedMessage(item.content) : null),
+      [isUser, item.content]
+    )
+
+    const renderUserTextBody = () => {
+      if (!item.content) return null
+      if (!parsedUserQuote) {
+        return (
+          <Text
+            selectable={textSelectable}
+            style={[
+              chatMessageStyles.messageText,
+              { color: theme.bubbleUserText }
+            ]}
+          >
+            {item.content}
+          </Text>
+        )
+      }
+      return (
+        <View style={chatMessageStyles.userQuoteWrap}>
+          <View
+            style={[
+              chatMessageStyles.userQuoteCard,
+              {
+                backgroundColor: theme.isDark
+                  ? 'rgba(0,0,0,0.22)'
+                  : 'rgba(255,255,255,0.55)',
+                borderColor: theme.isDark
+                  ? 'rgba(255,255,255,0.12)'
+                  : 'rgba(4,30,73,0.1)'
+              }
+            ]}
+          >
+            <View style={chatMessageStyles.userQuoteIcon}>
+              <InputBarIcon
+                name="corner-down-right"
+                size={13}
+                color={theme.bubbleUserText}
+              />
+            </View>
+            <Text
+              numberOfLines={2}
+              ellipsizeMode="tail"
+              style={[
+                chatMessageStyles.userQuoteText,
+                { color: theme.bubbleUserText }
+              ]}
+            >
+              {parsedUserQuote.quote.replace(/\s+/g, ' ')}
+            </Text>
+          </View>
+          <Text
+            selectable={textSelectable}
+            style={[
+              chatMessageStyles.messageText,
+              { color: theme.bubbleUserText }
+            ]}
+          >
+            {parsedUserQuote.body}
+          </Text>
+        </View>
+      )
+    }
+
     /**
      * 图片缩略图的边框 + 阴影，必须加在 <Image> 自己身上：
      * 外层 imageBubble 是透明无背景的，Android 的 elevation 拿不到轮廓，
@@ -664,15 +731,7 @@ const ChatMessageItem = memo(
               {/* 正文气泡：无正文时渲染空壳会被 padding 撑出白块 → 直接不渲染 */}
               {item.content ? (
                 <View style={[bubbleStyle, chatMessageStyles.textBubbleBelowAttachments]}>
-                  <Text
-                    selectable={textSelectable}
-                    style={[
-                      chatMessageStyles.messageText,
-                      { color: theme.bubbleUserText }
-                    ]}
-                  >
-                    {item.content}
-                  </Text>
+                  {renderUserTextBody()}
                 </View>
               ) : null}
             </View>
@@ -695,17 +754,7 @@ const ChatMessageItem = memo(
                   </Text>
                 </View>
               ) : isUser ? (
-                item.content ? (
-                  <Text
-                    selectable={textSelectable}
-                    style={[
-                      chatMessageStyles.messageText,
-                      { color: theme.bubbleUserText }
-                    ]}
-                  >
-                    {item.content}
-                  </Text>
-                ) : null
+                renderUserTextBody()
               ) : (
                 <View>
                   {hasThought ? (

@@ -26,6 +26,7 @@ export type InputBarIconName =
   | 'x'
   | 'chevron-down'
   | 'arrow-left'
+  | 'corner-down-right'
 
 export function InputBarIcon({
   name,
@@ -203,6 +204,13 @@ export function InputBarIcon({
         <Svg {...common}>
           <Line x1="19" y1="12" x2="5" y2="12" />
           <Polyline points="12 19 5 12 12 5" />
+        </Svg>
+      )
+    case 'corner-down-right':
+      return (
+        <Svg {...common}>
+          <Polyline points="15 10 20 15 15 20" />
+          <Path d="M4 4v7a4 4 0 0 0 4 4h12" />
         </Svg>
       )
     default:

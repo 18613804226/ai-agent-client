@@ -52,6 +52,7 @@
       "@config-plugins/react-native-pdf",
       "./plugins/withAbiSplits.js",
       "./plugins/withHighRefreshRate.js",
+      "./plugins/withSelectionAskMenu.js",
       "./plugins/withResourceShrink.js",
       "./plugins/withLintDisable.js",
       "./plugins/withWindowBackground.js",

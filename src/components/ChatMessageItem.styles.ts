@@ -29,6 +29,30 @@ export const chatMessageStyles = StyleSheet.create({
     paddingVertical: 2
   },
   messageText: { fontSize: 15, lineHeight: 22 },
+  /** 用户消息里的引用追问小卡片 */
+  userQuoteWrap: {
+    gap: 8
+  },
+  userQuoteCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    gap: 6
+  },
+  userQuoteIcon: {
+    marginTop: 2,
+    flexShrink: 0,
+    opacity: 0.75
+  },
+  userQuoteText: {
+    flexShrink: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    opacity: 0.85
+  },
   /** 附件列整体容器：纵向堆叠，靠右对齐 */
   userAttachmentsColumn: {
     flexDirection: 'column',

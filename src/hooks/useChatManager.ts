@@ -80,6 +80,11 @@ import { getDeviceInfo } from '../utils/deviceInfo'
 import { isMobileWebWidth } from '../constants/theme'
 import { normalizeSources, type ChatSource } from '../utils/citations'
 import { getCurrentCityForWeather } from '../utils/weatherLocation'
+import {
+  clearChatQuote,
+  formatQuotedMessage,
+  getChatQuote
+} from '../utils/chatQuote'
 
 /**
  * 服务端「按端分流提示词」用的 platform。
@@ -1277,7 +1282,10 @@ export function useChatManager() {
       }
     }
 
-    const currentInput = textToSend
+    const activeQuote = getChatQuote()
+    const currentInput = activeQuote
+      ? formatQuotedMessage(activeQuote, textToSend)
+      : textToSend
     setInputText('')
 
     // 图片同样「选中即传」：发送时先查缓存 / 复用进行中的请求（useImagePicker 的
@@ -1332,6 +1340,7 @@ export function useChatManager() {
     //    真正的失败窗口（校验/上传）都在上面 return false 了，不会走到这里，
     //    所以这里清不会吞掉用户的重试机会。
     if (onComposerClear) onComposerClear()
+    clearChatQuote()
 
     const userMsg: Message = {
       id: makeId('u'),
@@ -1380,12 +1389,15 @@ export function useChatManager() {
     const needsTitle =
       !currentConv || !currentConv.title || currentConv.title === '新对话'
 
-    // 标题来源：输入的第一条非空行，剥掉行首 markdown 标记（#/列表/引用/围栏）
+    // 标题来源：优先第一条非 `>` 引用行，剥掉行首 markdown 标记（#/列表/引用/围栏）
+    const nonEmptyLines = currentInput
+      .split('\n')
+      .map((l: string) => l.trim())
+      .filter(Boolean)
     const firstLine =
-      currentInput
-        .split('\n')
-        .map((l: string) => l.trim())
-        .find(Boolean) || ''
+      nonEmptyLines.find((l: string) => !l.startsWith('>')) ||
+      nonEmptyLines[0] ||
+      ''
     const stripped = firstLine
       .replace(/^#{1,6}\s*/, '')
       .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
@@ -1451,7 +1463,7 @@ export function useChatManager() {
 
     // 提问天气时拿当前城市随请求带给服务端（命中关键词才定位；
     // 拒绝授权 / 定位失败静默降级为不带位置，不挡发送）
-    const location = await getCurrentCityForWeather(currentInput)
+    const location = await getCurrentCityForWeather(textToSend || currentInput)
 
     try {
       await runTypewriterEffect(
