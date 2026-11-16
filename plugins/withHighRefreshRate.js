@@ -13,7 +13,7 @@ const injectHighRefreshRate = (contents, language) => {
     throw new Error('withHighRefreshRate could not find MainActivity anchor')
   }
 
-  const insertion = [
+  const refreshFn = [
     '  private fun applyHighRefreshRate() {',
     '    val display = window.decorView.display ?: return',
     '    val maxRefreshRate = display.supportedModes.maxOfOrNull { it.refreshRate } ?: return',
@@ -22,14 +22,28 @@ const injectHighRefreshRate = (contents, language) => {
     '    window.attributes = attrs',
     '  }',
     '',
+  ].join('\n')
+
+  let next = contents.replace(anchor, `\n${refreshFn}$1`)
+
+  // ⚠️ 已有 onResume（其它插件先注入过，例如 withSelectionAskMenu）时只追加调用，
+  //    不能再写一个 override fun onResume()：两个同名 override 会报
+  //    "Conflicting overloads"，clean prebuild 后 :app:compileReleaseKotlin 直接失败。
+  const resumeRe =
+    /([ \t]*override fun onResume\(\)\s*\{[^\n]*\r?\n[ \t]*super\.onResume\(\)[^\r\n]*)/
+  if (resumeRe.test(next)) {
+    return next.replace(resumeRe, `$1\n    applyHighRefreshRate()`)
+  }
+
+  const resume = [
+    '',
     '  override fun onResume() {',
     '    super.onResume()',
     '    applyHighRefreshRate()',
     '  }',
     '',
   ].join('\n')
-
-  return contents.replace(anchor, `\n${insertion}$1`)
+  return next.replace(anchor, `\n${resume}$1`)
 }
 
 const withHighRefreshRate = (config) =>
