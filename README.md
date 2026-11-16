@@ -1,3 +1,4 @@
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/18613804226/badge.svg)](https://hub.xerj.org/contributors/18613804226)
 
 # 🤖 AI RAG 智能体知识库（多端流式问答系统 & 客户端）
 
