@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Platform, Vibration, Dimensions } from 'react-native'
+import { Platform, AppState, Vibration, Dimensions } from 'react-native'
 import { useAnimatedRef } from 'react-native-reanimated'
 import {
   api,
@@ -302,6 +302,16 @@ export function useChatManager() {
     }, 1500)
     return () => clearTimeout(timer)
   }, [])
+
+  // 生成过程中切后台才开常驻前台服务；一回到前台立即撤掉通知，
+  // 这样前台看状态栏不会出现「正在后台生成回复…」
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !isGenerating) return
+    const sub = AppState.addEventListener('change', (state) => {
+      setBackgroundStreamingActive(state !== 'active')
+    })
+    return () => sub.remove()
+  }, [isGenerating])
 
   // 1. 初始化：等 device-login 落 token 后再拉会话；
   // 若首轮拿过期 token 被 401，新 token 落盘后自动重拉一次
@@ -1956,7 +1966,9 @@ export function useChatManager() {
     abortControllerRef.current = controller
     streamingConvTitleRef.current = updatedTitle
     setIsGenerating(true)
-    setBackgroundStreamingActive(true)
+    // 前台生成时不需要常驻通知：只有已在后台（或切到后台）才拉起前台服务，
+    // 避免状态栏一直挂着「正在后台生成回复…」
+    setBackgroundStreamingActive(isAppInBackground())
 
     // 提问天气时拿当前城市随请求带给服务端（命中关键词才定位；
     // 拒绝授权 / 定位失败静默降级为不带位置，不挡发送）
