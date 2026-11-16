@@ -85,6 +85,13 @@ import {
   formatQuotedMessage,
   getChatQuote
 } from '../utils/chatQuote'
+import {
+  ensureReplyNotificationPermission,
+  isAppInBackground,
+  notifyReplyCompleted,
+  onAppEnterBackground,
+  setBackgroundStreamingActive
+} from '../utils/replyNotification'
 
 /**
  * 服务端「按端分流提示词」用的 platform。
@@ -148,6 +155,8 @@ export function useChatManager() {
   const isConsumingRef = useRef(false)
   const streamFinishedRef = useRef(false)
   const currentStreamingMsgIdRef = useRef<string>('')
+  const flushBackgroundStreamRef = useRef<(() => void) | null>(null)
+  const streamingConvTitleRef = useRef<string>('')
   /**
    * 流世代号：每开始/中止一轮流式 +1。
    * cancelAnimationFrame 存在极小概率漏掉「已入队待执行」的那一帧，
@@ -232,6 +241,7 @@ export function useChatManager() {
     streamEpochRef.current += 1
     streamFinishedRef.current = false
     isConsumingRef.current = false
+    flushBackgroundStreamRef.current = null
     queueRef.current = []
     queueCharsRef.current = 0
     charCarryRef.current = 0
@@ -268,14 +278,25 @@ export function useChatManager() {
       timerRef.current = null
     }
     isConsumingRef.current = false
+    flushBackgroundStreamRef.current = null
     queueRef.current = []
     queueCharsRef.current = 0
     charCarryRef.current = 0
     lastFrameTimeRef.current = 0
     lastPushTimeRef.current = 0
     currentStreamingMsgIdRef.current = ''
+    setBackgroundStreamingActive(false)
     setStreamingRenderMsg(null)
     setIsGenerating(false)
+  }, [])
+
+  // 应用切到后台时：若 HTTP 流已结束而打字机队列还没排空（RAF 在后台会暂停），立即收尾并弹出完成通知
+  useEffect(() => {
+    return onAppEnterBackground(() => {
+      if (streamFinishedRef.current && flushBackgroundStreamRef.current) {
+        flushBackgroundStreamRef.current()
+      }
+    })
   }, [])
 
   // 1. 初始化：等 device-login 落 token 后再拉会话；
@@ -656,12 +677,31 @@ export function useChatManager() {
 
       /** 吐字收尾：队列排空 + 流已结束 → 落盘，UI 一次性切到最终态 */
       const finish = () => {
+        if (currentStreamingMsgIdRef.current !== targetMsgId) return
+        currentStreamingMsgIdRef.current = ''
+        flushBackgroundStreamRef.current = null
         isConsumingRef.current = false
-        timerRef.current = null
+        if (timerRef.current) {
+          cancelAnimationFrame(timerRef.current)
+          timerRef.current = null
+        }
+
+        // 后台快速收尾时把打字机队列里剩余的文本一次性排进当前缓存
+        while (queueRef.current.length > 0) {
+          const remaining = queueRef.current.shift()!
+          if (remaining.type === 'thought') {
+            currentThoughtRef.current += remaining.text
+          } else {
+            currentContentRef.current += remaining.text
+          }
+        }
+        queueCharsRef.current = 0
 
         const thought = currentThoughtRef.current
         const content = currentContentRef.current
         const durationMs = Date.now() - streamStartedAtRef.current
+
+        setBackgroundStreamingActive(false)
 
         if (thought || content) {
           updateAiMessageFields(targetMsgId, {
@@ -682,7 +722,12 @@ export function useChatManager() {
         }
 
         setStreamingRenderMsg(null)
+
+        if (isAppInBackground() && !sendNotCountedRef.current && content.trim()) {
+          notifyReplyCompleted(content, streamingConvTitleRef.current)
+        }
       }
+      flushBackgroundStreamRef.current = finish
 
       const consumeFrame = (frameTime?: number) => {
         // 已被新一轮流式接管 → 旧链直接退出。
@@ -1044,8 +1089,15 @@ export function useChatManager() {
           const { done, value } = await reader.read()
           if (done) {
             streamFinishedRef.current = true
-            // 唤醒一次，让消费者走结束逻辑
-            if (!isConsumingRef.current) {
+            // 后台时 RAF 已暂停：直接把剩余打字机队列排空收尾并触发完成通知
+            if (isAppInBackground()) {
+              if (flushBackgroundStreamRef.current) {
+                flushBackgroundStreamRef.current()
+              } else {
+                startSmoothConsumer(thinkingMsgId)
+              }
+            } else if (!isConsumingRef.current) {
+              // 唤醒一次，让消费者走结束逻辑
               startSmoothConsumer(thinkingMsgId)
             }
             break
@@ -1161,7 +1213,13 @@ export function useChatManager() {
           }
           drainSSE(true)
           streamFinishedRef.current = true
-          if (!isConsumingRef.current) {
+          if (isAppInBackground()) {
+            if (flushBackgroundStreamRef.current) {
+              flushBackgroundStreamRef.current()
+            } else {
+              startSmoothConsumer(thinkingMsgId)
+            }
+          } else if (!isConsumingRef.current) {
             startSmoothConsumer(thinkingMsgId)
           }
           settle()
@@ -1459,7 +1517,10 @@ export function useChatManager() {
 
     const controller = new AbortController()
     abortControllerRef.current = controller
+    streamingConvTitleRef.current = updatedTitle
     setIsGenerating(true)
+    void ensureReplyNotificationPermission()
+    setBackgroundStreamingActive(true)
 
     // 提问天气时拿当前城市随请求带给服务端（命中关键词才定位；
     // 拒绝授权 / 定位失败静默降级为不带位置，不挡发送）
@@ -1488,6 +1549,7 @@ export function useChatManager() {
       // 已被新一轮 send / 停止按钮接管时，这一轮不许再改共享状态，
       // 否则会把新流的 controller 置空（停止按钮失效）或提前切回「发送」
       if (sendRunRef.current === myRun) {
+        setBackgroundStreamingActive(false)
         setIsGenerating(false)
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null
