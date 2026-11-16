@@ -157,6 +157,7 @@ export function useChatManager() {
   const currentStreamingMsgIdRef = useRef<string>('')
   const flushBackgroundStreamRef = useRef<(() => void) | null>(null)
   const streamingConvTitleRef = useRef<string>('')
+  const wasBackgroundedDuringStreamRef = useRef(false)
   /**
    * 流世代号：每开始/中止一轮流式 +1。
    * cancelAnimationFrame 存在极小概率漏掉「已入队待执行」的那一帧，
@@ -290,9 +291,20 @@ export function useChatManager() {
     setIsGenerating(false)
   }, [])
 
+  // 提前静默检查/申请通知权限（延迟到挂载后，避免发消息瞬间弹窗打断请求）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void ensureReplyNotificationPermission()
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [])
+
   // 应用切到后台时：若 HTTP 流已结束而打字机队列还没排空（RAF 在后台会暂停），立即收尾并弹出完成通知
   useEffect(() => {
     return onAppEnterBackground(() => {
+      if (currentStreamingMsgIdRef.current) {
+        wasBackgroundedDuringStreamRef.current = true
+      }
       if (streamFinishedRef.current && flushBackgroundStreamRef.current) {
         flushBackgroundStreamRef.current()
       }
@@ -967,6 +979,52 @@ export function useChatManager() {
     }
   }
 
+  const recoverReplyFromSession = useCallback(
+    async (
+      sessionId: string,
+      baselineMsgCount: number,
+      myEpoch: number
+    ): Promise<{ content: string; thought?: string } | null> => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (
+          abortControllerRef.current?.signal.aborted ||
+          streamEpochRef.current !== myEpoch
+        ) {
+          return null
+        }
+        try {
+          const detail: any = await api.getSessionDetail(sessionId)
+          if (
+            abortControllerRef.current?.signal.aborted ||
+            streamEpochRef.current !== myEpoch
+          ) {
+            return null
+          }
+          const messages = Array.isArray(detail?.messages) ? detail.messages : []
+          if (messages.length >= baselineMsgCount && messages.length > 0) {
+            const lastMsg = messages[messages.length - 1]
+            if (
+              lastMsg?.role === 'assistant' &&
+              typeof lastMsg?.content === 'string' &&
+              lastMsg.content.trim()
+            ) {
+              return {
+                content: lastMsg.content,
+                thought:
+                  typeof lastMsg.thought === 'string' ? lastMsg.thought : undefined
+              }
+            }
+          }
+        } catch {}
+        if (attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 2000))
+        }
+      }
+      return null
+    },
+    []
+  )
+
   // ==================== 流式读取 ====================
   const runTypewriterEffect = async (
     thinkingMsgId: string,
@@ -976,8 +1034,13 @@ export function useChatManager() {
     knowledgeFileIds: string[] = [],
     attachmentIds: string[] = [],
     // 天气类提问时定位到的城市（如「广东省 深圳市」）；空串 = 不带位置
-    location = ''
-  ) => {
+    location = '',
+    retryCount = 0,
+    baselineMsgCount = 0
+  ): Promise<void> => {
+    if (retryCount === 0) {
+      wasBackgroundedDuringStreamRef.current = isAppInBackground()
+    }
     // 重置状态
     resetTypewriter()
     currentStreamingMsgIdRef.current = thinkingMsgId
@@ -990,6 +1053,90 @@ export function useChatManager() {
     const handleLine = (line: string) => {
       if (streamEpochRef.current !== myEpoch) return
       processSSELine(line)
+    }
+
+    const tryRecoverOrHandleError = async (
+      nativeDrain?: () => void,
+      errName?: string
+    ): Promise<'recovered' | 'retry' | 'handled' | 'fallback'> => {
+      nativeDrain?.()
+
+      const aborted =
+        errName === 'AbortError' ||
+        Boolean(abortControllerRef.current?.signal.aborted) ||
+        streamEpochRef.current !== myEpoch
+      if (aborted) return 'handled'
+
+      if (isAppInBackground() || wasBackgroundedDuringStreamRef.current) {
+        const recovered = await recoverReplyFromSession(
+          sessionId,
+          baselineMsgCount,
+          myEpoch
+        )
+        if (
+          recovered &&
+          !abortControllerRef.current?.signal.aborted &&
+          streamEpochRef.current === myEpoch
+        ) {
+          currentContentRef.current = recovered.content
+          currentThoughtRef.current = recovered.thought || ''
+          queueRef.current = []
+          queueCharsRef.current = 0
+          sendNotCountedRef.current = false
+          streamFinishedRef.current = true
+          if (flushBackgroundStreamRef.current) {
+            flushBackgroundStreamRef.current()
+          } else {
+            updateAiMessageFields(thinkingMsgId, {
+              thought: recovered.thought || undefined,
+              content: recovered.content,
+              durationMs: Date.now() - streamStartedAtRef.current
+            })
+            setStreamingRenderMsg(null)
+            if (isAppInBackground() && recovered.content.trim()) {
+              notifyReplyCompleted(
+                recovered.content,
+                streamingConvTitleRef.current
+              )
+            }
+          }
+          return 'recovered'
+        }
+
+        const hasPartial =
+          Boolean(currentContentRef.current.trim()) ||
+          queueRef.current.some((c) => c.type === 'content' && c.text.trim())
+
+        if (
+          retryCount < 1 &&
+          !hasPartial &&
+          !currentThoughtRef.current.trim() &&
+          !abortControllerRef.current?.signal.aborted &&
+          streamEpochRef.current === myEpoch
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 1200))
+          if (
+            !abortControllerRef.current?.signal.aborted &&
+            streamEpochRef.current === myEpoch
+          ) {
+            return 'retry'
+          }
+          return 'handled'
+        }
+
+        if (
+          hasPartial &&
+          !abortControllerRef.current?.signal.aborted &&
+          streamEpochRef.current === myEpoch
+        ) {
+          sendNotCountedRef.current = false
+          streamFinishedRef.current = true
+          flushBackgroundStreamRef.current?.()
+          return 'handled'
+        }
+      }
+
+      return 'fallback'
     }
 
     startSmoothConsumer(thinkingMsgId)
@@ -1112,8 +1259,25 @@ export function useChatManager() {
           }
         }
       } catch (err: any) {
+        const outcome = await tryRecoverOrHandleError(undefined, err?.name)
+        if (outcome === 'retry') {
+          return runTypewriterEffect(
+            thinkingMsgId,
+            sessionId,
+            queryText,
+            images,
+            knowledgeFileIds,
+            attachmentIds,
+            location,
+            retryCount + 1,
+            baselineMsgCount
+          )
+        }
+        if (outcome === 'recovered' || outcome === 'handled') {
+          return
+        }
         sendNotCountedRef.current = true // 网络/HTTP 异常，服务端大概率不计费
-        if (err.name !== 'AbortError') {
+        if (err?.name !== 'AbortError') {
           console.error('web stream error', err)
           updateAiMessageFields(thinkingMsgId, {
             content: '服务器开小差了，请检查网络或后端连接。'
@@ -1129,6 +1293,7 @@ export function useChatManager() {
       // 之前分支里 xhr.send() 之后 async 函数就结束了 → handleSend 的
       // finally 立刻执行 setIsGenerating(false) → 停止按钮在流式期间
       // 就切回「发送」状态、点击无效。
+      let shouldRetry = false
       await new Promise<void>(async (resolve) => {
         const xhr = new XMLHttpRequest()
         xhr.open('POST', url)
@@ -1225,7 +1390,23 @@ export function useChatManager() {
           settle()
         }
 
-        xhr.onerror = () => {
+        xhr.onerror = async () => {
+          const outcome = await tryRecoverOrHandleError(() => {
+            if (xhr.responseText && xhr.responseText.length > lastReadPos) {
+              buffer += xhr.responseText.substring(lastReadPos)
+              lastReadPos = xhr.responseText.length
+            }
+            drainSSE(true)
+          })
+          if (outcome === 'retry') {
+            shouldRetry = true
+            settle()
+            return
+          }
+          if (outcome === 'recovered' || outcome === 'handled') {
+            settle()
+            return
+          }
           sendNotCountedRef.current = true // 网络错误，服务端不计费
           updateAiMessageFields(thinkingMsgId, {
             content: '服务器开小差了，请检查网络或后端连接。'
@@ -1246,6 +1427,19 @@ export function useChatManager() {
 
         xhr.send(streamBody)
       })
+      if (shouldRetry) {
+        return runTypewriterEffect(
+          thinkingMsgId,
+          sessionId,
+          queryText,
+          images,
+          knowledgeFileIds,
+          attachmentIds,
+          location,
+          retryCount + 1,
+          baselineMsgCount
+        )
+      }
     }
   }
 
@@ -1515,11 +1709,11 @@ export function useChatManager() {
       })
     }
 
+    const baselineMsgCount = (currentConv?.messages?.length ?? 0) + 2
     const controller = new AbortController()
     abortControllerRef.current = controller
     streamingConvTitleRef.current = updatedTitle
     setIsGenerating(true)
-    void ensureReplyNotificationPermission()
     setBackgroundStreamingActive(true)
 
     // 提问天气时拿当前城市随请求带给服务端（命中关键词才定位；
@@ -1534,7 +1728,9 @@ export function useChatManager() {
         uploadedImageUrls,
         knowledgeFileIds,
         attachmentIds,
-        location
+        location,
+        0,
+        baselineMsgCount
       )
     } catch (error: any) {
       // 请求异常这一轮大概率没被服务端计数：标为不计费（真值由下次登录校准）

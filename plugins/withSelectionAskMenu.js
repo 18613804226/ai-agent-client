@@ -1,4 +1,9 @@
-const { withMainActivity, withMainApplication } = require('expo/config-plugins')
+const {
+  AndroidConfig,
+  withAndroidManifest,
+  withMainActivity,
+  withMainApplication,
+} = require('expo/config-plugins')
 
 const injectSelectionAskMenu = (contents, language) => {
   if (language !== 'kt') {
@@ -238,6 +243,89 @@ const injectSelectionAskMenu = (contents, language) => {
       '',
       'private const val DIETAI_REPLY_CHANNEL_ID = "dietai_reply_channel"',
       'private const val DIETAI_REPLY_NOTIFICATION_ID = 0x51A10002',
+      'private const val DIETAI_STREAM_CHANNEL_ID = "dietai_stream_channel"',
+      'private const val DIETAI_STREAM_FG_ID = 0x51A10003',
+      '',
+      'class DieTaiStreamService : android.app.Service() {',
+      '  private fun buildStreamNotification(): android.app.Notification {',
+      '    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {',
+      '      val manager =',
+      '        getSystemService(android.content.Context.NOTIFICATION_SERVICE)',
+      '          as? android.app.NotificationManager',
+      '      val channel = android.app.NotificationChannel(',
+      '        DIETAI_STREAM_CHANNEL_ID,',
+      '        "后台回复生成",',
+      '        android.app.NotificationManager.IMPORTANCE_LOW',
+      '      ).apply {',
+      '        description = "切到后台时保持 AI 回答传输不中断"',
+      '        setShowBadge(false)',
+      '        enableVibration(false)',
+      '        setSound(null, null)',
+      '      }',
+      '      manager?.createNotificationChannel(channel)',
+      '    }',
+      '',
+      '    val launchIntent =',
+      '      android.content.Intent(this, MainActivity::class.java).apply {',
+      '        flags =',
+      '          android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or',
+      '            android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP',
+      '      }',
+      '    val pendingIntent = android.app.PendingIntent.getActivity(',
+      '      this,',
+      '      DIETAI_STREAM_FG_ID,',
+      '      launchIntent,',
+      '      android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE',
+      '    )',
+      '',
+      '    val smallIcon =',
+      '      runCatching { R.mipmap.ic_launcher_foreground }.getOrElse {',
+      '        applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.stat_notify_sync',
+      '      }',
+      '',
+      '    return androidx.core.app.NotificationCompat.Builder(this, DIETAI_STREAM_CHANNEL_ID)',
+      '      .setSmallIcon(smallIcon)',
+      '      .setContentTitle("DieTai")',
+      '      .setContentText("正在后台生成回复…")',
+      '      .setOngoing(true)',
+      '      .setSilent(true)',
+      '      .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)',
+      '      .setCategory(androidx.core.app.NotificationCompat.CATEGORY_PROGRESS)',
+      '      .setContentIntent(pendingIntent)',
+      '      .setForegroundServiceBehavior(androidx.core.app.NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)',
+      '      .build()',
+      '  }',
+      '',
+      '  private fun promoteToForeground() {',
+      '    val notification = buildStreamNotification()',
+      '    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {',
+      '      startForeground(',
+      '        DIETAI_STREAM_FG_ID,',
+      '        notification,',
+      '        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC',
+      '      )',
+      '    } else {',
+      '      startForeground(DIETAI_STREAM_FG_ID, notification)',
+      '    }',
+      '  }',
+      '',
+      '  override fun onCreate() {',
+      '    super.onCreate()',
+      '    runCatching { promoteToForeground() }',
+      '  }',
+      '',
+      '  override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {',
+      '    runCatching { promoteToForeground() }',
+      '    return START_NOT_STICKY',
+      '  }',
+      '',
+      '  override fun onDestroy() {',
+      '    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }',
+      '    super.onDestroy()',
+      '  }',
+      '',
+      '  override fun onBind(intent: android.content.Intent?): android.os.IBinder? = null',
+      '}',
       '',
       'class DieTaiNativeModule(',
       '  reactContext: com.facebook.react.bridge.ReactApplicationContext',
@@ -245,6 +333,9 @@ const injectSelectionAskMenu = (contents, language) => {
       '',
       '  private val wakeLockLock = Any()',
       '  private var streamWakeLock: android.os.PowerManager.WakeLock? = null',
+      '  private var streamWifiLock: android.net.wifi.WifiManager.WifiLock? = null',
+      '  private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())',
+      '  @Volatile private var wantsBackgroundStreaming = false',
       '',
       '  override fun getName(): String = "DieTaiNative"',
       '',
@@ -320,35 +411,76 @@ const injectSelectionAskMenu = (contents, language) => {
       '  fun setBackgroundStreaming(active: Boolean) {',
       '    synchronized(wakeLockLock) {',
       '      if (active) {',
-      '        if (streamWakeLock?.isHeld == true) return',
-      '        val pm =',
-      '          reactApplicationContext.getSystemService(android.content.Context.POWER_SERVICE)',
-      '            as? android.os.PowerManager ?: return',
-      '        val lock = pm.newWakeLock(',
-      '          android.os.PowerManager.PARTIAL_WAKE_LOCK,',
-      '          "dietai:stream_wakelock"',
-      '        ).apply {',
-      '          setReferenceCounted(false)',
-      '          acquire(180_000L)',
+      '        if (streamWakeLock?.isHeld != true) {',
+      '          val pm =',
+      '            reactApplicationContext.getSystemService(android.content.Context.POWER_SERVICE)',
+      '              as? android.os.PowerManager',
+      '          streamWakeLock = pm?.newWakeLock(',
+      '            android.os.PowerManager.PARTIAL_WAKE_LOCK,',
+      '            "dietai:stream_wakelock"',
+      '          )?.apply {',
+      '            setReferenceCounted(false)',
+      '            acquire(180_000L)',
+      '          }',
       '        }',
-      '        streamWakeLock = lock',
+      '        if (streamWifiLock?.isHeld != true) {',
+      '          val wm =',
+      '            reactApplicationContext.applicationContext.getSystemService(android.content.Context.WIFI_SERVICE)',
+      '              as? android.net.wifi.WifiManager',
+      '          @Suppress("DEPRECATION")',
+      '          streamWifiLock = wm?.createWifiLock(',
+      '            android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,',
+      '            "dietai:stream_wifilock"',
+      '          )?.apply {',
+      '            setReferenceCounted(false)',
+      '            acquire()',
+      '          }',
+      '        }',
+      '        wantsBackgroundStreaming = true',
+      '        mainHandler.post {',
+      '          if (!wantsBackgroundStreaming) return@post',
+      '          runCatching {',
+      '            val intent = android.content.Intent(reactApplicationContext, DieTaiStreamService::class.java)',
+      '            androidx.core.content.ContextCompat.startForegroundService(reactApplicationContext, intent)',
+      '          }',
+      '        }',
       '      } else {',
       '        releaseWakeLockLocked()',
+      '        wantsBackgroundStreaming = false',
+      '        mainHandler.post {',
+      '          if (wantsBackgroundStreaming) return@post',
+      '          runCatching {',
+      '            val intent = android.content.Intent(reactApplicationContext, DieTaiStreamService::class.java)',
+      '            reactApplicationContext.stopService(intent)',
+      '          }',
+      '        }',
       '      }',
       '    }',
       '  }',
       '',
       '  private fun releaseWakeLockLocked() {',
-      '    val lock = streamWakeLock ?: return',
+      '    val wake = streamWakeLock',
       '    streamWakeLock = null',
-      '    if (lock.isHeld) {',
-      '      runCatching { lock.release() }',
+      '    if (wake?.isHeld == true) {',
+      '      runCatching { wake.release() }',
+      '    }',
+      '    val wifi = streamWifiLock',
+      '    streamWifiLock = null',
+      '    if (wifi?.isHeld == true) {',
+      '      runCatching { wifi.release() }',
       '    }',
       '  }',
       '',
       '  override fun invalidate() {',
       '    synchronized(wakeLockLock) {',
       '      releaseWakeLockLocked()',
+      '    }',
+      '    wantsBackgroundStreaming = false',
+      '    mainHandler.post {',
+      '      runCatching {',
+      '        val intent = android.content.Intent(reactApplicationContext, DieTaiStreamService::class.java)',
+      '        reactApplicationContext.stopService(intent)',
+      '      }',
       '    }',
       '    super.invalidate()',
       '  }',
@@ -372,6 +504,29 @@ const injectSelectionAskMenu = (contents, language) => {
   return next
 }
 
+const injectStreamServiceManifest = (androidManifest) => {
+  const manifest = androidManifest.manifest
+  const permissions = (manifest['uses-permission'] ??= [])
+  const syncPerm = 'android.permission.FOREGROUND_SERVICE_DATA_SYNC'
+  if (!permissions.some((p) => p?.$?.['android:name'] === syncPerm)) {
+    permissions.push({ $: { 'android:name': syncPerm } })
+  }
+
+  const app = AndroidConfig.Manifest.getMainApplicationOrThrow(androidManifest)
+  const services = (app.service ??= [])
+  const serviceName = '.DieTaiStreamService'
+  if (!services.some((s) => s?.$?.['android:name'] === serviceName)) {
+    services.push({
+      $: {
+        'android:name': serviceName,
+        'android:exported': 'false',
+        'android:foregroundServiceType': 'dataSync|mediaPlayback',
+      },
+    })
+  }
+  return androidManifest
+}
+
 const injectDieTaiNativePackage = (contents, language) => {
   if (language !== 'kt') {
     throw new Error('withSelectionAskMenu only supports the Kotlin MainApplication')
@@ -387,6 +542,10 @@ const injectDieTaiNativePackage = (contents, language) => {
 }
 
 const withSelectionAskMenu = (config) => {
+  config = withAndroidManifest(config, (modRequest) => {
+    modRequest.modResults = injectStreamServiceManifest(modRequest.modResults)
+    return modRequest
+  })
   config = withMainActivity(config, (modRequest) => {
     modRequest.modResults.contents = injectSelectionAskMenu(
       modRequest.modResults.contents,
@@ -407,3 +566,4 @@ const withSelectionAskMenu = (config) => {
 module.exports = withSelectionAskMenu
 module.exports.injectSelectionAskMenu = injectSelectionAskMenu
 module.exports.injectDieTaiNativePackage = injectDieTaiNativePackage
+module.exports.injectStreamServiceManifest = injectStreamServiceManifest
