@@ -1,5 +1,6 @@
 import {
   AppState,
+  DeviceEventEmitter,
   NativeModules,
   PermissionsAndroid,
   Platform
@@ -10,7 +11,37 @@ interface DieTaiNativeSpec {
   showReplyNotification?: (title: string, body: string) => void
   cancelReplyNotification?: () => void
   setBackgroundStreaming?: (active: boolean) => void
+  startNativeStream?: (
+    requestId: string,
+    streamUrl: string,
+    sessionUrl: string,
+    token: string,
+    body: string,
+    convTitle: string,
+    baselineMsgCount: number
+  ) => void
+  cancelNativeStream?: (requestId: string) => void
 }
+
+export type NativeStreamEvent =
+  | { requestId: string; type: 'line'; line: string }
+  | { requestId: string; type: 'http_error'; status: number; body: string }
+  | {
+      requestId: string
+      type: 'done'
+      notified: boolean
+      sawError?: boolean
+      content: string
+      thought: string
+    }
+  | {
+      requestId: string
+      type: 'recovered'
+      notified: boolean
+      content: string
+      thought: string
+    }
+  | { requestId: string; type: 'error'; message: string }
 
 const getDieTaiNative = (): DieTaiNativeSpec | undefined =>
   NativeModules?.DieTaiNative as DieTaiNativeSpec | undefined
@@ -44,7 +75,10 @@ export function cancelReplyNotification(): void {
   }
 }
 
-export function onAppEnterBackground(listener: () => void): () => void {
+export function onAppEnterBackground(
+  listener: () => void,
+  onForeground?: () => void
+): () => void {
   if (Platform.OS === 'web') {
     const doc = (globalThis as any).document
     if (!doc?.addEventListener) return () => {}
@@ -59,6 +93,7 @@ export function onAppEnterBackground(listener: () => void): () => void {
       } else if (!hidden && wasHidden) {
         wasHidden = false
         cancelReplyNotification()
+        onForeground?.()
       }
     }
     doc.addEventListener('visibilitychange', onVisibilityChange)
@@ -73,6 +108,9 @@ export function onAppEnterBackground(listener: () => void): () => void {
       listener()
     } else if (nextState === 'active') {
       cancelReplyNotification()
+      if (prevState !== 'active') {
+        onForeground?.()
+      }
     }
     prevState = nextState
   })
@@ -111,6 +149,64 @@ export function setBackgroundStreamingActive(active: boolean): void {
   try {
     getDieTaiNative()?.setBackgroundStreaming?.(active)
   } catch {}
+}
+
+export function hasNativeStreamSupport(): boolean {
+  return (
+    Platform.OS === 'android' &&
+    typeof getDieTaiNative()?.startNativeStream === 'function'
+  )
+}
+
+export function startNativeSseStream(
+  params: {
+    requestId: string
+    streamUrl: string
+    sessionUrl: string
+    token: string
+    body: string
+    convTitle: string
+    baselineMsgCount: number
+  },
+  onEvent: (event: NativeStreamEvent) => void
+): () => void {
+  const mod = getDieTaiNative()
+  if (
+    Platform.OS !== 'android' ||
+    typeof mod?.startNativeStream !== 'function'
+  ) {
+    return () => {}
+  }
+
+  let cleanedUp = false
+  const sub = DeviceEventEmitter.addListener(
+    'onDieTaiStreamEvent',
+    (ev: NativeStreamEvent) => {
+      if (cleanedUp || !ev || ev.requestId !== params.requestId) return
+      onEvent(ev)
+    }
+  )
+
+  mod.startNativeStream(
+    params.requestId,
+    params.streamUrl,
+    params.sessionUrl,
+    params.token,
+    params.body,
+    params.convTitle,
+    params.baselineMsgCount
+  )
+
+  return () => {
+    if (cleanedUp) return
+    cleanedUp = true
+    try {
+      sub.remove()
+    } catch {}
+    try {
+      mod.cancelNativeStream?.(params.requestId)
+    } catch {}
+  }
 }
 
 function formatNotificationPreview(rawContent: string): string {

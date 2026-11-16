@@ -87,10 +87,12 @@ import {
 } from '../utils/chatQuote'
 import {
   ensureReplyNotificationPermission,
+  hasNativeStreamSupport,
   isAppInBackground,
   notifyReplyCompleted,
   onAppEnterBackground,
-  setBackgroundStreamingActive
+  setBackgroundStreamingActive,
+  startNativeSseStream
 } from '../utils/replyNotification'
 
 /**
@@ -158,6 +160,7 @@ export function useChatManager() {
   const flushBackgroundStreamRef = useRef<(() => void) | null>(null)
   const streamingConvTitleRef = useRef<string>('')
   const wasBackgroundedDuringStreamRef = useRef(false)
+  const nativeNotifiedRef = useRef(false)
   /**
    * 流世代号：每开始/中止一轮流式 +1。
    * cancelAnimationFrame 存在极小概率漏掉「已入队待执行」的那一帧，
@@ -241,6 +244,7 @@ export function useChatManager() {
   const resetTypewriter = useCallback(() => {
     streamEpochRef.current += 1
     streamFinishedRef.current = false
+    nativeNotifiedRef.current = false
     isConsumingRef.current = false
     flushBackgroundStreamRef.current = null
     queueRef.current = []
@@ -297,18 +301,6 @@ export function useChatManager() {
       void ensureReplyNotificationPermission()
     }, 1500)
     return () => clearTimeout(timer)
-  }, [])
-
-  // 应用切到后台时：若 HTTP 流已结束而打字机队列还没排空（RAF 在后台会暂停），立即收尾并弹出完成通知
-  useEffect(() => {
-    return onAppEnterBackground(() => {
-      if (currentStreamingMsgIdRef.current) {
-        wasBackgroundedDuringStreamRef.current = true
-      }
-      if (streamFinishedRef.current && flushBackgroundStreamRef.current) {
-        flushBackgroundStreamRef.current()
-      }
-    })
   }, [])
 
   // 1. 初始化：等 device-login 落 token 后再拉会话；
@@ -735,7 +727,12 @@ export function useChatManager() {
 
         setStreamingRenderMsg(null)
 
-        if (isAppInBackground() && !sendNotCountedRef.current && content.trim()) {
+        if (
+          !nativeNotifiedRef.current &&
+          isAppInBackground() &&
+          !sendNotCountedRef.current &&
+          content.trim()
+        ) {
           notifyReplyCompleted(content, streamingConvTitleRef.current)
         }
       }
@@ -857,6 +854,48 @@ export function useChatManager() {
     },
     [updateStreamingMarkdownState, updateAiMessageFields]
   )
+
+  // 应用前后台切换监听：
+  // - 切到后台：若 HTTP 流已结束而打字机队列还没排空（RAF 在后台会暂停），立即收尾并弹出完成通知
+  // - 回到前台：若流已结束则立即收尾；若仍在进行中则把后台期间积压的字符直接刷新到界面
+  useEffect(() => {
+    return onAppEnterBackground(
+      () => {
+        if (currentStreamingMsgIdRef.current) {
+          wasBackgroundedDuringStreamRef.current = true
+        }
+        if (streamFinishedRef.current && flushBackgroundStreamRef.current) {
+          flushBackgroundStreamRef.current()
+        }
+      },
+      () => {
+        if (streamFinishedRef.current && flushBackgroundStreamRef.current) {
+          flushBackgroundStreamRef.current()
+        } else if (
+          currentStreamingMsgIdRef.current &&
+          !streamFinishedRef.current
+        ) {
+          while (queueRef.current.length > 0) {
+            const remaining = queueRef.current.shift()!
+            if (remaining.type === 'thought') {
+              currentThoughtRef.current += remaining.text
+            } else {
+              currentContentRef.current += remaining.text
+            }
+          }
+          queueCharsRef.current = 0
+          updateStreamingMarkdownState(
+            currentContentRef.current,
+            currentThoughtRef.current,
+            currentStreamingMsgIdRef.current
+          )
+          if (!isConsumingRef.current) {
+            startSmoothConsumer(currentStreamingMsgIdRef.current)
+          }
+        }
+      }
+    )
+  }, [updateStreamingMarkdownState, startSmoothConsumer])
 
   // 推送并自动唤醒
   const enqueue = useCallback(
@@ -1093,7 +1132,11 @@ export function useChatManager() {
               durationMs: Date.now() - streamStartedAtRef.current
             })
             setStreamingRenderMsg(null)
-            if (isAppInBackground() && recovered.content.trim()) {
+            if (
+              !nativeNotifiedRef.current &&
+              isAppInBackground() &&
+              recovered.content.trim()
+            ) {
               notifyReplyCompleted(
                 recovered.content,
                 streamingConvTitleRef.current
@@ -1286,6 +1329,199 @@ export function useChatManager() {
         }
         streamFinishedRef.current = true
       }
+    }
+    // ========== Android 原生后台保活流：Native OkHttp + 后台会话恢复 + 原生完成通知 ==========
+    else if (hasNativeStreamSupport()) {
+      const requestId = makeId('req')
+      const sessionUrl = `${baseURL}/chat/sessions/${sessionId}`
+      await new Promise<void>(async (resolve) => {
+        const abortSignal = abortControllerRef.current?.signal
+        let settled = false
+        let cancelNative: (() => void) | null = null
+
+        const onAbort = () => {
+          streamFinishedRef.current = true
+          settle()
+        }
+
+        const settle = () => {
+          if (settled) return
+          settled = true
+          abortSignal?.removeEventListener('abort', onAbort)
+          cancelNative?.()
+          cancelNative = null
+          resolve()
+        }
+
+        if (abortSignal?.aborted || streamEpochRef.current !== myEpoch) {
+          settle()
+          return
+        }
+
+        abortSignal?.addEventListener('abort', onAbort)
+
+        let streamToken = ''
+        try {
+          streamToken = (await getToken()) || ''
+        } catch {}
+
+        if (abortSignal?.aborted || streamEpochRef.current !== myEpoch) {
+          settle()
+          return
+        }
+
+        cancelNative = startNativeSseStream(
+          {
+            requestId,
+            streamUrl: url,
+            sessionUrl,
+            token: streamToken,
+            body: streamBody,
+            convTitle: streamingConvTitleRef.current || '新对话',
+            baselineMsgCount
+          },
+          (ev) => {
+            if (
+              settled ||
+              abortSignal?.aborted ||
+              streamEpochRef.current !== myEpoch
+            ) {
+              settle()
+              return
+            }
+
+            if (ev.type === 'line') {
+              handleLine(ev.line)
+              return
+            }
+
+            if (ev.type === 'http_error') {
+              if (ev.status === 429) {
+                let quotaMsg = '今日体验次数已用完，明天再来吧'
+                try {
+                  const errJson = JSON.parse(ev.body)
+                  if (errJson?.message) quotaMsg = errJson.message
+                } catch {}
+                MyToast.show(quotaMsg)
+                updateAiMessageFields(thinkingMsgId, {
+                  content: quotaMsg,
+                  systemNote: true
+                })
+                setStreamingRenderMsg(null)
+                streamFinishedRef.current = true
+                sendNotCountedRef.current = true
+                refreshDeviceSnapshot()
+                settle()
+                return
+              }
+              if (ev.status === 401) {
+                sendNotCountedRef.current = true
+                import('../services/authStore').then((m) =>
+                  m.notifyUnauthorized()
+                )
+                updateAiMessageFields(thinkingMsgId, {
+                  content: '登录已过期，正在重新登录，请稍后重试。',
+                  systemNote: true
+                })
+                setStreamingRenderMsg(null)
+                streamFinishedRef.current = true
+                settle()
+                return
+              }
+              sendNotCountedRef.current = true
+              let msg = ''
+              try {
+                msg = JSON.parse(ev.body)?.message || ''
+              } catch {}
+              if (msg) MyToast.show(msg)
+              updateAiMessageFields(thinkingMsgId, {
+                content: msg || '服务器开小差了，请检查网络或后端连接。',
+                systemNote: !!msg
+              })
+              setStreamingRenderMsg(null)
+              streamFinishedRef.current = true
+              settle()
+              return
+            }
+
+            if (ev.type === 'recovered') {
+              if (ev.notified) nativeNotifiedRef.current = true
+              currentContentRef.current = ev.content || ''
+              currentThoughtRef.current = ev.thought || ''
+              queueRef.current = []
+              queueCharsRef.current = 0
+              sendNotCountedRef.current = false
+              streamFinishedRef.current = true
+              if (flushBackgroundStreamRef.current) {
+                flushBackgroundStreamRef.current()
+              } else {
+                updateAiMessageFields(thinkingMsgId, {
+                  thought: ev.thought || undefined,
+                  content: ev.content || '',
+                  durationMs: Date.now() - streamStartedAtRef.current
+                })
+                setStreamingRenderMsg(null)
+                if (
+                  !nativeNotifiedRef.current &&
+                  isAppInBackground() &&
+                  ev.content?.trim()
+                ) {
+                  notifyReplyCompleted(
+                    ev.content,
+                    streamingConvTitleRef.current
+                  )
+                }
+              }
+              settle()
+              return
+            }
+
+            if (ev.type === 'done') {
+              if (ev.notified) nativeNotifiedRef.current = true
+              if (ev.sawError) {
+                currentStreamingMsgIdRef.current = ''
+                flushBackgroundStreamRef.current = null
+                isConsumingRef.current = false
+                streamFinishedRef.current = true
+                setStreamingRenderMsg(null)
+                settle()
+                return
+              }
+              if (
+                !currentContentRef.current &&
+                !currentThoughtRef.current &&
+                queueRef.current.length === 0 &&
+                ev.content
+              ) {
+                currentContentRef.current = ev.content
+                currentThoughtRef.current = ev.thought || ''
+              }
+              streamFinishedRef.current = true
+              if (isAppInBackground()) {
+                if (flushBackgroundStreamRef.current) {
+                  flushBackgroundStreamRef.current()
+                } else {
+                  startSmoothConsumer(thinkingMsgId)
+                }
+              } else if (!isConsumingRef.current) {
+                startSmoothConsumer(thinkingMsgId)
+              }
+              settle()
+              return
+            }
+
+            if (ev.type === 'error') {
+              sendNotCountedRef.current = true
+              updateAiMessageFields(thinkingMsgId, {
+                content: '服务器开小差了，请检查网络或后端连接。'
+              })
+              setStreamingRenderMsg(null)
+              streamFinishedRef.current = true
+              settle()
+            }
+          }
+        )
+      })
     }
     // ========== 移动端：XHR onprogress ==========
     else {
@@ -1709,7 +1945,13 @@ export function useChatManager() {
       })
     }
 
-    const baselineMsgCount = (currentConv?.messages?.length ?? 0) + 2
+    const persistedMsgCount = (currentConv?.messages ?? []).filter(
+      (m: any) =>
+        !m?.systemNote &&
+        m?.content !== '服务器开小差了，请检查网络或后端连接。' &&
+        m?.content !== '抱歉，服务器开小差了，请检查网络或后端连接。'
+    ).length
+    const baselineMsgCount = persistedMsgCount + 2
     const controller = new AbortController()
     abortControllerRef.current = controller
     streamingConvTitleRef.current = updatedTitle
