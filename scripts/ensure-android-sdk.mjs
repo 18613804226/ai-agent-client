@@ -1,6 +1,6 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 /**
  * `expo prebuild --clean` 会删除 android/local.properties。
@@ -13,14 +13,20 @@ const sdk =
   path.join(
     process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
     'Android',
-    'Sdk',
-  );
+    'Sdk'
+  )
 
 if (!fs.existsSync(sdk)) {
-  console.error(`[android] Android SDK not found: ${sdk}`);
-  process.exit(1);
+  console.error(`[android] Android SDK not found: ${sdk}`)
+  process.exit(1)
 }
 
-const escaped = sdk.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
-fs.writeFileSync('android/local.properties', `sdk.dir=${escaped}\n`);
-console.log(`[android] local.properties -> ${sdk}`);
+const escaped = sdk.replace(/\\/g, '\\\\').replace(/:/g, '\\:')
+const target = 'android/local.properties'
+const content = `sdk.dir=${escaped}\n`
+if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== content) {
+  fs.writeFileSync(target, content)
+  console.log(`[android] local.properties -> ${sdk}`)
+} else {
+  console.log(`[android] local.properties up-to-date -> ${sdk}`)
+}

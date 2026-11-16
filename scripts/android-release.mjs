@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -34,6 +35,44 @@ function run(command, args, options = {}) {
   }
 }
 
+function collectSortedFiles(dirPath) {
+  if (!fs.existsSync(dirPath)) return [];
+  const files = [];
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectSortedFiles(fullPath));
+    } else if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files.sort((a, b) =>
+    path
+      .relative(root, a)
+      .replace(/\\/g, '/')
+      .localeCompare(path.relative(root, b).replace(/\\/g, '/')),
+  );
+}
+
+/** 计算原生依赖/配置/插件指纹，变化时才重跑 expo prebuild --clean */
+function computePrebuildHash() {
+  const hash = crypto.createHash('sha256');
+  const targets = [
+    path.join(root, 'package.json'),
+    path.join(root, 'app.json'),
+    ...collectSortedFiles(path.join(root, 'plugins')),
+    ...collectSortedFiles(path.join(root, 'patches')),
+  ];
+  for (const filePath of targets) {
+    if (!fs.existsSync(filePath)) continue;
+    const rel = path.relative(root, filePath).replace(/\\/g, '/');
+    hash.update(rel);
+    hash.update('\0');
+    hash.update(fs.readFileSync(filePath));
+  }
+  return hash.digest('hex');
+}
+
 loadEnvFiles();
 if (!process.env.EXPO_PUBLIC_API_URL) {
   console.error('[release] EXPO_PUBLIC_API_URL is missing');
@@ -43,20 +82,59 @@ console.log(`[release] EXPO_PUBLIC_API_URL=${process.env.EXPO_PUBLIC_API_URL}`);
 
 if (process.argv.includes('--dry-run')) process.exit(0);
 
-// 快构建：SKIP_PREBUILD=1 时复用现有 android/，不重新生成原生工程。
-// 纯 JS 改动不需要 prebuild；只有改了 app.json、插件、原生依赖时才要跑。
-// （prebuild --clean 会删掉 android/，让所有原生缓存失效，是重复打包最大的一笔开销）
+// 智能增量：对比 package.json / app.json / plugins / patches 指纹。
+// 原生配置未变时自动跳过 `prebuild --clean`，保留 Gradle 增量编译产物（FORCE_PREBUILD=1 可强制重建）。
+const androidGradlePath = path.join(root, 'android', 'app', 'build.gradle');
+const hashFilePath = path.join(root, 'android', '.prebuild-hash');
+const currentHash = computePrebuildHash();
+const savedHash = fs.existsSync(hashFilePath)
+  ? fs.readFileSync(hashFilePath, 'utf8').trim()
+  : '';
+const forcePrebuild = process.env.FORCE_PREBUILD === '1';
+const hasAndroidProject = fs.existsSync(androidGradlePath);
 const skipPrebuild =
-  process.env.SKIP_PREBUILD === '1' && fs.existsSync(path.join(root, 'android'));
+  !forcePrebuild &&
+  hasAndroidProject &&
+  (process.env.SKIP_PREBUILD === '1' || savedHash === currentHash);
 
 if (skipPrebuild) {
-  console.log('[release] SKIP_PREBUILD=1 → 复用现有 android/');
+  const reason =
+    process.env.SKIP_PREBUILD === '1'
+      ? 'SKIP_PREBUILD=1'
+      : `原生指纹未变 (${currentHash.slice(0, 8)})`;
+  console.log(`[release] ${reason} → 跳过 prebuild，复用现有 android/`);
 } else {
+  if (forcePrebuild) {
+    console.log('[release] FORCE_PREBUILD=1 → 执行 prebuild --clean');
+  } else if (!hasAndroidProject) {
+    console.log('[release] 未检测到 android/ 工程 → 执行 prebuild --clean');
+  } else {
+    console.log('[release] 原生配置或插件已变更 → 执行 prebuild --clean');
+  }
   run('npx', ['expo', 'prebuild', '--clean', '--platform', 'android', '--no-install']);
+  fs.writeFileSync(hashFilePath, `${currentHash}\n`);
 }
 run('node', ['scripts/ensure-android-sdk.mjs']);
-fs.copyFileSync('release.keystore', path.join('android', 'app', 'release.keystore'));
+
+const srcKeystore = path.join(root, 'release.keystore');
+const destKeystore = path.join(root, 'android', 'app', 'release.keystore');
+if (
+  !fs.existsSync(destKeystore) ||
+  !fs.readFileSync(srcKeystore).equals(fs.readFileSync(destKeystore))
+) {
+  fs.copyFileSync(srcKeystore, destKeystore);
+  console.log('[release] 已更新 android/app/release.keystore');
+}
+
 run('node', ['scripts/patch-android-signing.mjs']);
+
+// expo-updates 的 createReleaseUpdatesResources 任务未声明 JS 源码为输入，
+// 增量构建时会被判为 UP-TO-DATE 导致 APK 内 app.manifest 的 commitTime 停留在旧时间，
+// 进而被手机上已缓存的旧 OTA 包覆盖。每次打包前清理该目录（仅几十 KB），强制生成最新 commitTime。
+fs.rmSync(
+  path.join(root, 'android', 'app', 'build', 'generated', 'assets', 'createReleaseUpdatesResources'),
+  { recursive: true, force: true },
+);
 
 run(
   // ".\" 前缀必需:NoDefaultCurrentDirectoryInExePath=1 时 cmd 不从当前目录解析裸 gradlew.bat

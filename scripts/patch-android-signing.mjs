@@ -43,6 +43,7 @@ if (!KEYSTORE_FILE || !KEYSTORE_PASSWORD || !KEY_ALIAS || !KEY_PASSWORD) {
 }
 
 let contents = fs.readFileSync(GRADLE, 'utf8');
+const initialContents = contents;
 
 // 定位整个 signingConfigs { ... }：用「与开括号同缩进的闭括号」回引，
 // 精确吃掉本级块，不会越界扫到 buildTypes 里的 release。
@@ -85,5 +86,9 @@ if (contents === before) {
   console.log('[signing] buildTypes.release → signingConfigs.release');
 }
 
-fs.writeFileSync(GRADLE, contents);
-console.log(`[signing] 完成: ${GRADLE}`);
+if (contents !== initialContents) {
+  fs.writeFileSync(GRADLE, contents);
+  console.log(`[signing] 完成(已更新): ${GRADLE}`);
+} else {
+  console.log(`[signing] 无需改写: ${GRADLE}`);
+}

@@ -9,45 +9,57 @@
  * lint 是静态检查,不影响运行时;release 构建时跳过可以避免这种环境性故障。
  * 本地开发时 lint 仍可通过 `./gradlew lint` 手动跑。
  */
-const { withAppBuildGradle, withGradleProperties } = require('expo/config-plugins');
+const {
+  withAppBuildGradle,
+  withGradleProperties
+} = require('expo/config-plugins')
 
 /** 纯字符串变换,单独导出便于单测 */
 const injectLintDisable = (contents) => {
   if (/checkReleaseBuilds\s+false/.test(contents)) {
-    return contents;
+    return contents
   }
   const block = [
     '    // ✅ injected by plugins/withLintDisable.js(禁用 release lint,避免 CI 上 OOM)',
     '    lint {',
     '        checkReleaseBuilds false',
     '    }',
-    '',
-  ].join('\n');
-  return contents.replace(/(^android[ \t]*\{)/m, `$1\n${block}`);
-};
+    ''
+  ].join('\n')
+  return contents.replace(/(^android[ \t]*\{)/m, `$1\n${block}`)
+}
+
+const setGradleProperty = (props, key, value) => {
+  const existing = props.find((p) => p.type === 'property' && p.key === key)
+  if (existing) {
+    existing.value = value
+  } else {
+    props.push({ type: 'property', key, value })
+  }
+}
 
 const withLintDisable = (config) => {
   config = withAppBuildGradle(config, (modRequest) => {
     modRequest.modResults.contents = injectLintDisable(
       modRequest.modResults.contents
-    );
-    return modRequest;
-  });
-  // 同时加大 Gradle daemon 的 Metaspace,避免其他 lint 任务 OOM
+    )
+    return modRequest
+  })
+  // 同时加大 Gradle daemon 的 Metaspace、开启全局构建缓存并关闭 Release PNG 重压缩
   config = withGradleProperties(config, (modRequest) => {
-    const props = modRequest.modResults;
-    const key = 'org.gradle.jvmargs';
-    const existing = props.find((p) => p.type === 'property' && p.key === key);
-    const value = '-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError';
-    if (existing) {
-      existing.value = value;
-    } else {
-      props.push({ type: 'property', key, value });
-    }
-    return modRequest;
-  });
-  return config;
-};
+    const props = modRequest.modResults
+    setGradleProperty(
+      props,
+      'org.gradle.jvmargs',
+      '-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError'
+    )
+    setGradleProperty(props, 'org.gradle.caching', 'true')
+    setGradleProperty(props, 'android.enablePngCrunchInReleaseBuilds', 'false')
+    return modRequest
+  })
+  return config
+}
 
-module.exports = withLintDisable;
-module.exports.injectLintDisable = injectLintDisable;
+module.exports = withLintDisable
+module.exports.injectLintDisable = injectLintDisable
+module.exports.setGradleProperty = setGradleProperty
