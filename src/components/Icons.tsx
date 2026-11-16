@@ -8,7 +8,7 @@ interface IconProps {
 }
 
 export const IconPlus: React.FC<IconProps> = ({
-  size = 20, // 默认大小设为 20，跟之前的 fontSize 对应
+  size = 20, // 默认大小设为 20，跟之前的1�7 fontSize 对应
   color = 'white', // 默认颜色
   strokeWidth = 2, // 默认线条粗细，比文字看起来更精致
 }) => {
@@ -23,12 +23,12 @@ export const IconPlus: React.FC<IconProps> = ({
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      {/* 标准的加号路径 */}
+      {/* 标准的加号路径1�7 */}
       <Path d="M12 5v14M5 12h14" />
     </Svg>
   );
 };
-// 🔊 开启状态：发声喇叭
+// 🔊 弢�启状态：发声喇叭
 export const IconSpeakerOn = ({
   size = 20,
   color = 'white',
@@ -48,7 +48,7 @@ export const IconSpeakerOn = ({
   </Svg>
 );
 
-// 🔇 关闭状态：静音斜杠喇叭
+// 🔇 关闭状��：静音斜杠喇叭
 export const IconSpeakerOff = ({
   size = 20,
   color = 'white',
@@ -109,7 +109,7 @@ export const IconCheck = ({
   </Svg>
 );
 
-// ❓ 问号圆圈：聊天气泡下方「查看统计」入口
+// ❄1�7 问号圆圈：聊天气泡下方��查看统计��入叄1�7
 export const IconHelpCircle = ({
   size = 14,
   color = 'currentColor',
@@ -131,7 +131,7 @@ export const IconHelpCircle = ({
   </Svg>
 );
 
-// ?? ���������壩ͼ�꣺Բ�Ƿ��� + �Ҳ����������ڡ��ر�/���������
+// ���������壩ͼ�꣺Բ�Ƿ��� + �Ҳ����������ڡ��ر�/���������
 export const IconSidebarClose = ({
   size = 16,
   color = 'currentColor',

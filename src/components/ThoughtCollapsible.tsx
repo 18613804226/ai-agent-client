@@ -75,6 +75,8 @@ const ThoughtCollapsible = memo(
     /** 是否停留在内容底部：流式增长时若在底部则自动贴底 */
     const followThoughtBottom = useRef(true)
     const scrollViewportRef = useRef<any>(null)
+    /** 未超过滚动阈值时的普通 View（还没有 ScrollView 可挂滚轮监听） */
+    const plainWrapRef = useRef<any>(null)
 
     // 内容重新布局：更新「是否需要内层滚动」；吐字期若停在底部则自动贴底
     const handleContentSize = useCallback(
@@ -99,6 +101,32 @@ const ThoughtCollapsible = memo(
       //    一吐字又被 scrollToEnd 拽回底部。判据必须基于内容高度而非滚动位置。
       followThoughtBottom.current = y + vh >= h - 2 || h <= vh + 0.5
     }, [])
+
+    // Web：滚轮向上时先于 onScroll 关闭贴底。
+    // 吐字增长紧跟滚轮事件，若等 onScroll 再脱钩，onContentSizeChange 里的
+    // scrollToEnd 早已把视口拉回底部 —— 表现就是「滚上去立刻被拽回来」。
+    // 内容还没超过 200px 时没有 ScrollView，就把监听挂到普通 View 上：
+    // 用户一开始上翻就先脱钩，避免内容刚涨过阈值翻成 ScrollView 的那一帧被贴一次底。
+    useEffect(() => {
+      if (Platform.OS !== 'web' || !isStreaming) return
+      const scroller: any = scrollViewportRef.current
+      const node: HTMLElement | null = scrollable
+        ? (scroller?.getScrollableNode?.() ??
+          scroller?.getScrollNode?.() ??
+          null)
+        : (plainWrapRef.current ?? null)
+      if (!node?.addEventListener) return
+      const onWheel = (event: WheelEvent) => {
+        if (event.deltaY > 0) {
+          // 非滚动分支下往回滚 = 用户还在看最新内容，恢复跟随
+          if (!scrollable) followThoughtBottom.current = true
+        } else if (event.deltaY < 0) {
+          followThoughtBottom.current = false
+        }
+      }
+      node.addEventListener('wheel', onWheel, { passive: true })
+      return () => node.removeEventListener('wheel', onWheel)
+    }, [scrollable, isStreaming])
 
     const animateTo = (open: boolean) => {
       progress.value = withTiming(open ? 1 : 0, {
@@ -289,6 +317,7 @@ const ThoughtCollapsible = memo(
             // ScrollView —— 否则触摸拖到这里带不动外层聊天列表。
             // onLayout 负责测量：流式增长超过阈值后翻成 ScrollView。
             <View
+              ref={plainWrapRef}
               onLayout={(e) =>
                 handleContentSize(e.nativeEvent.layout.height)
               }
