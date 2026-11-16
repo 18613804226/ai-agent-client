@@ -11,11 +11,20 @@ import * as Clipboard from 'expo-clipboard'
 import { MyToast } from './GlobalToast'
 import { InputBarIcon } from './InputBarIcon'
 import { setChatQuote } from '../utils/chatQuote'
+import { isMobileWebWidth } from '../constants/theme'
 
 interface MenuState {
   text: string
+  mode: 'floating' | 'bottom'
   top: number
+  bottom: number
   centerX: number
+}
+
+function isMobileTouchWeb(win: any): boolean {
+  const vw = win?.innerWidth || 0
+  if (vw > 0 && isMobileWebWidth(vw)) return true
+  return !!win?.matchMedia?.('(pointer: coarse)')?.matches
 }
 
 const DEFAULT_MENU_WIDTH = 190
@@ -113,13 +122,26 @@ export default function SelectionAskMenu() {
       return
     }
 
+    if (isMobileTouchWeb(win)) {
+      const inputEl = inChat ? win.document?.getElementById('chat-input-bar') : null
+      let bottom = 24
+      if (inputEl && typeof inputEl.getBoundingClientRect === 'function') {
+        const inputRect = inputEl.getBoundingClientRect()
+        if (inputRect && inputRect.height > 0) {
+          bottom = Math.max(16, Math.min(vh - MENU_HEIGHT - 16, Math.round(vh - inputRect.top + 10)))
+        }
+      }
+      setMenu({ text, mode: 'bottom', top: 0, bottom, centerX: (win.innerWidth || 375) / 2 })
+      return
+    }
+
     const top =
       rect.top < 56
         ? Math.min(vh - MENU_HEIGHT - 12, rect.bottom + 10)
         : Math.max(8, rect.top - MENU_HEIGHT - 8)
     const centerX = rect.left + rect.width / 2
 
-    setMenu({ text, top, centerX })
+    setMenu({ text, mode: 'floating', top, bottom: 0, centerX })
   }, [])
 
   const scheduleSync = useCallback(
@@ -166,10 +188,12 @@ export default function SelectionAskMenu() {
   if (Platform.OS !== 'web' || !menu) return null
 
   const vw = (globalThis as any).innerWidth || 375
+  const isBottomBar = menu.mode === 'bottom'
   const left = Math.max(
     12,
     Math.min(vw - menuWidth - 12, Math.round(menu.centerX - menuWidth / 2))
   )
+  const previewText = isBottomBar ? menu.text.replace(/\s+/g, ' ') : ''
 
   const handleAsk = () => {
     const selected = menu.text
@@ -211,25 +235,45 @@ export default function SelectionAskMenu() {
         onTouchStart: () => {
           interactingRef.current = true
         },
+        onTouchEnd: () => {
+          setTimeout(() => {
+            interactingRef.current = false
+          }, 250)
+        },
         onTouchCancel: () => {
           interactingRef.current = false
         }
       } as any)}
       style={[
         styles.menu,
-        {
-          top: menu.top,
-          left
-        }
+        isBottomBar
+          ? {
+              bottom: menu.bottom,
+              left,
+              maxWidth: Math.max(200, vw - 24)
+            }
+          : {
+              top: menu.top,
+              left
+            }
       ]}
     >
       <TouchableOpacity
         activeOpacity={0.75}
         onPress={handleAsk}
-        style={styles.btn}
+        style={[styles.btn, isBottomBar && styles.btnShrink]}
       >
         <InputBarIcon name="corner-down-right" size={14} color="#FFFFFF" />
         <Text style={styles.btnText}>问问 DieTai</Text>
+        {isBottomBar && previewText ? (
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={styles.previewText}
+          >
+            “{previewText}”
+          </Text>
+        ) : null}
       </TouchableOpacity>
       <View style={styles.divider} />
       <TouchableOpacity
@@ -269,13 +313,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
     gap: 6,
+    flexShrink: 0,
     ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : null)
+  },
+  btnShrink: {
+    flexShrink: 1,
+    minWidth: 0
   },
   btnText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '500',
+    flexShrink: 0,
     ...(Platform.OS === 'web' ? ({ whiteSpace: 'nowrap' } as any) : null)
+  },
+  previewText: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 12,
+    flexShrink: 1,
+    maxWidth: 140
   },
   divider: {
     width: 1,

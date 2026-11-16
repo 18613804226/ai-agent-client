@@ -273,6 +273,7 @@ function ChatInputBar({
   return (
     // 悬浮层：绝对定位贴在容器底部、不占布局流；box-none 让间隙区域的触摸穿透给消息列表。
     <View
+      nativeID="chat-input-bar"
       style={inputBarStyles.inputAreaWrapper}
       pointerEvents="box-none"
       onLayout={(e) => onOverlayHeightChange?.(e.nativeEvent.layout.height)}

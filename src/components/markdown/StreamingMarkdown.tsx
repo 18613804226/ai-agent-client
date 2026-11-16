@@ -21,6 +21,13 @@ import {
 } from '../../utils/emphasisSplit'
 import { MONO_FONT, CodeCopyButton } from './markdownRules'
 import { InkTailText } from './inkTail'
+import {
+  ANDROID_TEXT_PROPS,
+  isNativeSpanSupported,
+  MdEffectBlock,
+  SelectableTextTrimWrap,
+  toAndroidColorInt
+} from './nativeTextBlocks'
 
 /**
  * 已成形段落：props 只有字符串 + 两个稳定引用，内容不变时 memo 直接跳过，
@@ -199,7 +206,192 @@ function splitTailSegments(text: string): TailSeg[] {
  * **各自独立的节点**（`StableMarkdown` / `TailText`），不补的话块间会被压成
  * 一行 —— 等切点落定、或吐字结束切成最终态时又跳一次。
  */
-const BlockSeparator = () => <Text style={styles.tail}>{'\n'}</Text>
+const BlockSeparator = () => (
+  <Text {...ANDROID_TEXT_PROPS} style={styles.tail}>
+    {'\n'}
+  </Text>
+)
+
+const TAIL_BLOCK_LINE_RE = /^(?:\s*(?:[-*+]|\d+[.)])\s|>\s?)/m
+const TAIL_BULLET_RE = /^(\s*)([-*+])\s+(.*)$/
+const TAIL_ORDERED_RE = /^(\s*)(\d+[.)])\s+(.*)$/
+const TAIL_QUOTE_RE = /^>\s?(.*)$/
+
+function renderTailInlineOrPlain(
+  body: string,
+  keyPrefix: string,
+  color: string,
+  selectable: boolean,
+  useInkTail: boolean
+): React.ReactNode {
+  if (!body) return ''
+  const segInline = hasInlineMarkup(body) ? splitInlineSegments(body) : null
+  if (segInline) {
+    return segInline.map((s, j) => renderSeg(s, `${keyPrefix}.${j}`))
+  }
+  if (useInkTail) {
+    return (
+      <InkTailText
+        text={body}
+        color={color}
+        baseStyle={styles.tail}
+        selectable={selectable}
+      />
+    )
+  }
+  return body
+}
+
+function renderTailBlockLines(
+  text: string,
+  segIdx: number,
+  color: string,
+  style: any,
+  selectable: boolean,
+  streaming: boolean,
+  tailAddon: React.ReactNode = null
+): React.ReactNode {
+  const lines = text.split('\n')
+  const flatQuote = StyleSheet.flatten(style?.blockquote) || {}
+  const flatCitation = StyleSheet.flatten(style?.citation) || {}
+  const quoteTextColor = flatQuote.color ?? color
+  const bgColor = toAndroidColorInt(flatQuote.backgroundColor, 0)
+  const barColor = toAndroidColorInt(flatCitation.color, 0x888e918f)
+
+  let quoteGroup = 0
+  let prevWasQuote = false
+
+  return lines.map((line, li) => {
+    const isLast = li === lines.length - 1
+    const useInk = streaming && isLast
+    const addon = isLast ? tailAddon : null
+
+    const bulletMatch = TAIL_BULLET_RE.exec(line)
+    if (bulletMatch) {
+      prevWasQuote = false
+      const depth = Math.floor(bulletMatch[1].length / 2)
+      const body = bulletMatch[3]
+      return (
+        <MdEffectBlock
+          key={`tl-${segIdx}-${li}`}
+          trailingNewline={!isLast}
+          effect={{
+            kind: 'list',
+            marker: '• ',
+            depth,
+            fontSize: 15,
+            uid: `tail-li-${segIdx}-${li}`
+          }}
+        >
+          {'• '}
+          {renderTailInlineOrPlain(
+            body,
+            `s${segIdx}.${li}`,
+            color,
+            selectable,
+            useInk
+          )}
+          {addon}
+        </MdEffectBlock>
+      )
+    }
+
+    const orderedMatch = TAIL_ORDERED_RE.exec(line)
+    if (orderedMatch) {
+      prevWasQuote = false
+      const depth = Math.floor(orderedMatch[1].length / 2)
+      const marker = `${orderedMatch[2]} `
+      const body = orderedMatch[3]
+      return (
+        <MdEffectBlock
+          key={`tl-${segIdx}-${li}`}
+          trailingNewline={!isLast}
+          effect={{
+            kind: 'list',
+            marker,
+            depth,
+            fontSize: 15,
+            uid: `tail-li-${segIdx}-${li}`
+          }}
+        >
+          {marker}
+          {renderTailInlineOrPlain(
+            body,
+            `s${segIdx}.${li}`,
+            color,
+            selectable,
+            useInk
+          )}
+          {addon}
+        </MdEffectBlock>
+      )
+    }
+
+    const quoteMatch = TAIL_QUOTE_RE.exec(line)
+    if (quoteMatch) {
+      if (!prevWasQuote) {
+        quoteGroup += 1
+        prevWasQuote = true
+      }
+      const body = quoteMatch[1]
+      const hasBodyOrAddon = body.length > 0 || !!addon || !isLast
+      return (
+        <MdEffectBlock
+          key={`tl-${segIdx}-${li}`}
+          trailingNewline={!isLast}
+          hasContent={hasBodyOrAddon}
+          effect={{
+            kind: 'quote',
+            barColor,
+            bgColor,
+            barWidth: 3,
+            padLeft: 10,
+            uid: `tail-q-${segIdx}-${quoteGroup}`
+          }}
+        >
+          {quoteTextColor !== color ? (
+            <Text style={{ color: quoteTextColor }}>
+              {renderTailInlineOrPlain(
+                body,
+                `s${segIdx}.${li}`,
+                quoteTextColor,
+                selectable,
+                useInk
+              )}
+              {addon}
+            </Text>
+          ) : (
+            <>
+              {renderTailInlineOrPlain(
+                body,
+                `s${segIdx}.${li}`,
+                color,
+                selectable,
+                useInk
+              )}
+              {addon}
+            </>
+          )}
+        </MdEffectBlock>
+      )
+    }
+
+    prevWasQuote = false
+    return (
+      <React.Fragment key={`tl-${segIdx}-${li}`}>
+        {renderTailInlineOrPlain(
+          line,
+          `s${segIdx}.${li}`,
+          color,
+          selectable,
+          useInk
+        )}
+        {addon}
+        {!isLast ? '\n' : null}
+      </React.Fragment>
+    )
+  })
+}
 
 /** 稳定块/尾巴首段在最终渲染里**不会**补块间空行的情形：
  *  代码块（fence/code_block → View）和分割线（hr → View）—— body 规则会把
@@ -273,14 +465,16 @@ const TailText = memo(function TailText({
           // 保持这一行可见，高度就单调；等第一个代码行吐出来才换成盒子。
           if (!seg.code && !seg.closed) {
             return (
-              <Text
-                key={`f${i}`}
-                selectable={selectable}
-                style={[styles.tail, { color }]}
-              >
-                {seg.marker}
-                {streaming && i === lastTextIdx && <InlineMoonPhase />}
-              </Text>
+              <SelectableTextTrimWrap key={`f${i}`}>
+                <Text
+                  selectable={selectable}
+                  {...ANDROID_TEXT_PROPS}
+                  style={[styles.tail, { color }]}
+                >
+                  {seg.marker}
+                  {streaming && i === lastTextIdx && <InlineMoonPhase />}
+                </Text>
+              </SelectableTextTrimWrap>
             )
           }
           return (
@@ -288,6 +482,7 @@ const TailText = memo(function TailText({
               <CodeCopyButton code={seg.code} styles={style} />
               <Text
                 selectable={selectable}
+                {...ANDROID_TEXT_PROPS}
                 style={[styles.tail, style.codeText]}
               >
                 {seg.code}
@@ -295,27 +490,30 @@ const TailText = memo(function TailText({
             </View>
           )
         }
+        const useNativeBlockLines =
+          isNativeSpanSupported() && TAIL_BLOCK_LINE_RE.test(seg.text)
         // 内联强调按「本段文本」切分，避免把整条尾巴的切分结果重复渲染到每个文本段
         const segInline =
-          hasInlineMarkup(seg.text) && seg.text
+          !useNativeBlockLines && hasInlineMarkup(seg.text) && seg.text
             ? splitInlineSegments(seg.text)
             : null
         // 纯文本尾巴挂「墨洇新字」淡入（①）；内联强调段保持原样（style 是从
         // markdown 规则里来的，拆字动画只做在无样式叶子上，避免动 strong/em）
         // 落定后（streaming=false）不挂墨洇、直接吐纯文本：保持 content 相同的
         // 情况下树结构零变化，是「结束不跳」的前提。
-        const plainBody = !segInline ? (
-          streaming ? (
-            <InkTailText
-              text={seg.text}
-              color={color}
-              baseStyle={styles.tail}
-              selectable={selectable}
-            />
-          ) : (
-            seg.text
-          )
-        ) : null
+        const plainBody =
+          !useNativeBlockLines && !segInline ? (
+            streaming ? (
+              <InkTailText
+                text={seg.text}
+                color={color}
+                baseStyle={styles.tail}
+                selectable={selectable}
+              />
+            ) : (
+              seg.text
+            )
+          ) : null
         // ⚠️ 这里必须用 styles.tail（= body 的字号/行高），**不能**用
         // style.paragraph：最终渲染里 body 规则会把连续段落合并进同一个 <Text>，
         // 段落退化成内联子节点，`paragraph.marginBottom` 在那条链上不生效。
@@ -325,16 +523,32 @@ const TailText = memo(function TailText({
         // <Text> 里，而尾巴是**另一个** <Text>，内联补会造成行数对不上。
         // 块间空行由外层的 <BlockSeparator /> 统一补（一个独立的空行 Text）。
         return (
-          <Text
-            key={`t${i}`}
-            selectable={selectable}
-            style={[styles.tail, { color }]}
-          >
-            {segInline
-              ? segInline.map((s, j) => renderSeg(s, `s${i}.${j}`))
-              : plainBody}
-            {streaming && i === lastTextIdx && <InlineMoonPhase />}
-          </Text>
+          <SelectableTextTrimWrap key={`t${i}`}>
+            <Text
+              selectable={selectable}
+              {...ANDROID_TEXT_PROPS}
+              style={[styles.tail, { color }]}
+            >
+              {useNativeBlockLines ? (
+                renderTailBlockLines(
+                  seg.text,
+                  i,
+                  color,
+                  style,
+                  selectable,
+                  streaming,
+                  streaming && i === lastTextIdx ? <InlineMoonPhase /> : null
+                )
+              ) : (
+                <>
+                  {segInline
+                    ? segInline.map((s, j) => renderSeg(s, `s${i}.${j}`))
+                    : plainBody}
+                  {streaming && i === lastTextIdx && <InlineMoonPhase />}
+                </>
+              )}
+            </Text>
+          </SelectableTextTrimWrap>
         )
       })}
       {streaming && lastTextIdx < 0 && <InlineMoonPhase />}
@@ -410,7 +624,8 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
     // 渲染层归一化：流式期 trimStart() 消掉模型偶发的前导空行/空格；落定期 trim()
     // 同时清掉结尾的换行与空格。文本只增不减，trimStart 后的结果仍随 token 单调
     // 增长，下面的增量缓存判据（startsWith / lastCut）不受影响。
-    const c = streaming ? content.trimStart() : content.trim()
+    const raw = streaming ? content.trimStart() : content.trim()
+    const c = normalizeInlineEmphasis(raw)
     const cache = cacheRef.current
     if (c === cache.content) {
       return { blocks: cache.blocks, tail: cache.tail }
@@ -420,19 +635,19 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
     const smallDelta = c.length - cache.content.length < 8
     const recent = now - cache.lastCompute < 60
     if (grew && smallDelta && recent && cache.blocks.length >= 0) {
-      const tail = normalizeInlineEmphasis(c.slice(cache.lastCut))
+      const tail = c.slice(cache.lastCut)
       cache.content = c
       cache.tail = tail
       return { blocks: cache.blocks, tail }
     }
-    const r = splitStableBlocks(normalizeInlineEmphasis(c))
+    const r = splitStableBlocks(c)
     cache.content = c
     cache.blocks = r.blocks
     cache.tail = r.tail
     cache.lastCut = c.length - r.tail.length
     cache.lastCompute = now
     return r
-  }, [content])
+  }, [content, streaming])
   const color = style.body?.color ?? '#000'
 
   // 落定（streaming=false）：把「没有空行收尾的最后一段」也升格成稳定块，

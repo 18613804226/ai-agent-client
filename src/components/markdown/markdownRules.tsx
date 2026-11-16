@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, View, Platform } from 'react-native';
+import { Text, View, Platform, StyleSheet } from 'react-native';
 import { HoverTouchable } from '../HoverTouchable';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -14,6 +14,14 @@ import {
   toSuperscriptCitations,
   type CitationMap,
 } from '../../utils/citations';
+import {
+  ANDROID_TEXT_PROPS,
+  isNativeSpanSupported,
+  joinRunWithNewlines,
+  MdEffectBlock,
+  SelectableTextTrimWrap,
+  toAndroidColorInt,
+} from './nativeTextBlocks';
 
 // ===================== Markdown 渲染规则 =====================
 // 策略（混合文本树）：纯文本块仍合并成同一棵可选 <Text> 树 —— 原生端保留
@@ -242,19 +250,18 @@ export const createMarkdownRules = (
         // View 块（代码块/hr）也不补起始换行：它已经是独立兄弟节点，垂直布局
         // 自带换行，流式侧 TailText 的 fence 段之后同样是独立节点（见
         // StreamingMarkdown 的 needsNoSeparator 注释）。
-        const content: React.ReactNode[] = [];
-        run.forEach((el, i) => {
-          if (i > 0) content.push('\n');
-          content.push(el);
-        });
+        const content = joinRunWithNewlines(run);
+        const key = `run-${runKey++}`;
         blocks.push(
-          <Text
-            key={`run-${runKey++}`}
-            selectable={selectable}
-            style={styles.body}
-          >
-            {content}
-          </Text>,
+          <SelectableTextTrimWrap key={key}>
+            <Text
+              selectable={selectable}
+              {...ANDROID_TEXT_PROPS}
+              style={styles.body}
+            >
+              {content}
+            </Text>
+          </SelectableTextTrimWrap>,
         );
         run = [];
       }
@@ -322,33 +329,76 @@ export const createMarkdownRules = (
     </Text>
   ),
   // 引用块：子树含代码块/分割线 → 整体回退 View 盒子（View 不能进 Text）；
-  // 纯文本引用保持 Text，与前后段落连成同一棵可选文本树。
-  blockquote: (node, children, _parent, styles) =>
-    subtreeHasViewBlock(node) ? (
-      <View key={node.key} style={[styles.blockquote, BLOCKQUOTE_VIEW_FIX]}>
-        {children}
-      </View>
-    ) : (
-      <Text key={node.key} selectable={selectable} style={styles.blockquote}>
-        {children}
-      </Text>
-    ),
-  // 列表：纯文本列表保持 Text —— 符号与内容同在一棵可选文本树里，跨列表项
-  // 连续拖选；子树含 View 块（代码块/分割线）时整个列表回退 View 盒子。
+  // 纯文本引用通过 Android 原生 LeadingMarginSpan 画左竖线与底色块，同时保持
+  // 与前后段落连成同一棵可选文本树。
+  blockquote: (node, children, _parent, styles) => {
+    if (subtreeHasViewBlock(node)) {
+      return (
+        <View key={node.key} style={[styles.blockquote, BLOCKQUOTE_VIEW_FIX]}>
+          {children}
+        </View>
+      );
+    }
+    const childArr = React.Children.toArray(children);
+    const joined = joinRunWithNewlines(childArr);
+    const flatQuote = StyleSheet.flatten(styles.blockquote) || {};
+    const flatCitation = StyleSheet.flatten(styles.citation) || {};
+    const bgColor = toAndroidColorInt(flatQuote.backgroundColor, 0);
+    const barColor = toAndroidColorInt(flatCitation.color, 0x888e918f);
+    const nativeSpan = isNativeSpanSupported();
+    return (
+      <MdEffectBlock
+        key={node.key}
+        hasContent={childArr.length > 0}
+        effect={{
+          kind: 'quote',
+          barColor,
+          bgColor,
+          barWidth: 3,
+          padLeft: 10,
+          uid: node.key,
+        }}
+      >
+        <Text
+          selectable={selectable}
+          style={
+            nativeSpan
+              ? [styles.blockquote, { backgroundColor: undefined, lineHeight: 24 }]
+              : styles.blockquote
+          }
+        >
+          {joined}
+        </Text>
+      </MdEffectBlock>
+    );
+  },
+  // 列表：纯文本列表通过 Android 原生 LeadingMarginSpan 实现悬挂缩进，
+  // 符号与内容同在一棵可选文本树里，跨列表项连续拖选；
+  // 子树含 View 块（代码块/分割线）时整个列表回退 View 盒子。
   bullet_list: (node, children, _parent, styles) =>
     subtreeHasViewBlock(node) ? (
       <View key={node.key}>{children}</View>
     ) : (
-      <Text key={node.key} selectable={selectable} style={styles.bullet_list}>
-        {children}
+      <Text
+        key={node.key}
+        selectable={selectable}
+        style={styles.bullet_list}
+        {...({ 'data-md-effect-container': true } as any)}
+      >
+        {joinRunWithNewlines(React.Children.toArray(children))}
       </Text>
     ),
   ordered_list: (node, children, _parent, styles) =>
     subtreeHasViewBlock(node) ? (
       <View key={node.key}>{children}</View>
     ) : (
-      <Text key={node.key} selectable={selectable} style={styles.ordered_list}>
-        {children}
+      <Text
+        key={node.key}
+        selectable={selectable}
+        style={styles.ordered_list}
+        {...({ 'data-md-effect-container': true } as any)}
+      >
+        {joinRunWithNewlines(React.Children.toArray(children))}
       </Text>
     ),
   list_item: (node, children, parent, styles) => {
@@ -360,6 +410,10 @@ export const createMarkdownRules = (
       ? subtreeHasViewBlock(listAncestor)
       : subtreeHasViewBlock(node);
     const isBullet = hasParents(parent, 'bullet_list');
+    const startAttr = listAncestor?.attributes?.start;
+    const itemNumber =
+      typeof startAttr === 'number' ? startAttr + node.index : node.index + 1;
+    const marker = isBullet ? '• ' : `${itemNumber}. `;
     if (inViewMode) {
       // View 行：序号一列 + 内容一列；内容里段落是 Text、代码块是 View，
       // 都是这个容器的合法子节点（View 不再落进任何 Text）。
@@ -369,18 +423,63 @@ export const createMarkdownRules = (
             selectable={selectable}
             style={[styles.list_item, LIST_MARKER_STYLE]}
           >
-            {isBullet ? '• ' : `${node.index + 1}. `}
+            {marker}
           </Text>
           <View style={LIST_CONTENT_STYLE}>{children}</View>
         </View>
       );
     }
+    const listDepth = Math.max(
+      0,
+      (Array.isArray(parent)
+        ? parent.filter(
+            (p: any) => p.type === 'bullet_list' || p.type === 'ordered_list',
+          ).length
+        : 1) - 1,
+    );
+    const allChildren = React.Children.toArray(children);
+    const ownChildren: React.ReactNode[] = [];
+    const nestedLists: React.ReactNode[] = [];
+    allChildren.forEach((child) => {
+      if (
+        React.isValidElement(child) &&
+        (child.props as any)?.['data-md-effect-container']
+      ) {
+        nestedLists.push(child);
+      } else {
+        ownChildren.push(child);
+      }
+    });
+    const ownBlock = (
+      <MdEffectBlock
+        key={nestedLists.length > 0 ? `${node.key}-own` : node.key}
+        trailingNewline={nestedLists.length > 0}
+        effect={{
+          kind: 'list',
+          marker,
+          depth: listDepth,
+          fontSize: 15,
+          uid: node.key,
+        }}
+      >
+        <Text selectable={selectable} style={styles.list_item}>
+          {marker}
+          {joinRunWithNewlines(ownChildren)}
+        </Text>
+      </MdEffectBlock>
+    );
+    if (nestedLists.length === 0) {
+      return ownBlock;
+    }
     return (
-      <Text key={node.key} selectable={selectable} style={styles.list_item}>
-      {/* 列表项之间仍是单换行（同一个列表内部不额外空行） */}
-      {node.index > 0 ? '\n' : null}
-      {isBullet ? '• ' : `${node.index + 1}. `}
-        {children}
+      <Text
+        key={node.key}
+        selectable={selectable}
+        style={styles.list_item}
+        {...({ 'data-md-effect-container': true } as any)}
+      >
+        {ownBlock}
+        {joinRunWithNewlines(nestedLists)}
       </Text>
     );
   },
