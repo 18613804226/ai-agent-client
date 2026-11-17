@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback, useMemo } from 'react'
-import { StyleSheet, View, Platform, ActivityIndicator } from 'react-native'
+import { StyleSheet, View, Platform, ActivityIndicator, NativeModules } from 'react-native'
 import { FlashList } from '@shopify/flash-list'
 import { useChat, useStreamingRenderMsg } from '../context/appContexts'
 import { APP_PIN_USER_MESSAGE, clearThoughtOpen } from '../utils/chatScroll'
@@ -21,6 +21,12 @@ import { useChatPreviews } from './chat/useChatPreviews'
 import { useAutoRead } from './chat/useAutoRead'
 import { useChatPinScroll } from './chat/useChatPinScroll'
 import { useSelectionGestureGuard } from '../hooks/useSelectionGestureGuard'
+
+/** 原生壳提供 clearTextSelection（新版 withSelectionAskMenu）：抽屉打开时只清选区、
+ *  不切 selectable；旧壳 OTA 到新 JS 时回退到原来的 selectable=false 方案。 */
+const canNativeClearSelection =
+  Platform.OS === 'android' &&
+  typeof NativeModules?.DieTaiNative?.clearTextSelection === 'function'
 
 const styles = StyleSheet.create({
   loadingOverlay: {
@@ -64,13 +70,22 @@ export default function ChatArea({
     clearThoughtOpen()
   }, [activeId])
 
-  // 🧹 抽屉打开 / 多指手势时清掉 Web 端已选中的蓝色文本选择框
-  // （App 端靠 textSelectable=false 让原生选择自动收起）
+  // 🧹 抽屉打开 / 多指手势时清掉已选中的蓝色文本选择框
+  // ⚠️ Android：抽屉打开时**不能**再靠 textSelectable=false 收选区 ——
+  //    selectable 切换会把 ReactTextView 换成 PreparedLayoutTextView，两者折行/
+  //    余白修剪（SelectableTextTrimWrap）不同，气泡高度当场变化；贴底时
+  //    ScrollView 被 clamp，关抽屉后内容又长回去 → 视口「往下滚了一点」。
+  //    有原生 clearTextSelection 时直接清选区、保持 selectable 不变。
   useEffect(() => {
     if (!isDrawerOpen && !selectionSuppressed) return
-    if (Platform.OS !== 'web') return
-    const sel = (globalThis as any).getSelection?.()
-    sel?.removeAllRanges?.()
+    if (Platform.OS === 'web') {
+      const sel = (globalThis as any).getSelection?.()
+      sel?.removeAllRanges?.()
+      return
+    }
+    if (canNativeClearSelection) {
+      NativeModules.DieTaiNative.clearTextSelection()
+    }
   }, [isDrawerOpen, selectionSuppressed])
 
   // 图片 / 文件附件预览
@@ -253,7 +268,10 @@ export default function ChatArea({
           setPlayingMsgId={handlePlayingChange}
           onPreviewImage={openPreview}
           onPreviewFile={openFilePreview}
-          textSelectable={!extra.isDrawerOpen && !extra.selectionSuppressed}
+          textSelectable={
+            (!extra.isDrawerOpen || canNativeClearSelection) &&
+            !extra.selectionSuppressed
+          }
           onLayout={
             APP_PIN_USER_MESSAGE
               ? (e: any) => handleMessageLayout(item.id, e)
