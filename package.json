@@ -62,7 +62,8 @@
     "ws": "^8.18.0"
   },
   "scripts": {
-    "start": "expo start",
+    "start": "node scripts/start-with-loader.js",
+    "start:loader": "node scripts/start-with-loader.js",
     "android": "expo run:android",
     "android:release": "node scripts/android-release.mjs",
     "android:cloud": "eas build --platform android --profile production",
