@@ -1,4 +1,5 @@
 [![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/18613804226/badge.svg)](https://hub.xerj.org/contributors/18613804226)
+[![Android APK → Aliyun](https://github.com/18613804226/ai-agent-client/actions/workflows/android-release.yml/badge.svg)](https://github.com/18613804226/ai-agent-client/actions/workflows/android-release.yml)
 
 # 🤖 AI RAG 智能体知识库（多端流式问答系统 & 客户端）
 
