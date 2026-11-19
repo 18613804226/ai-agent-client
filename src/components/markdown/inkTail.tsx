@@ -14,12 +14,12 @@ import { Animated, Easing, Platform } from 'react-native'
  */
 
 /** 墨洇覆盖的字数（最后 N 个字） */
-export const INK_TAIL = 4
+export const INK_TAIL = 5
 /** 透明度下限：即使在动画起点也可读（修复"末尾字符不显示"）。
  *  越小对比越强、湿墨越明显；0.5 是"明显但不会看不见"的平衡点。 */
-const INK_FLOOR = 0.2
+const INK_FLOOR = 0.1
 /** 淡入时长 */
-const INK_DURATION = 160
+const INK_DURATION = 180
 /** iOS / Web 的湿墨晕半径（Android 内联 span 不支持 textShadow，自动忽略） */
 const INK_RADIUS = 6
 const INK_SHADOW_ALPHA = 0.35
