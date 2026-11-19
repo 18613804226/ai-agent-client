@@ -140,7 +140,8 @@ export default function ChatArea({
     scrollToBottomUI,
     handleScrollToBottom,
     recomputePinSpacer,
-    pinnedMsgIdRef
+    pinnedMsgIdRef,
+    historySettledSV
   } = useChatPinScroll({
     activeId,
     messages,
@@ -311,7 +312,12 @@ export default function ChatArea({
           {/* 空会话：欢迎语。键盘升起时淡出，避免「啪」一下消失 */}
           <WelcomeOverlay visible={showWelcome} theme={theme} />
           {!isEmptyConversation && (
-            <ListFadeIn enabled={Platform.OS !== 'web'}>
+            <ListFadeIn
+              enabled={Platform.OS !== 'web'}
+              readySV={
+                APP_PIN_USER_MESSAGE && !isGenerating ? historySettledSV : null
+              }
+            >
             <FlashList
               ref={scrollViewRef}
               data={displayMessages}

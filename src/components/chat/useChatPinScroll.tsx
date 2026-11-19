@@ -169,6 +169,10 @@ export function useChatPinScroll({
   const lastFrameOffsetSV = useSharedValue(0)
   /** 首次贴底待办：历史刚落盘时允许一次「从顶部到底部」的跟随 */
   const pendingFollowSV = useSharedValue(0)
+  /** 初始历史贴底是否已收敛（0 = 仍在透明遮罩下对齐底部；1 = 已稳定可淡入显示） */
+  const historySettledSV = useSharedValue(0)
+  const settleStableFramesSV = useSharedValue(0)
+  const lastSettledMaxSV = useSharedValue(-1)
   /**
    * 距上一次滚动事件过了多少帧（UI 线程可读）。
    * 用户手指刚按下时 JS 的 touch 事件有延迟，这段时间里 offset 还是陈旧的，
@@ -384,6 +388,7 @@ export function useChatPinScroll({
   const pinUserMessage = useCallback(
     (userId: string) => {
       endHistoryBottom()
+      historySettledSV.value = 1
       userTouchedRef.current = false // 新一轮钉顶：重置「用户是否已接管」
 
       setKeepSpacer(true)
@@ -472,6 +477,9 @@ export function useChatPinScroll({
       touchedSV.value = false
       userTouchedRef.current = false
       pendingFollowSV.value = 0
+      historySettledSV.value = 0
+      settleStableFramesSV.value = 0
+      lastSettledMaxSV.value = -1
       lastFrameOffsetSV.value = 0
       return
     }
@@ -925,10 +933,47 @@ export function useChatPinScroll({
     if (!hasDataSV.value) return
     if (interactingSV.value) return
     const offset = outerOffsetSV.value
+    const isPin = pinTargetSV.value >= 0
+
+    // ── 初始历史贴底收敛期（ListFadeIn 尚未淡入、列表对用户不可见）──
+    // initialScrollIndex 只滚到最后一条 item，不含 ListFooterComponent（输入栏占位），
+    // 且本身会触发 onScroll 把 framesSinceScrollSV 清零。这里不能等 8 帧（~133ms），
+    // 否则 ListFadeIn 淡入后用户会看到气泡先贴低、一两帧后再被往上推。
+    // 直接每帧对齐 outerMaxSV，连续稳定 3 帧后再把 historySettledSV 置 1 触发淡入。
+    if (!isPin && historyBottomSV.value === 1 && historySettledSV.value === 0) {
+      lastFrameOffsetSV.value = offset
+      const max = outerMaxSV.value
+      if (max > 0) {
+        if (Math.abs(offset - max) > 1) {
+          settleStableFramesSV.value = 0
+          lastSettledMaxSV.value = max
+          scrollToWorklet(scrollViewRef, 0, max, false)
+        } else if (Math.abs(max - lastSettledMaxSV.value) <= 1) {
+          settleStableFramesSV.value += 1
+          if (settleStableFramesSV.value >= 3) {
+            pendingFollowSV.value = 0
+            historySettledSV.value = 1
+          }
+        } else {
+          lastSettledMaxSV.value = max
+          settleStableFramesSV.value = 1
+        }
+        return
+      }
+      // 短会话（内容不足一屏，outerMaxSV === 0，无需滚动）：等布局稳定 2 帧即淡入
+      if (contentHeightSV.value > 0 && viewportHeightSV.value > 0) {
+        settleStableFramesSV.value += 1
+        if (settleStableFramesSV.value >= 2) {
+          pendingFollowSV.value = 0
+          historySettledSV.value = 1
+        }
+      }
+      return
+    }
+
     const moved = Math.abs(offset - lastFrameOffsetSV.value) > 0.5
     lastFrameOffsetSV.value = offset
     if (moved) return
-    const isPin = pinTargetSV.value >= 0
     const rawTarget = isPin
       ? pinTargetSV.value
       : historyBottomSV.value === 1 && outerMaxSV.value > 0
@@ -1035,6 +1080,7 @@ export function useChatPinScroll({
         userTouchedRef.current = true
         touchedSV.value = true
         interactingSV.value = true
+        historySettledSV.value = 1
         stopPinConverge()
         endHistoryBottom()
       },
@@ -1048,6 +1094,7 @@ export function useChatPinScroll({
         userTouchedRef.current = true
         touchedSV.value = true
         interactingSV.value = true
+        historySettledSV.value = 1
         stopPinConverge()
         endHistoryBottom()
         scrollViewProps.onScrollBeginDrag?.(e)
@@ -1098,6 +1145,7 @@ export function useChatPinScroll({
     scrollToBottomUI,
     handleScrollToBottom,
     recomputePinSpacer,
-    pinnedMsgIdRef
+    pinnedMsgIdRef,
+    historySettledSV
   }
 }

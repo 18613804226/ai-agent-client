@@ -54,6 +54,10 @@ const withLintDisable = (config) => {
       '-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError'
     )
     setGradleProperty(props, 'org.gradle.caching', 'true')
+    setGradleProperty(props, 'org.gradle.configureondemand', 'true')
+    setGradleProperty(props, 'org.gradle.daemon.idletimeout', '1800000')
+    setGradleProperty(props, 'kotlin.incremental', 'true')
+    setGradleProperty(props, 'kotlin.caching.enabled', 'true')
     setGradleProperty(props, 'android.enablePngCrunchInReleaseBuilds', 'false')
     return modRequest
   })
