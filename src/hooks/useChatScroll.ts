@@ -476,7 +476,7 @@ export function useChatScroll({
     () => ({
       onScroll: handleScroll,
       onScrollBeginDrag: handleScrollBeginDrag,
-      scrollEventThrottle: 32,
+      scrollEventThrottle: 16,
       onContentSizeChange: handleContentSizeChange,
       showsVerticalScrollIndicator: !INVERTED_CHAT_LIST,
       // ⚠️ 不要把 removeClippedSubviews 透传给 FlashList：它落到 FlashList 内部的

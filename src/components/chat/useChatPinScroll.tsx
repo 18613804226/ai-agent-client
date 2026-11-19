@@ -173,6 +173,18 @@ export function useChatPinScroll({
   const historySettledSV = useSharedValue(0)
   const settleStableFramesSV = useSharedValue(0)
   const lastSettledMaxSV = useSharedValue(-1)
+  const settleElapsedMsSV = useSharedValue(0)
+  const prevRawScrollYSV = useSharedValue(0)
+  /**
+   * JS 线程心跳：收敛期内 JS 每个 rAF 自增一次。
+   * outerMaxSV / outerOffsetSV 都由 JS 线程的 onContentSizeChange / onScroll 写入，
+   * 切会话时 JS 正忙着渲染 markdown，这些事件会积压 —— UI 线程看到的值「看似稳定」
+   * 其实是陈旧的；淡入后 JS 才把积压的尺寸变化交上来 → 可见的「往上抬一下」。
+   * 所以只有 JS 在跟帧（心跳在走）的帧才计入稳定时长。
+   */
+  const jsTickSV = useSharedValue(0)
+  const lastJsTickSeenSV = useSharedValue(0)
+  const framesSinceJsTickSV = useSharedValue(999)
   /**
    * 距上一次滚动事件过了多少帧（UI 线程可读）。
    * 用户手指刚按下时 JS 的 touch 事件有延迟，这段时间里 offset 还是陈旧的，
@@ -451,6 +463,21 @@ export function useChatPinScroll({
   const isGeneratingRef = useRef(false)
   isGeneratingRef.current = isGenerating
 
+  // JS 心跳：收敛期内每个 JS 帧自增 jsTickSV，供 UI 线程判断「JS 是否在跟帧」。
+  // 收敛完成（historySettledSV=1）或 2s 超时即停，平时零开销。
+  useEffect(() => {
+    if (!APP_PIN_USER_MESSAGE || isHistoryLoading) return
+    let raf = 0
+    const startedAt = Date.now()
+    const tick = () => {
+      jsTickSV.value = jsTickSV.value + 1
+      if (historySettledSV.value === 1 || Date.now() - startedAt > 2000) return
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [isHistoryLoading, jsTickSV, historySettledSV])
+
   useEffect(() => {
     if (!APP_PIN_USER_MESSAGE) return
 
@@ -480,6 +507,9 @@ export function useChatPinScroll({
       historySettledSV.value = 0
       settleStableFramesSV.value = 0
       lastSettledMaxSV.value = -1
+      settleElapsedMsSV.value = 0
+      prevRawScrollYSV.value = 0
+      framesSinceJsTickSV.value = 999
       lastFrameOffsetSV.value = 0
       return
     }
@@ -926,8 +956,9 @@ export function useChatPinScroll({
    *    拖动中的一帧。内容长高时 offset 不会动（只有 target 变大），
    *    所以这道闸门不会挡住正常的贴底跟随。
    */
-  useFrameCallback(() => {
+  useFrameCallback((frameInfo) => {
     'worklet'
+    const dt = frameInfo.timeSincePreviousFrame ?? 16
     framesSinceScrollSV.value += 1
     if (touchedSV.value) return
     if (!hasDataSV.value) return
@@ -937,41 +968,69 @@ export function useChatPinScroll({
 
     // ── 初始历史贴底收敛期（ListFadeIn 尚未淡入、列表对用户不可见）──
     // initialScrollIndex 只滚到最后一条 item，不含 ListFooterComponent（输入栏占位），
-    // 且本身会触发 onScroll 把 framesSinceScrollSV 清零。这里不能等 8 帧（~133ms），
-    // 否则 ListFadeIn 淡入后用户会看到气泡先贴低、一两帧后再被往上推。
-    // 直接每帧对齐 outerMaxSV，连续稳定 3 帧后再把 historySettledSV 置 1 触发淡入。
+    // 且本身会触发 onScroll 把 framesSinceScrollSV 清零。此外 FlashList v2 的
+    // applyInitialScrollIndex 会在 100ms 内反复补滚，SelectableTextTrimWrap 也会延迟数帧完成裁剪；
+    // 120Hz 高刷屏下 3 帧仅 ~25ms，过早淡入仍会被拉偏。因此要求累计耗时 >= 130ms 且连续稳定 3 帧。
     if (!isPin && historyBottomSV.value === 1 && historySettledSV.value === 0) {
       lastFrameOffsetSV.value = offset
+      // JS 心跳：最近 3 帧内没走 → JS 正忙，事件可能积压，本帧不计稳定
+      if (jsTickSV.value !== lastJsTickSeenSV.value) {
+        lastJsTickSeenSV.value = jsTickSV.value
+        framesSinceJsTickSV.value = 0
+      } else {
+        framesSinceJsTickSV.value += 1
+      }
+      const jsAlive = framesSinceJsTickSV.value <= 3
       const max = outerMaxSV.value
       if (max > 0) {
-        if (Math.abs(offset - max) > 1) {
+        if (
+          Math.abs(offset - max) > 0.5 ||
+          Math.abs(max - lastSettledMaxSV.value) > 0.5
+        ) {
           settleStableFramesSV.value = 0
+          settleElapsedMsSV.value = 0
           lastSettledMaxSV.value = max
           scrollToWorklet(scrollViewRef, 0, max, false)
-        } else if (Math.abs(max - lastSettledMaxSV.value) <= 1) {
+        } else if (!jsAlive) {
+          settleStableFramesSV.value = 0
+          settleElapsedMsSV.value = 0
+        } else {
+          settleElapsedMsSV.value += dt
           settleStableFramesSV.value += 1
-          if (settleStableFramesSV.value >= 3) {
+          if (
+            settleElapsedMsSV.value >= 130 &&
+            settleStableFramesSV.value >= 3
+          ) {
+            scrollToWorklet(scrollViewRef, 0, max, false)
             pendingFollowSV.value = 0
             historySettledSV.value = 1
           }
-        } else {
-          lastSettledMaxSV.value = max
-          settleStableFramesSV.value = 1
         }
         return
       }
-      // 短会话（内容不足一屏，outerMaxSV === 0，无需滚动）：等布局稳定 2 帧即淡入
+      // 短会话（内容不足一屏，outerMaxSV === 0，无需滚动）：JS 跟帧且稳定 >= 50ms 即淡入
       if (contentHeightSV.value > 0 && viewportHeightSV.value > 0) {
-        settleStableFramesSV.value += 1
-        if (settleStableFramesSV.value >= 2) {
-          pendingFollowSV.value = 0
-          historySettledSV.value = 1
+        if (!jsAlive) {
+          settleStableFramesSV.value = 0
+          settleElapsedMsSV.value = 0
+        } else {
+          settleElapsedMsSV.value += dt
+          settleStableFramesSV.value += 1
+          if (
+            settleElapsedMsSV.value >= 50 &&
+            settleStableFramesSV.value >= 2
+          ) {
+            pendingFollowSV.value = 0
+            historySettledSV.value = 1
+          }
         }
       }
       return
     }
 
-    const moved = Math.abs(offset - lastFrameOffsetSV.value) > 0.5
+    const moved = isPin
+      ? Math.abs(offset - lastFrameOffsetSV.value) > 0.5
+      : offset < lastFrameOffsetSV.value - 0.5
     lastFrameOffsetSV.value = offset
     if (moved) return
     const rawTarget = isPin
@@ -987,6 +1046,13 @@ export function useChatPinScroll({
     // 无限重绘 + 满 CPU（表现为出代码块时气泡被拉长再缩回、界面像卡住）。
     const target = Math.max(0, Math.min(rawTarget, outerMaxSV.value))
     if (target < 0) return
+    if (!isPin && Math.abs(target - lastSettledMaxSV.value) > 0.5) {
+      if (framesSinceScrollSV.value > 8) {
+        lastSettledMaxSV.value = target
+        scrollToWorklet(scrollViewRef, 0, target, false)
+        return
+      }
+    }
     if (Math.abs(offset - target) <= 0.5) return
     // 钉顶：目标由被钉消息的布局决定，直接跟（不受「内容长高」闸门限制）
     if (isPin) {
@@ -1008,6 +1074,7 @@ export function useChatPinScroll({
     // 走到这里已经确认 target 还没对齐（上面的 <=0.5 早退了）；用户一碰列表
     // （onTouchStart / onScrollBeginDrag → endHistoryBottom）就退出本模式，
     // 这里「保持贴底」不会抢任何人的滚动。
+    lastSettledMaxSV.value = target
     scrollToWorklet(scrollViewRef, 0, target, false)
   })
 
@@ -1057,22 +1124,34 @@ export function useChatPinScroll({
   /** FlashList 内部 ScrollView：把 animated ref 挂上去，UI 线程才能 scrollTo */
   const renderScrollComponent = useCallback(
     (props: any) => {
-      const { ref: flashRef, ...rest } = props
+      const { ref: flashRef, onScroll: flashOnScroll, ...rest } = props
       return (
         <Animated.ScrollView
           {...rest}
+          onScroll={(e: any) => {
+            const y = e?.nativeEvent?.contentOffset?.y
+            if (typeof y === 'number') {
+              outerOffsetSV.value = y
+              if (y < prevRawScrollYSV.value - 0.5) {
+                framesSinceScrollSV.value = 0
+              }
+              prevRawScrollYSV.value = y
+            }
+            if (typeof flashOnScroll === 'function') {
+              flashOnScroll(e)
+            }
+          }}
           ref={mergeRefs(scrollViewRef, flashRef)}
         />
       )
     },
-    [scrollViewRef]
+    [scrollViewRef, outerOffsetSV, framesSinceScrollSV, prevRawScrollYSV]
   )
 
   /** 列表的触摸/滚动事件集合：用户一碰 = 接管，贴底跟随与钉顶全部停手 */
   const listInteractionProps = useMemo(
     () => ({
       onScroll: (e: any) => {
-        framesSinceScrollSV.value = 0
         scrollViewProps.onScroll?.(e)
       },
       // 用户一碰列表 = 接管：此后不再把视口纠正回钉顶（否则会「滑上去又被拽回」）
@@ -1113,9 +1192,9 @@ export function useChatPinScroll({
       onContentSizeChange: handleListContentSizeChange
     }),
     [
-      framesSinceScrollSV,
       touchedSV,
       interactingSV,
+      historySettledSV,
       scrollViewProps,
       stopPinConverge,
       endHistoryBottom,

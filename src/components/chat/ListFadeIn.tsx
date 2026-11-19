@@ -30,7 +30,7 @@ export function ListFadeIn({
   enabled = true,
   readySV = null,
   delay = 90,
-  maxDelay = 280,
+  maxDelay = 900,
   duration = 180
 }: {
   children: React.ReactNode
