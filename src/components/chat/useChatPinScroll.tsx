@@ -1124,6 +1124,15 @@ export function useChatPinScroll({
   /** FlashList 内部 ScrollView：把 animated ref 挂上去，UI 线程才能 scrollTo */
   const renderScrollComponent = useCallback(
     (props: any) => {
+      if (!APP_PIN_USER_MESSAGE) {
+        const { ref: flashRef, ...rest } = props
+        return (
+          <Animated.ScrollView
+            {...rest}
+            ref={mergeRefs(scrollViewRef, flashRef)}
+          />
+        )
+      }
       const { ref: flashRef, onScroll: flashOnScroll, ...rest } = props
       return (
         <Animated.ScrollView

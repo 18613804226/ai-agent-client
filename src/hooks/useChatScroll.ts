@@ -83,6 +83,8 @@ export function useChatScroll({
   const viewportHeightRef = useRef(0);
   /** 上一次滚动位置，用于识别 Web 用户是否正向底部滚动 */
   const lastScrollOffsetRef = useRef<number | null>(null);
+  /** 上一次滚动时的内容总高，用于区分思考框折叠等收缩钳制与用户主动上滚 */
+  const lastScrollContentHeightRef = useRef<number | null>(null);
   /** 外层聊天列表当前原生 offset（原生 inverted：0 = 视觉底部），UI 线程可读 */
   const outerOffsetSV = useSharedValue(0);
   /** 外层可滚动最大 offset（内容高 - 视口高），供思考框贴边联动钳制 */
@@ -165,6 +167,7 @@ export function useChatScroll({
   useEffect(() => {
     autoFollowRef.current = true;
     lastScrollOffsetRef.current = null;
+    lastScrollContentHeightRef.current = null;
     if (INVERTED_CHAT_LIST) {
       pendingEntryAnimRef.current = true;
       return;
@@ -185,18 +188,38 @@ export function useChatScroll({
       if (typeof y === 'number') outerOffsetSV.value = y;
       const previousY = lastScrollOffsetRef.current;
       if (typeof y === 'number') lastScrollOffsetRef.current = y;
+      const contentH = event?.nativeEvent?.contentSize?.height;
+      const previousContentH = lastScrollContentHeightRef.current;
+      if (typeof contentH === 'number') {
+        lastScrollContentHeightRef.current = contentH;
+      }
+      const rawDistanceFromBottom = chatDistanceFromBottom(event?.nativeEvent);
 
       // ── Web：用户主动上滚 → 立刻取消自动跟随（灵敏度关键） ──────────────
       // 必须放在保护窗 / 冷启动闸「之前」：那两道闸本意是屏蔽程序化平滑贴底
       // 的 onScroll 噪声，却会把脱钩判定整段 skip 900ms；这期间下一个 token
       // 的 layout effect 照样把 scrollTop 写回底部，表现就是「滚上去又被拽下来」。
-      // 程序化贴底是 y 递增（往底部走），不会命中 y < previousY；容差 1px
-      // 用于吃掉子像素/浮点抖动。所有滚动来源（滚轮、滚动条、键盘、触摸）
-      // 都会产生 y 变小的 onScroll，一处即可覆盖。
+      // 程序化贴底是 y 递增（往底部走），但思考框自动折叠等导致 scrollHeight
+      // 收缩时，浏览器会把停在底部的 scrollTop 同步钳小，且此时仍停在物理底部
+      //（rawDistanceFromBottom <= 2）。排除这种收缩钳制后，其余所有来源（滚轮、
+      // 滚动条、键盘、触摸）的 y 变小仍可立即脱钩。
+      const shrankBy =
+        typeof contentH === 'number' &&
+        typeof previousContentH === 'number' &&
+        previousContentH > contentH
+          ? previousContentH - contentH
+          : 0;
+      const clampedByShrink =
+        rawDistanceFromBottom <= 2 ||
+        (shrankBy > 0.5 &&
+          typeof y === 'number' &&
+          typeof previousY === 'number' &&
+          previousY - y <= shrankBy + 4);
       const scrolledUp =
         typeof y === 'number' &&
         typeof previousY === 'number' &&
-        y < previousY - 1;
+        y < previousY - 1 &&
+        !clampedByShrink;
       if (Platform.OS === 'web' && scrolledUp && autoFollowRef.current) {
         autoFollowRef.current = false;
         // 用户已接管滚动：别再等平滑动画保护窗 / 冷启动闸过期，
@@ -476,7 +499,7 @@ export function useChatScroll({
     () => ({
       onScroll: handleScroll,
       onScrollBeginDrag: handleScrollBeginDrag,
-      scrollEventThrottle: 16,
+      scrollEventThrottle: Platform.OS === 'web' ? 32 : 16,
       onContentSizeChange: handleContentSizeChange,
       showsVerticalScrollIndicator: !INVERTED_CHAT_LIST,
       // ⚠️ 不要把 removeClippedSubviews 透传给 FlashList：它落到 FlashList 内部的
