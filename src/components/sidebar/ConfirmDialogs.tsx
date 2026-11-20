@@ -1,5 +1,6 @@
 import React from 'react'
 import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native'
+import { SEMANTIC_COLORS } from '../../constants/theme'
 import { SheetCardAnim } from './SheetCardAnim'
 import { sidebarStyles } from './sidebarStyles'
 
@@ -37,7 +38,9 @@ export function ConfirmDeleteDialog({
             sidebarStyles.confirmCard,
             {
               backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-              borderColor: theme.border
+              borderColor: isDarkMode
+                ? (theme.borderStrong ?? theme.border)
+                : theme.border
             }
           ]}
         >
@@ -57,7 +60,10 @@ export function ConfirmDeleteDialog({
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[sidebarStyles.confirmBtn, { backgroundColor: '#ef4444' }]}
+              style={[
+                sidebarStyles.confirmBtn,
+                { backgroundColor: theme.danger ?? SEMANTIC_COLORS.danger }
+              ]}
               onPress={onConfirm}
             >
               <Text style={[sidebarStyles.confirmBtnText, { color: '#fff' }]}>
@@ -105,7 +111,9 @@ export function ConfirmDeleteConversationDialog({
             sidebarStyles.confirmCard,
             {
               backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-              borderColor: theme.border
+              borderColor: isDarkMode
+                ? (theme.borderStrong ?? theme.border)
+                : theme.border
             }
           ]}
         >
@@ -125,7 +133,10 @@ export function ConfirmDeleteConversationDialog({
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[sidebarStyles.confirmBtn, { backgroundColor: '#ef4444' }]}
+              style={[
+                sidebarStyles.confirmBtn,
+                { backgroundColor: theme.danger ?? SEMANTIC_COLORS.danger }
+              ]}
               onPress={onConfirm}
             >
               <Text style={[sidebarStyles.confirmBtnText, { color: '#fff' }]}>

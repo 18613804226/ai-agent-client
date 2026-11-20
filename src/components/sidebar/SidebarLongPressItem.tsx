@@ -51,6 +51,8 @@ export function SidebarLongPressItem({
   activeOpacity = 1,
   onPress,
   onLongPressAt,
+  onMouseEnter,
+  onMouseLeave,
   children
 }: {
   itemKey: string
@@ -61,6 +63,8 @@ export function SidebarLongPressItem({
   onPress?: () => void
   /** 长按触发：offsetX/offsetY 为触摸点相对项左上角的偏移 */
   onLongPressAt?: (offsetX: number, offsetY: number) => void
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
   children: React.ReactNode
 }) {
   // 📱 H5/OPPO：条目上启用输入层压制（touchstart preventDefault）—— 这是压住
@@ -77,6 +81,8 @@ export function SidebarLongPressItem({
       hoverBg={hoverBg}
       activeOpacity={activeOpacity}
       onPress={onPress}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       onLongPress={
         onLongPressAt
           ? (e: any) =>

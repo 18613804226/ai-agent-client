@@ -1,4 +1,5 @@
 import { Platform, StyleSheet } from 'react-native'
+import { RADIUS, SEMANTIC_COLORS, SPACING } from '../../constants/theme'
 
 /**
  * 📱 H5/OPPO：列表区块（已上传文件 / 最近记录）防长按样式——只禁选中与
@@ -24,46 +25,86 @@ export const sidebarStyles = StyleSheet.create({
   },
   sidebarInner: {
     flex: 1,
-    padding: 12,
+    padding: SPACING.md,
     justifyContent: 'space-between'
   },
   sidebarTop: {
-    marginBottom: 4
+    marginBottom: SPACING.xs
   },
   newChatBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    alignItems: 'center'
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: RADIUS.md,
+    borderWidth: 1
   },
   newChatBtnText: {
     fontWeight: '600',
     fontSize: 14
   },
+  uploadWrap: {
+    position: 'relative',
+    zIndex: 20,
+    marginVertical: SPACING.sm
+  },
   uploadSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    alignItems: 'center'
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.md,
+    borderWidth: 1
+  },
+  uploadIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0
+  },
+  uploadTextGroup: {
+    flex: 1,
+    minWidth: 0
   },
   uploadText: {
     fontSize: 13,
-    fontWeight: '500'
+    fontWeight: '600'
   },
   uploadHint: {
     fontSize: 11,
-    marginTop: 0,
-    marginBottom: 0,
-    textAlign: 'center'
+    marginTop: 1
+  },
+  uploadTooltip: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    zIndex: 30,
+    ...(Platform.OS === 'web'
+      ? ({ boxShadow: '0 6px 18px rgba(0, 0, 0, 0.28)' } as any)
+      : null)
+  },
+  uploadTooltipText: {
+    fontSize: 11,
+    lineHeight: 16
   },
   categoryTitle: {
     fontSize: 12,
-    marginVertical: 6,
-    paddingHorizontal: 4,
-    fontWeight: '500'
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    marginTop: 6,
+    marginBottom: 6,
+    paddingHorizontal: 6
   },
   fileListContainer: {
     maxHeight: 200,
@@ -76,27 +117,38 @@ export const sidebarStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: Platform.OS === 'web' ? 6 : 6,
+    paddingVertical: 7,
     paddingHorizontal: 10,
-    borderRadius: 16,
-    marginBottom: 4
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: 6
   },
   fileInfo: {
     flex: 1,
+    minWidth: 0,
     marginRight: 6
   },
+  fileTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
   fileText: {
-    fontSize: 13
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+    minWidth: 0
   },
   fileEnabledText: {
     fontSize: 10,
-    marginTop: 2
+    marginTop: 2,
+    marginLeft: 20
   },
   fileToggleHint: {
     fontSize: 10,
     marginTop: -4,
     marginBottom: 6,
-    paddingHorizontal: 4
+    paddingHorizontal: 6
   },
   fileEnabledSwitch: {
     marginLeft: 2,
@@ -150,55 +202,70 @@ export const sidebarStyles = StyleSheet.create({
   fileErrorText: {
     fontSize: 11,
     marginTop: 3,
-    color: '#ef4444'
+    marginLeft: 20,
+    color: SEMANTIC_COLORS.danger
   },
   historyContainer: {
     flex: 1,
-    marginVertical: 4
+    marginVertical: SPACING.xs
   },
   historyList: {
     flex: 1
   },
   historyItem: {
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    marginBottom: 4
+    paddingVertical: 9,
+    paddingLeft: 12,
+    paddingRight: 8,
+    borderRadius: RADIUS.sm,
+    marginBottom: 3,
+    overflow: 'hidden'
+  },
+  historyActiveBar: {
+    position: 'absolute',
+    left: 0,
+    top: 6,
+    bottom: 6,
+    width: 3,
+    borderTopRightRadius: 3,
+    borderBottomRightRadius: 3
   },
   historyText: {
     fontSize: 14
   },
   deleteBtn: {
-    padding: 3,
-    marginLeft: 6,
-    borderRadius: 12
-  },
-  deleteBtnText: {
-    fontSize: 16,
-    fontWeight: '600'
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+    borderRadius: RADIUS.sm
   },
   sidebarFooter: {
     borderTopWidth: 1,
     paddingTop: 10,
-    marginTop: 4
+    marginTop: 4,
+    gap: SPACING.sm
   },
   adminEntry: {
-    minHeight: 38,
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    marginBottom: 8,
-    borderRadius: 15
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1
   },
-  adminEntryIcon: {
-    fontSize: 15,
-    marginRight: 9
+  adminEntryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1
   },
   adminEntryText: {
-    flex: 1,
     fontSize: 13,
     fontWeight: '500'
   },
@@ -207,49 +274,67 @@ export const sidebarStyles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.8
   },
-  appearanceSection: {
-    marginBottom: 8
+  quotaCard: {
+    paddingHorizontal: 6,
+    paddingVertical: 4
   },
-  appearanceLabelRow: {
+  quotaHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
-    paddingHorizontal: 4
+    marginBottom: 5
   },
-  quotaText: {
+  quotaLabel: {
+    fontSize: 11,
+    fontWeight: '500'
+  },
+  quotaValue: {
     fontSize: 11,
     fontWeight: '600'
   },
-  appearanceLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 6,
-    paddingHorizontal: 4
+  quotaTrack: {
+    height: 3,
+    borderRadius: 2,
+    overflow: 'hidden'
   },
-  appearanceOptions: {
+  quotaFill: {
+    height: '100%',
+    borderRadius: 2
+  },
+  footerActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 3,
-    borderRadius: 15
+    gap: SPACING.sm
   },
-  appearanceOption: {
+  settingsTriggerBtn: {
     flex: 1,
-    minWidth: 0,
+    height: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 4,
-    borderRadius: 13
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1
   },
-  appearanceIcon: {
-    fontSize: 12,
-    marginRight: 4
+  settingsTriggerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
   },
-  appearanceOptionText: {
-    fontSize: 12,
+  settingsTriggerText: {
+    fontSize: 13,
     fontWeight: '500'
+  },
+  settingsModeTag: {
+    fontSize: 11
+  },
+  quickThemeBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   sheetOverlay: {
     position: 'absolute',
@@ -262,7 +347,7 @@ export const sidebarStyles = StyleSheet.create({
   sheetCard: {
     position: 'absolute',
     width: CTX_CARD_W,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     paddingVertical: 4,
     boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.25)',
@@ -299,8 +384,8 @@ export const sidebarStyles = StyleSheet.create({
   confirmCard: {
     width: '80%',
     maxWidth: 320,
-    padding: 24,
-    borderRadius: 24,
+    padding: SPACING.xl,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     alignItems: 'center',
     boxShadow: '0px 10px 12px rgba(0, 0, 0, 0.4)',
@@ -309,7 +394,7 @@ export const sidebarStyles = StyleSheet.create({
   confirmTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginBottom: 8
+    marginBottom: SPACING.sm
   },
   confirmDesc: {
     fontSize: 14,
@@ -320,12 +405,12 @@ export const sidebarStyles = StyleSheet.create({
   confirmBtnRow: {
     flexDirection: 'row',
     width: '100%',
-    gap: 12
+    gap: SPACING.md
   },
   confirmBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 16,
+    borderRadius: RADIUS.md,
     alignItems: 'center'
   },
   confirmBtnText: {

@@ -1,5 +1,6 @@
 import React from 'react'
 import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { SEMANTIC_COLORS } from '../../constants/theme'
 import { SheetCardAnim } from './SheetCardAnim'
 import { CTX_CARD_H, CTX_CARD_W, sidebarStyles } from './sidebarStyles'
 
@@ -44,7 +45,7 @@ export function FileActionSheet({
             left,
             top,
             backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-            borderColor: theme.border
+            borderColor: theme.borderSubtle ?? theme.border
           }
         ]}
       >
@@ -56,7 +57,12 @@ export function FileActionSheet({
             {fileName}
           </Text>
           <TouchableOpacity style={sidebarStyles.sheetItem} onPress={onDelete}>
-            <Text style={[sidebarStyles.sheetItemText, { color: '#ef4444' }]}>
+            <Text
+              style={[
+                sidebarStyles.sheetItemText,
+                { color: theme.danger ?? SEMANTIC_COLORS.danger }
+              ]}
+            >
               删除
             </Text>
           </TouchableOpacity>
@@ -109,7 +115,7 @@ export function ConversationActionSheet({
             left,
             top,
             backgroundColor: isDarkMode ? '#1E1F20' : '#FFFFFF',
-            borderColor: theme.border
+            borderColor: theme.borderSubtle ?? theme.border
           }
         ]}
       >
@@ -121,7 +127,12 @@ export function ConversationActionSheet({
             {conversationTitle}
           </Text>
           <TouchableOpacity style={sidebarStyles.sheetItem} onPress={onDelete}>
-            <Text style={[sidebarStyles.sheetItemText, { color: '#ef4444' }]}>
+            <Text
+              style={[
+                sidebarStyles.sheetItemText,
+                { color: theme.danger ?? SEMANTIC_COLORS.danger }
+              ]}
+            >
               删除
             </Text>
           </TouchableOpacity>

@@ -11,11 +11,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
 import { useRouter } from 'expo-router'
 import type { UploadedFile } from '../hooks/useKnowledgeFiles'
-import { isPCWebWidth } from '../constants/theme'
+import { isPCWebWidth, SEMANTIC_COLORS } from '../constants/theme'
 import type { ThemeMode, RoleMode } from '../context/appContexts'
 import { useAuth, useRole } from '../context/appContexts'
 import { MyToast } from './GlobalToast'
 import HoverTouchable from './HoverTouchable'
+import { IconPlus } from './Icons'
+import { InputBarIcon } from './InputBarIcon'
 import { attachCalloutSuppress } from '../hooks/useSuppressBrowserCallout'
 import { sidebarStyles, SECTION_NO_CALLOUT_STYLE } from './sidebar/sidebarStyles'
 import { FileEnabledSwitch } from './sidebar/FileEnabledSwitch'
@@ -31,6 +33,7 @@ import {
   ConfirmDeleteDialog,
   ConfirmDeleteConversationDialog
 } from './sidebar/ConfirmDialogs'
+import { SidebarSettingsModal } from './sidebar/SidebarSettingsModal'
 
 interface SidebarProps {
   conversations: any[]
@@ -131,7 +134,13 @@ export default function Sidebar({
     title: string
   } | null>(null)
 
-  // ⚠️ 抽屉关闭时把长按菜单/二次确认一起收掉：
+  // 🖥️ PC 端悬停反馈（仅 isPCWeb 使用，移动端不挂 mouse 事件避免触屏粘滞）
+  const [hoveredConvId, setHoveredConvId] = useState<string | null>(null)
+  const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
+  const [uploadHovered, setUploadHovered] = useState(false)
+  const [settingsVisible, setSettingsVisible] = useState(false)
+
+  // ⚠️ 抽屉关闭时把长按菜单/二次确认/设置弹窗一起收掉：
   // Drawer 关闭不会卸载 Sidebar（状态全留在内存），不清理的话下次打开弹窗还飘在那。
   // 桌面常驻侧边栏不传 drawerOpen（undefined），这里直接跳过不影响。
   useEffect(() => {
@@ -140,6 +149,10 @@ export default function Sidebar({
       setConvMenu(null)
       setConfirmFile(null)
       setConfirmConv(null)
+      setSettingsVisible(false)
+      setHoveredConvId(null)
+      setHoveredFileId(null)
+      setUploadHovered(false)
     }
   }, [drawerOpen])
 
@@ -213,6 +226,81 @@ export default function Sidebar({
     setConfirmConv(null)
   }
 
+  const handleSwitchToAdmin = async () => {
+    if (pendingRole || role === 'admin') return
+    setPendingRole('admin')
+    try {
+      const ok = await activateAdmin()
+      if (!ok) {
+        // 跳路由前先关闭弹窗与抽屉，防止原生 Modal 挡在目标页之上
+        setSettingsVisible(false)
+        onCloseDrawer?.()
+        router.push('/admin-login')
+      }
+    } finally {
+      setPendingRole(null)
+    }
+  }
+
+  const handleSwitchToUser = async () => {
+    if (pendingRole || role !== 'admin') return
+    setPendingRole('user')
+    try {
+      await logoutToDevice()
+    } catch {
+      MyToast.show('切换失败，请检查网络')
+    } finally {
+      setPendingRole(null)
+    }
+  }
+
+  const handleOpenAdmin = () => {
+    setSettingsVisible(false)
+    onCloseDrawer?.()
+    router.push('/admin')
+  }
+
+  const primaryColor = theme.primary ?? theme.sendBtnActive ?? '#2F7DE1'
+  const primarySoft =
+    theme.primarySoft ??
+    (isDarkMode ? 'rgba(47, 125, 225, 0.16)' : 'rgba(37, 99, 235, 0.10)')
+  const primaryBorder =
+    theme.primaryBorder ??
+    (isDarkMode ? 'rgba(47, 125, 225, 0.40)' : 'rgba(37, 99, 235, 0.28)')
+  const subtleBorder = theme.borderSubtle ?? theme.border
+  const elevatedBg =
+    theme.surfaceElevated ??
+    (isDarkMode ? 'rgba(255, 255, 255, 0.04)' : '#F6F8FA')
+  const neutralHoverBg = isDarkMode
+    ? 'rgba(255, 255, 255, 0.06)'
+    : 'rgba(0, 0, 0, 0.05)'
+  const newChatHoverBg = isDarkMode
+    ? 'rgba(47, 125, 225, 0.26)'
+    : 'rgba(37, 99, 235, 0.16)'
+  const newChatTextColor = isDarkMode ? '#D6ECFF' : primaryColor
+  const activeItemHoverBg = isDarkMode
+    ? 'rgba(47, 125, 225, 0.22)'
+    : 'rgba(37, 99, 235, 0.14)'
+  const deleteHoverBg = theme.deleteHoverBg || 'rgba(239, 68, 68, 0.14)'
+  const successColor = theme.success ?? SEMANTIC_COLORS.success
+
+  const hasQuota =
+    role !== 'admin' &&
+    typeof device?.usedToday === 'number' &&
+    typeof device?.dailyQuota === 'number'
+  const quotaRatio =
+    hasQuota && (device?.dailyQuota ?? 0) > 0
+      ? Math.min(1, Math.max(0, (device?.usedToday ?? 0) / device!.dailyQuota!))
+      : 0
+  const quotaFillColor =
+    quotaRatio >= 0.9
+      ? (theme.danger ?? SEMANTIC_COLORS.danger)
+      : quotaRatio >= 0.75
+        ? (theme.warning ?? SEMANTIC_COLORS.warning)
+        : primaryColor
+  const themeModeTag =
+    themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '系统'
+
   return (
     <View
       ref={sidebarRef}
@@ -235,29 +323,88 @@ export default function Sidebar({
         {/* 1. 顶部：新建对话按钮 */}
         <View style={sidebarStyles.sidebarTop}>
           <HoverTouchable
-            style={[sidebarStyles.newChatBtn, { backgroundColor: theme.btnBg }]}
-            hoverBg={theme.historyActiveBg}
+            accessibilityRole="button"
+            accessibilityLabel="发起新对话"
+            style={[
+              sidebarStyles.newChatBtn,
+              { backgroundColor: primarySoft, borderColor: primaryBorder }
+            ]}
+            hoverBg={newChatHoverBg}
             onPress={onNewChat}
           >
-            <Text style={[sidebarStyles.newChatBtnText, { color: theme.btnText }]}>
-              + 发起新对话
+            <IconPlus size={16} strokeWidth={2.3} color={newChatTextColor} />
+            <Text style={[sidebarStyles.newChatBtnText, { color: newChatTextColor }]}>
+              发起新对话
             </Text>
           </HoverTouchable>
         </View>
 
-        {/* 2. 中部：知识库上传区块 */}
-        <HoverTouchable
-          style={[sidebarStyles.uploadSection, { borderColor: theme.uploadBorder }]}
-          hoverBg={theme.historyActiveBg}
-          onPress={onUploadFile}
-        >
-          <Text style={[sidebarStyles.uploadText, { color: theme.textMain }]}>
-            📁 知识库上传
-          </Text>
-        </HoverTouchable>
-        <Text style={[sidebarStyles.uploadHint, { color: theme.textMuted }]}>
-          支持 .txt .pdf .docx .md .js .ts .py 等文本/代码文件
-        </Text>
+        {/* 2. 中部：知识库上传柔和卡片 */}
+        <View style={sidebarStyles.uploadWrap}>
+          <HoverTouchable
+            accessibilityRole="button"
+            accessibilityLabel="知识库上传"
+            style={[
+              sidebarStyles.uploadSection,
+              { backgroundColor: elevatedBg, borderColor: subtleBorder }
+            ]}
+            hoverBg={neutralHoverBg}
+            onPress={onUploadFile}
+            {...(isPCWeb
+              ? {
+                  onMouseEnter: () => setUploadHovered(true),
+                  onMouseLeave: () => setUploadHovered(false)
+                }
+              : {})}
+          >
+            <View
+              style={[
+                sidebarStyles.uploadIconBadge,
+                { backgroundColor: primarySoft }
+              ]}
+            >
+              <InputBarIcon name="upload" size={15} color={primaryColor} />
+            </View>
+            <View style={sidebarStyles.uploadTextGroup}>
+              <Text
+                style={[sidebarStyles.uploadText, { color: theme.textMain }]}
+                numberOfLines={1}
+              >
+                知识库上传
+              </Text>
+              <Text
+                style={[sidebarStyles.uploadHint, { color: theme.textMuted }]}
+                numberOfLines={1}
+              >
+                文档、代码等资料
+              </Text>
+            </View>
+          </HoverTouchable>
+
+          {isPCWeb && uploadHovered && (
+            <View
+              pointerEvents="none"
+              style={[
+                sidebarStyles.uploadTooltip,
+                {
+                  backgroundColor: isDarkMode ? '#18191C' : '#FFFFFF',
+                  borderColor: isDarkMode
+                    ? (theme.borderStrong ?? theme.border)
+                    : theme.border
+                }
+              ]}
+            >
+              <Text
+                style={[
+                  sidebarStyles.uploadTooltipText,
+                  { color: theme.textSecondary ?? theme.textMuted }
+                ]}
+              >
+                支持 .txt .pdf .docx .md .js .ts .py 等文本/代码文件
+              </Text>
+            </View>
+          )}
+        </View>
 
         {/* 3. 已上传文件列表展示区 */}
         {uploadedFiles && uploadedFiles.length > 0 && (
@@ -265,7 +412,12 @@ export default function Sidebar({
             ref={fileSectionRef}
             style={[sidebarStyles.fileListContainer, SECTION_NO_CALLOUT_STYLE]}
           >
-            <Text style={[sidebarStyles.categoryTitle, { color: theme.textMuted }]}>
+            <Text
+              style={[
+                sidebarStyles.categoryTitle,
+                { color: theme.textSecondary ?? theme.textMuted }
+              ]}
+            >
               已上传文件 ({uploadedFiles.length})
             </Text>
             <Text style={[sidebarStyles.fileToggleHint, { color: theme.textMuted }]}>
@@ -275,176 +427,181 @@ export default function Sidebar({
               style={sidebarStyles.subScrollContainer}
               showsVerticalScrollIndicator={false}
             >
-              {uploadedFiles.map((file) => (
-                <SidebarLongPressItem
-                  key={file.id}
-                  itemKey={file.id}
-                  measureRefs={fileItemRefs}
-                  style={[
-                    sidebarStyles.fileItem,
-                    {
-                      backgroundColor: theme.btnBg || 'rgba(255,255,255,0.05)'
-                    },
-                    // 长按菜单打开时高亮当前项
-                    menu?.file.id === file.id && {
-                      backgroundColor: theme.historyActiveBg
+              {uploadedFiles.map((file) => {
+                const isMenuOpen = menu?.file.id === file.id
+                const isBusy =
+                  file.status === 'processing' ||
+                  file.uploading ||
+                  file.showResult
+                const showDelete =
+                  isPCWeb &&
+                  !isBusy &&
+                  (hoveredFileId === file.id || confirmFile?.id === file.id)
+                return (
+                  <SidebarLongPressItem
+                    key={file.id}
+                    itemKey={file.id}
+                    measureRefs={fileItemRefs}
+                    style={[
+                      sidebarStyles.fileItem,
+                      {
+                        backgroundColor: elevatedBg,
+                        borderColor: subtleBorder
+                      },
+                      // 长按菜单打开时高亮当前项
+                      isMenuOpen && {
+                        backgroundColor: primarySoft,
+                        borderColor: primaryBorder
+                      }
+                    ]}
+                    hoverBg={isMenuOpen ? activeItemHoverBg : neutralHoverBg}
+                    activeOpacity={1}
+                    onMouseEnter={
+                      isPCWeb ? () => setHoveredFileId(file.id) : undefined
                     }
-                  ]}
-                  hoverBg={theme.historyActiveBg}
-                  activeOpacity={1}
-                  // 📱 移动端 / H5：长按在手指当前位置弹出“删除文件”操作菜单
-                  // 处理中/结果展示时不响应长按（与电脑端 X 按钮的隐藏逻辑一致）
-                  onLongPressAt={
-                    !isPCWeb &&
-                      !(
-                        file.status === 'processing' ||
-                        file.uploading ||
-                        file.showResult
-                      )
-                      ? (offsetX, offsetY) =>
-                        openMenuAtFile(file, offsetX, offsetY)
-                      : undefined
-                  }
-                >
-                  <View style={sidebarStyles.fileInfo}>
-                    <Text
-                      style={[
-                        sidebarStyles.fileText,
-                        {
-                          color: file.enabled ? theme.textMain : theme.textMuted
-                        }
-                      ]}
-                      numberOfLines={1}
-                    >
-                      📄 {file.name}
-                    </Text>
-                    <Text
-                      style={[
-                        sidebarStyles.fileEnabledText,
-                        {
-                          color: file.enabled
-                            ? theme.sendBtnActive
-                            : theme.textMuted
-                        }
-                      ]}
-                    >
-                      {file.enabledUpdating
-                        ? '保存中…'
-                        : file.enabled
-                          ? '已启用'
-                          : '已停用'}
-                    </Text>
-                    {file.enabledError ? (
-                      <Text style={sidebarStyles.fileErrorText}>
-                        {file.enabledError}
-                      </Text>
-                    ) : null}
-
-                    {/* 处理进度条 / 结果图标 */}
-                    {file.status === 'processing' || file.uploading ? (
-                      <View style={sidebarStyles.progressRow}>
-                        <View style={sidebarStyles.progressTrack}>
-                          <View
-                            style={[
-                              sidebarStyles.progressFill,
-                              {
-                                width: `${Math.max(0, Math.min(100, file.progress ?? 0))}%`,
-                                backgroundColor:
-                                  theme.sendBtnActive || '#3b82f6'
-                              }
-                            ]}
-                          />
-                        </View>
+                    onMouseLeave={
+                      isPCWeb
+                        ? () =>
+                            setHoveredFileId((cur) =>
+                              cur === file.id ? null : cur
+                            )
+                        : undefined
+                    }
+                    // 📱 移动端 / H5：长按在手指当前位置弹出“删除文件”操作菜单
+                    // 处理中/结果展示时不响应长按（与电脑端 X 按钮的隐藏逻辑一致）
+                    onLongPressAt={
+                      !isPCWeb && !isBusy
+                        ? (offsetX, offsetY) =>
+                            openMenuAtFile(file, offsetX, offsetY)
+                        : undefined
+                    }
+                  >
+                    <View style={sidebarStyles.fileInfo}>
+                      <View style={sidebarStyles.fileTitleRow}>
+                        <InputBarIcon
+                          name="file-text"
+                          size={14}
+                          color={file.enabled ? primaryColor : theme.textMuted}
+                        />
                         <Text
                           style={[
-                            sidebarStyles.progressPct,
-                            { color: theme.textMuted }
+                            sidebarStyles.fileText,
+                            {
+                              color: file.enabled ? theme.textMain : theme.textMuted
+                            }
                           ]}
+                          numberOfLines={1}
                         >
-                          {Math.round(file.progress ?? 0)}%
+                          {file.name}
                         </Text>
                       </View>
-                    ) : file.showResult ? (
-                      // 完成后短暂显示：进度条 + 成功图标（1.5s 后一起隐藏）
-                      <View style={sidebarStyles.progressRow}>
-                        <View style={sidebarStyles.progressTrack}>
-                          <View
+                      <Text
+                        style={[
+                          sidebarStyles.fileEnabledText,
+                          {
+                            color: file.enabled
+                              ? primaryColor
+                              : theme.textMuted
+                          }
+                        ]}
+                      >
+                        {file.enabledUpdating
+                          ? '保存中…'
+                          : file.enabled
+                            ? '已启用'
+                            : '已停用'}
+                      </Text>
+                      {file.enabledError ? (
+                        <Text style={sidebarStyles.fileErrorText}>
+                          {file.enabledError}
+                        </Text>
+                      ) : null}
+
+                      {/* 处理进度条 / 结果图标 */}
+                      {file.status === 'processing' || file.uploading ? (
+                        <View style={sidebarStyles.progressRow}>
+                          <View style={sidebarStyles.progressTrack}>
+                            <View
+                              style={[
+                                sidebarStyles.progressFill,
+                                {
+                                  width: `${Math.max(0, Math.min(100, file.progress ?? 0))}%`,
+                                  backgroundColor: primaryColor
+                                }
+                              ]}
+                            />
+                          </View>
+                          <Text
                             style={[
-                              sidebarStyles.progressFill,
-                              { width: '100%', backgroundColor: '#22c55e' }
+                              sidebarStyles.progressPct,
+                              { color: theme.textMuted }
                             ]}
-                          />
+                          >
+                            {Math.round(file.progress ?? 0)}%
+                          </Text>
                         </View>
-                        <Svg
-                          width={14}
-                          height={14}
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="#22c55e"
-                          strokeWidth={3}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          style={sidebarStyles.resultIcon}
-                        >
-                          <Path d="M20 6L9 17l-5-5" />
-                        </Svg>
-                      </View>
-                    ) : file.status === 'failed' || file.error ? (
-                      <Text style={sidebarStyles.fileErrorText}>处理失败</Text>
-                    ) : null}
-                  </View>
+                      ) : file.showResult ? (
+                        // 完成后短暂显示：进度条 + 成功图标（1.5s 后一起隐藏）
+                        <View style={sidebarStyles.progressRow}>
+                          <View style={sidebarStyles.progressTrack}>
+                            <View
+                              style={[
+                                sidebarStyles.progressFill,
+                                { width: '100%', backgroundColor: successColor }
+                              ]}
+                            />
+                          </View>
+                          <Svg
+                            width={14}
+                            height={14}
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke={successColor}
+                            strokeWidth={3}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={sidebarStyles.resultIcon}
+                          >
+                            <Path d="M20 6L9 17l-5-5" />
+                          </Svg>
+                        </View>
+                      ) : file.status === 'failed' || file.error ? (
+                        <Text style={sidebarStyles.fileErrorText}>处理失败</Text>
+                      ) : null}
+                    </View>
 
-                  <FileEnabledSwitch
-                    accessibilityLabel={`${file.enabled ? '停用' : '启用'}文档 ${file.name}`}
-                    disabled={
-                      file.status === 'processing' ||
-                      file.uploading === true ||
-                      file.status === 'failed' ||
-                      file.error === true ||
-                      file.enabledUpdating === true
-                    }
-                    onValueChange={(enabled) =>
-                      onToggleFileEnabled(file.id, enabled)
-                    }
-                    value={file.enabled}
-                    theme={theme}
-                  />
+                    <FileEnabledSwitch
+                      accessibilityLabel={`${file.enabled ? '停用' : '启用'}文档 ${file.name}`}
+                      disabled={
+                        file.status === 'processing' ||
+                        file.uploading === true ||
+                        file.status === 'failed' ||
+                        file.error === true ||
+                        file.enabledUpdating === true
+                      }
+                      onValueChange={(enabled) =>
+                        onToggleFileEnabled(file.id, enabled)
+                      }
+                      value={file.enabled}
+                      theme={theme}
+                    />
 
-                  {/* 🖥️ 仅电脑端网页保留 X 删除；移动端 / H5 走长按菜单。
-                     处理中/结果展示时隐藏删除按钮 */}
-                  {isPCWeb &&
-                    !(
-                      file.status === 'processing' ||
-                      file.uploading ||
-                      file.showResult
-                    ) && (
+                    {/* 🖥️ 仅电脑端网页在悬停时展示 X 删除；移动端 / H5 走长按菜单 */}
+                    {showDelete && (
                       <HoverTouchable
+                        accessibilityRole="button"
+                        accessibilityLabel={`删除文件 ${file.name}`}
                         style={sidebarStyles.deleteBtn}
                         onPress={() => requestDeleteFile(file)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        hoverBg={theme.deleteHoverBg || 'rgba(255, 0, 0, 0.1)'}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        hoverBg={deleteHoverBg}
                       >
-                        <Svg
-                          width={14}
-                          height={14}
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke={theme.textMuted}
-                          strokeWidth={2.5}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          style={
-                            Platform.OS === 'web'
-                              ? ({ cursor: 'pointer' } as any)
-                              : undefined
-                          }
-                        >
-                          <Path d="M18 6L6 18M6 6l12 12" />
-                        </Svg>
+                        <InputBarIcon name="x" size={14} color={theme.textMuted} />
                       </HoverTouchable>
                     )}
-                </SidebarLongPressItem>
-              ))}
+                  </SidebarLongPressItem>
+                )
+              })}
             </ScrollView>
           </View>
         )}
@@ -454,7 +611,12 @@ export default function Sidebar({
           ref={historySectionRef}
           style={[sidebarStyles.historyContainer, SECTION_NO_CALLOUT_STYLE]}
         >
-          <Text style={[sidebarStyles.categoryTitle, { color: theme.textMuted }]}>
+          <Text
+            style={[
+              sidebarStyles.categoryTitle,
+              { color: theme.textSecondary ?? theme.textMuted }
+            ]}
+          >
             最近记录
           </Text>
           <ScrollView
@@ -463,6 +625,10 @@ export default function Sidebar({
           >
             {conversations.map((conv) => {
               const isActive = conv.id === activeId
+              const isMenuOpen = convMenu?.conversation.id === conv.id
+              const showDelete =
+                isPCWeb &&
+                (hoveredConvId === conv.id || confirmConv?.id === conv.id)
               return (
                 <SidebarLongPressItem
                   key={conv.id}
@@ -470,44 +636,64 @@ export default function Sidebar({
                   measureRefs={convItemRefs}
                   style={[
                     sidebarStyles.historyItem,
-                    isActive && { backgroundColor: theme.historyActiveBg },
-                    // 长按菜单打开时高亮当前项
-                    convMenu?.conversation.id === conv.id && {
-                      backgroundColor: theme.historyActiveBg
-                    }
+                    (isActive || isMenuOpen) && { backgroundColor: primarySoft }
                   ]}
-                  hoverBg={theme.historyActiveBg}
+                  hoverBg={isActive ? activeItemHoverBg : neutralHoverBg}
+                  onMouseEnter={
+                    isPCWeb ? () => setHoveredConvId(conv.id) : undefined
+                  }
+                  onMouseLeave={
+                    isPCWeb
+                      ? () =>
+                          setHoveredConvId((cur) =>
+                            cur === conv.id ? null : cur
+                          )
+                      : undefined
+                  }
                   onPress={() => onSelectChat(conv.id)}
                   // 📱 移动端 / H5：长按在手指当前位置弹出“删除对话”操作菜单
                   onLongPressAt={
                     !isPCWeb
                       ? (offsetX, offsetY) =>
-                        openMenuAtConversation(
-                          { id: conv.id, title: conv.title },
-                          offsetX,
-                          offsetY
-                        )
+                          openMenuAtConversation(
+                            { id: conv.id, title: conv.title },
+                            offsetX,
+                            offsetY
+                          )
                       : undefined
                   }
                 >
+                  {isActive && (
+                    <View
+                      style={[
+                        sidebarStyles.historyActiveBar,
+                        { backgroundColor: primaryColor }
+                      ]}
+                    />
+                  )}
                   <Text
                     style={[
                       sidebarStyles.historyText,
                       {
                         color: isActive
-                          ? theme.historyActiveText
-                          : theme.textMain
-                      },
-                      { flex: 1 }
+                          ? isDarkMode
+                            ? '#EBF4FF'
+                            : primaryColor
+                          : theme.textMain,
+                        fontWeight: isActive ? '600' : '400',
+                        flex: 1
+                      }
                     ]}
                     numberOfLines={1}
                   >
                     {conv.title}
                   </Text>
 
-                  {/* 🖥️ 仅电脑端网页保留 X 删除；移动端 / H5 走长按菜单 */}
-                  {isPCWeb && (
+                  {/* 🖥️ 仅电脑端网页在悬停时展示 X 删除；移动端 / H5 走长按菜单 */}
+                  {showDelete && (
                     <HoverTouchable
+                      accessibilityRole="button"
+                      accessibilityLabel={`删除对话 ${conv.title}`}
                       style={sidebarStyles.deleteBtn}
                       onPress={() =>
                         requestDeleteConversation({
@@ -515,28 +701,20 @@ export default function Sidebar({
                           title: conv.title
                         })
                       }
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      hoverBg={theme.deleteHoverBg || 'rgba(255, 0, 0, 0.1)'}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      hoverBg={deleteHoverBg}
                     >
-                      <Svg
-                        width={14}
-                        height={14}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke={
-                          isActive ? theme.historyActiveText : theme.textMuted
+                      <InputBarIcon
+                        name="x"
+                        size={14}
+                        color={
+                          isActive
+                            ? isDarkMode
+                              ? '#D6ECFF'
+                              : primaryColor
+                            : theme.textMuted
                         }
-                        strokeWidth={2.5}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={
-                          Platform.OS === 'web'
-                            ? ({ cursor: 'pointer' } as any)
-                            : undefined
-                        }
-                      >
-                        <Path d="M18 6L6 18M6 6l12 12" />
-                      </Svg>
+                      />
                     </HoverTouchable>
                   )}
                 </SidebarLongPressItem>
@@ -545,181 +723,134 @@ export default function Sidebar({
           </ScrollView>
         </View>
 
-        {/* 5. 底部：外观设置与个人信息 */}
+        {/* 5. 底部：配额说明与设置收敛入口 */}
         <View
           style={[
             sidebarStyles.sidebarFooter,
-            { borderTopColor: theme.border || 'rgba(255,255,255,0.1)' }
+            { borderTopColor: subtleBorder }
           ]}
         >
           {role === 'admin' && (
             <HoverTouchable
               accessibilityRole="button"
-              accessibilityLabel="管理员登录"
-              style={sidebarStyles.adminEntry}
-              hoverBg={theme.historyActiveBg}
-              onPress={() => {
-                onCloseDrawer?.()
-                router.push('/admin')
-              }}
+              accessibilityLabel="管理后台"
+              style={[
+                sidebarStyles.adminEntry,
+                { backgroundColor: elevatedBg, borderColor: subtleBorder }
+              ]}
+              hoverBg={neutralHoverBg}
+              onPress={handleOpenAdmin}
             >
-              {/* <Text style={sidebarStyles.adminEntryIcon}>⚙️</Text> */}
-              <Text style={[sidebarStyles.adminEntryText, { color: theme.textMain }]}>
-                管理后台
-              </Text>
+              <View style={sidebarStyles.adminEntryLeft}>
+                <InputBarIcon name="shield" size={14} color={primaryColor} />
+                <Text style={[sidebarStyles.adminEntryText, { color: theme.textMain }]}>
+                  管理后台
+                </Text>
+              </View>
               <Text style={[sidebarStyles.adminEntryHint, { color: theme.textMuted }]}>
                 ADMIN
               </Text>
             </HoverTouchable>
           )}
-          {/* 💡 角色切换：和「外观」同款的紧凑分段器，不单独成卡。 */}
-          <View style={sidebarStyles.appearanceSection}>
-            <View style={sidebarStyles.appearanceLabelRow}>
-              <Text style={[sidebarStyles.appearanceLabel, { color: theme.textMuted }]}>
-                角色
+
+          {hasQuota && (
+            <View style={sidebarStyles.quotaCard}>
+              <View style={sidebarStyles.quotaHeaderRow}>
+                <Text
+                  style={[
+                    sidebarStyles.quotaLabel,
+                    { color: theme.textSecondary ?? theme.textMuted }
+                  ]}
+                >
+                  今日额度
+                </Text>
+                <Text style={[sidebarStyles.quotaValue, { color: theme.textMain }]}>
+                  {device!.usedToday} / {device!.dailyQuota}
+                </Text>
+              </View>
+              <View
+                style={[
+                  sidebarStyles.quotaTrack,
+                  {
+                    backgroundColor: isDarkMode
+                      ? 'rgba(255, 255, 255, 0.08)'
+                      : 'rgba(0, 0, 0, 0.08)'
+                  }
+                ]}
+              >
+                <View
+                  style={[
+                    sidebarStyles.quotaFill,
+                    {
+                      width: `${Math.round(quotaRatio * 100)}%`,
+                      backgroundColor: quotaFillColor
+                    }
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+
+          <View style={sidebarStyles.footerActionRow}>
+            <HoverTouchable
+              accessibilityRole="button"
+              accessibilityLabel="打开设置"
+              style={[
+                sidebarStyles.settingsTriggerBtn,
+                { backgroundColor: elevatedBg, borderColor: subtleBorder }
+              ]}
+              hoverBg={neutralHoverBg}
+              onPress={() => setSettingsVisible(true)}
+            >
+              <View style={sidebarStyles.settingsTriggerLeft}>
+                <InputBarIcon name="settings" size={15} color={theme.textMuted} />
+                <Text
+                  style={[sidebarStyles.settingsTriggerText, { color: theme.textMain }]}
+                >
+                  设置
+                </Text>
+              </View>
+              <Text style={[sidebarStyles.settingsModeTag, { color: theme.textMuted }]}>
+                {themeModeTag}
               </Text>
-              {role === 'admin' ? (
-                <Text style={[sidebarStyles.quotaText, { color: theme.textMuted }]}>
-                  无限制
-                </Text>
-              ) : typeof device?.usedToday === 'number' &&
-                typeof device?.dailyQuota === 'number' ? (
-                <Text style={[sidebarStyles.quotaText, { color: theme.textMuted }]}>
-                  {device.usedToday}/{device.dailyQuota}
-                </Text>
-              ) : null}
-            </View>
-            <View
+            </HoverTouchable>
+
+            <HoverTouchable
+              accessibilityRole="button"
+              accessibilityLabel={isDarkMode ? '切换为浅色模式' : '切换为深色模式'}
               style={[
-                sidebarStyles.appearanceOptions,
-                // 用 inputBg（暗色 #1E1F20）而不是 bgApp：抽屉底色现在 = bgApp，
-                // 再用 bgApp 会跟抽屉同色、分不开。
-                { backgroundColor: theme.inputBg }
+                sidebarStyles.quickThemeBtn,
+                { backgroundColor: elevatedBg, borderColor: subtleBorder }
               ]}
+              hoverBg={neutralHoverBg}
+              onPress={() => onThemeModeChange(isDarkMode ? 'light' : 'dark')}
             >
-              {(
-                [
-                  { value: 'user', label: 'User' },
-                  { value: 'admin', label: 'Admin' }
-                ] as { value: RoleMode; label: string }[]
-              ).map(({ value, label }) => {
-                const selected = effectiveRole === value
-                return (
-                  <HoverTouchable
-                    key={value}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={label}
-                    style={[
-                      sidebarStyles.appearanceOption,
-                      selected && {
-                        backgroundColor: theme.historyActiveBg
-                      }
-                    ]}
-                    hoverBg={theme.historyActiveBg}
-                    onPress={async () => {
-                      if (pendingRole) return; // 切换中，忽略重复点击
-                      if (value === 'admin') {
-                        if (role === 'admin') return;
-                        // 乐观反馈：先高亮 Admin，再去免密激活；失败/无缓存再回滚
-                        setPendingRole('admin');
-                        try {
-                          const ok = await activateAdmin();
-                          if (ok) {
-                            // 静默切换，不弹 toast
-                          } else {
-                            onCloseDrawer?.()
-                            router.push('/admin-login')
-                          }
-                        } finally {
-                          setPendingRole(null);
-                        }
-                        return;
-                      }
-                      if (role === 'admin') {
-                        setPendingRole('user');
-                        try {
-                          await logoutToDevice();
-                          // 静默切换，不弹 toast
-                        } catch {
-                          MyToast.show('切换失败，请检查网络');
-                        } finally {
-                          setPendingRole(null);
-                        }
-                      }
-                    }}
-                  >
-                    <Text
-                      style={[
-                        sidebarStyles.appearanceOptionText,
-                        {
-                          color: selected
-                            ? theme.historyActiveText
-                            : theme.textMuted
-                        }
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  </HoverTouchable>
-                )
-              })}
-            </View>
-          </View>
-          <View style={sidebarStyles.appearanceSection}>
-            <Text style={[sidebarStyles.appearanceLabel, { color: theme.textMuted }]}>
-              外观
-            </Text>
-            <View
-              style={[
-                sidebarStyles.appearanceOptions,
-                // 同上：抽屉底色 = bgApp，切换器容器得用更亮的 inputBg 才分得开
-                { backgroundColor: theme.inputBg }
-              ]}
-            >
-              {(
-                [
-                  { mode: 'light', label: '浅色', icon: '' },
-                  { mode: 'dark', label: '深色', icon: '' },
-                  { mode: 'system', label: '跟随系统', icon: '' }
-                ] as const
-              ).map(({ mode, label, icon }) => {
-                const selected = themeMode === mode
-                return (
-                  <HoverTouchable
-                    key={mode}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={`${label}模式`}
-                    style={[
-                      sidebarStyles.appearanceOption,
-                      selected && {
-                        backgroundColor: theme.historyActiveBg
-                      }
-                    ]}
-                    hoverBg={theme.historyActiveBg}
-                    onPress={() => onThemeModeChange(mode)}
-                  >
-                    <Text style={sidebarStyles.appearanceIcon}>{icon}</Text>
-                    <Text
-                      style={[
-                        sidebarStyles.appearanceOptionText,
-                        {
-                          color: selected
-                            ? theme.historyActiveText
-                            : theme.textMuted
-                        }
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  </HoverTouchable>
-                )
-              })}
-            </View>
+              <InputBarIcon
+                name={isDarkMode ? 'sun' : 'moon'}
+                size={16}
+                color={theme.textMuted}
+              />
+            </HoverTouchable>
           </View>
         </View>
       </View>
+
+      {/* ⚙️ 侧边栏设置弹窗（外观 + 低频高权的角色切换） */}
+      <SidebarSettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        theme={theme}
+        isDarkMode={isDarkMode}
+        themeMode={themeMode}
+        onThemeModeChange={onThemeModeChange}
+        role={role}
+        effectiveRole={effectiveRole}
+        pendingRole={pendingRole}
+        device={device}
+        onSwitchToAdmin={handleSwitchToAdmin}
+        onSwitchToUser={handleSwitchToUser}
+        onOpenAdmin={handleOpenAdmin}
+      />
 
       {/* 📱 长按操作菜单（仅移动端 / H5，紧贴长按位置） */}
       {menu && (
