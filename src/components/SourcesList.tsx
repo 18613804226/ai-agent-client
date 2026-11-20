@@ -8,6 +8,8 @@ interface SourcesListTheme {
   textMain: string
   textMuted: string
   border: string
+  borderSubtle?: string
+  primary?: string
   /** 链接色；老 theme 没带时回退主题蓝 */
   sendBtnActive?: string
 }
@@ -29,9 +31,9 @@ export const SourcesList = memo(function SourcesList({
   const items = useMemo(() => sortedWebCitations(sources), [sources])
   if (items.length === 0) return null
 
-  const linkColor = theme.sendBtnActive || '#4b92ee'
+  const linkColor = theme.primary || theme.sendBtnActive || '#2F7DE1'
   return (
-    <View style={[styles.wrap, { borderTopColor: theme.border }]}>
+    <View style={[styles.wrap, { borderTopColor: theme.borderSubtle ?? theme.border }]}>
       <Text style={[styles.heading, { color: theme.textMuted }]}>
         来源 · {items.length}
       </Text>

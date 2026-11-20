@@ -15,6 +15,7 @@ import Animated, {
   Easing
 } from 'react-native-reanimated'
 import type { ThemeType } from '../types/chat'
+import { RADIUS } from '../constants/theme'
 import { InkTailText } from './markdown/inkTail'
 import {
   THOUGHT_ANIM_MS,
@@ -248,10 +249,10 @@ const ThoughtCollapsible = memo(
         style={[
           styles.thoughtBox,
           {
-            borderColor: theme.border,
-            backgroundColor: theme.isDark
-              ? 'rgba(255,255,255,0.03)'
-              : 'rgba(0,0,0,0.03)'
+            borderColor: theme.borderSubtle ?? theme.border,
+            backgroundColor:
+              theme.surfaceElevated ??
+              (theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)')
           }
         ]}
       >
@@ -384,12 +385,11 @@ const ThoughtCollapsible = memo(
 
 const styles = StyleSheet.create({
   thoughtBox: {
-    borderLeftWidth: 0,
-    borderLeftColor: '#4b92ee',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    marginBottom: 10,
-    borderRadius: 4
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    borderRadius: RADIUS.md
   },
   thoughtRightAction: {
     flexDirection: 'row',

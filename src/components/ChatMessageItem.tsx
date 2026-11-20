@@ -534,19 +534,24 @@ const ChatMessageItem = memo(
     })()
 
     const bubbleStyle = useMemo(
-      () => [
-        chatMessageStyles.bubble,
-        { maxWidth: '100%' as const },
+      () =>
         isUser
-          ? [chatMessageStyles.bubbleUser, { backgroundColor: theme.bubbleUserBg }]
-          : [
-            chatMessageStyles.bubbleAi,
-            {
-              backgroundColor: theme.bubbleAiBg,
-              borderColor: theme.border
-            }
-          ]
-      ],
+          ? [
+              chatMessageStyles.bubble,
+              chatMessageStyles.bubbleUser,
+              { backgroundColor: theme.bubbleUserBg },
+              theme.isDark &&
+                (Platform.OS === 'web'
+                  ? ({
+                      backgroundImage:
+                        'linear-gradient(135deg, #2F7DE1 0%, #1F5FBF 100%)',
+                    } as any)
+                  : {
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: 'rgba(255,255,255,0.12)',
+                    }),
+            ]
+          : [chatMessageStyles.bubbleAi],
       [isUser, theme]
     )
 
@@ -808,9 +813,9 @@ const ChatMessageItem = memo(
                   style={[
                     chatMessageStyles.docCard,
                     {
-                      borderColor: theme.border,
+                      borderColor: theme.borderSubtle ?? theme.border,
                       backgroundColor: theme.isDark
-                        ? 'rgba(255,255,255,0.05)'
+                        ? (theme.surfaceElevated ?? 'rgba(255,255,255,0.04)')
                         : 'rgba(0,0,0,0.03)'
                     }
                   ]}

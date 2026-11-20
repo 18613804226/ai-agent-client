@@ -199,18 +199,15 @@ function splitTailSegments(text: string): TailSeg[] {
 }
 
 /**
- * 块之间的空行分隔符：一个独立的空行 <Text>（行高必须与正文一致，否则高度对不上）。
+ * 块之间的固定间距（12px）。
  *
- * 为什么需要它：最终渲染里 `body` 规则把连续的段落/标题/列表合并进**同一个**
- * `<Text>`，块间距由它们的 `node.index > 0` 补 `\n\n` 实现。而流式侧的块是
- * **各自独立的节点**（`StableMarkdown` / `TailText`），不补的话块间会被压成
- * 一行 —— 等切点落定、或吐字结束切成最终态时又跳一次。
+ * 为什么用独立 View 而不是 '\n' 空行或 paragraph.marginBottom：
+ * - 原生端同块内纯文本由 body 合并成一棵 <Text> 保持跨段拖选，块之间本就是独立节点，
+ *   用 12px 固定高度容器代替 26px 整行空文本，段距更紧凑精致；
+ * - 流式期稳定块 / TailText 之间与落定态共用同一份 BlockSeparator，
+ *   高度严格一致，吐字结束不跳动。
  */
-const BlockSeparator = () => (
-  <Text {...ANDROID_TEXT_PROPS} style={styles.tail}>
-    {'\n'}
-  </Text>
-)
+const BlockSeparator = () => <View style={styles.blockSeparator} />
 
 const TAIL_BLOCK_LINE_RE = /^(?:\s*(?:[-*+]|\d+[.)])\s|>\s?)/m
 const TAIL_BULLET_RE = /^(\s*)([-*+])\s+(.*)$/
@@ -693,9 +690,13 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
 })
 
 const styles = StyleSheet.create({
+  blockSeparator: {
+    height: 12
+  },
   tail: {
     fontSize: 15,
-    lineHeight: 24
+    lineHeight: 26,
+    fontWeight: '400'
   },
   // 与 markdownRules 的 strong / em 保持同款粗细斜体，尾巴升级成稳定段落时不跳
   strong: {
@@ -709,7 +710,7 @@ const styles = StyleSheet.create({
   },
   inlineMoon: {
     fontSize: 12,
-    lineHeight: 24,
+    lineHeight: 26,
     marginLeft: 2
   }
 })

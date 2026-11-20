@@ -23,6 +23,9 @@ export interface MessageActionsTheme {
   /** 详情抽屉用：调用方传完整 theme 时带上，没带则用深浅色兜底 */
   textMain?: string;
   border?: string;
+  borderSubtle?: string;
+  primary?: string;
+  sendBtnActive?: string;
 }
 
 /** 操作行整体高度固定：吐字完成前后布局完全一致，不会把气泡顶下去造成抖动 */
@@ -179,6 +182,7 @@ const MessageActions = memo(
         <View
           style={[
             styles.row,
+            !metaText && { justifyContent: 'flex-start' },
             !ready && styles.hidden,
             { pointerEvents: ready ? 'auto' : 'none' },
           ]}
@@ -198,7 +202,13 @@ const MessageActions = memo(
           {/* 「?」：桌面 Web hover 出轻量 tooltip，APP / H5 点开底部抽屉。
               只有服务端真的带了统计数字（metaDetail 非空）才有这个按钮 */}
           {metaDetail && metaDetail.length > 0 ? (
-            <View style={[styles.item, useTooltip && styles.tipAnchor]}>
+            <View
+              style={[
+                styles.item,
+                !metaText && styles.firstLeftItem,
+                useTooltip && styles.tipAnchor,
+              ]}
+            >
               <HoverTouchable
                 style={[
                   styles.btn,
@@ -232,6 +242,7 @@ const MessageActions = memo(
                 <View
                   style={[
                     styles.tooltip,
+                    !metaText && { left: 0, right: undefined },
                     {
                       backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
                       borderColor:
@@ -282,7 +293,13 @@ const MessageActions = memo(
           ) : null}
 
           {/* 复制：hover 底色由 HoverTouchable 统一处理；颜色固定 textMuted */}
-          <View style={[styles.item, useTooltip && styles.tipAnchor]}>
+          <View
+            style={[
+              styles.item,
+              !metaText && !(metaDetail && metaDetail.length > 0) && styles.firstLeftItem,
+              useTooltip && styles.tipAnchor,
+            ]}
+          >
             <HoverTouchable
               style={styles.btn}
               hoverBg={hoverBg}
@@ -433,14 +450,11 @@ const styles = StyleSheet.create({
     // 桌面 Web 的小字允许两行：用 minHeight 让行高随内容长到 32px，
     // 单行时仍严格是 ACTION_ROW_HEIGHT，不改动任何一端的既有高度
     minHeight: ACTION_ROW_HEIGHT,
-    // 正文末行 → 操作栏的间距：1 太贴、8 显得空一行，取 4（统计文字在
-    // 行内垂直居中，实际视觉间隙约 12px）
-    marginTop: 4,
-    // 气泡底部 padding 是 14，叠加这一栏的图标后离底边太远；
-    // 用负外边距把这一栏往下收 6px（等效底距 ≈ 8px），只动这一栏，
-    // 正文/其它气泡的内边距不受影响
-    marginBottom: -6,
+    // 去气泡后正文末行直接贴画布：给足 8px 呼吸间隙，不再需要负 marginBottom
+    marginTop: 8,
+    marginBottom: 0,
   },
+  firstLeftItem: { marginLeft: 0 },
   hidden: { opacity: 0 },
   /** 左侧小字容器：auto 右外边距把按钮组顶到行尾，长文本可收缩 */
   meta: {

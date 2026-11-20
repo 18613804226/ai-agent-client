@@ -49,66 +49,66 @@ type GlowSpec = {
 const GLOW_SPECS: GlowSpec[] = [
   {
     id: 'glow-cyan',
-    colorDark: '#22d3ee',
-    colorLight: '#67e8f9',
-    sizeRatio: 0.48,
-    xRatio: 0.2,
-    yRatio: 0.93,
+    colorDark: '#38bdf8',
+    colorLight: '#7dd3fc',
+    sizeRatio: 0.78,
+    xRatio: 0.18,
+    yRatio: 0.82,
     driftX: 60,
     driftY: 36,
     durationMs: 7000,
     breathMs: 4500,
     breathScale: 1.15,
-    opacityDark: 0.45,
-    opacityLight: 0.28,
+    opacityDark: 0.2,
+    opacityLight: 0.16,
     startDelayMs: 0,
   },
   {
     id: 'glow-violet',
-    colorDark: '#8b5cf6',
-    colorLight: '#a78bfa',
-    sizeRatio: 0.58,
-    xRatio: 0.8,
-    yRatio: 0.96,
+    colorDark: '#7c6bf0',
+    colorLight: '#a5b4fc',
+    sizeRatio: 0.9,
+    xRatio: 0.82,
+    yRatio: 0.8,
     driftX: 80,
     driftY: 36,
     durationMs: 9000,
     breathMs: 5500,
     breathScale: 1.12,
-    opacityDark: 0.4,
-    opacityLight: 0.24,
+    opacityDark: 0.2,
+    opacityLight: 0.15,
     startDelayMs: 800,
   },
   {
     id: 'glow-blue',
-    colorDark: '#3b82f6',
+    colorDark: '#2F7DE1',
     colorLight: '#93c5fd',
-    sizeRatio: 0.52,
+    sizeRatio: 0.86,
     xRatio: 0.5,
-    yRatio: 1.0,
+    yRatio: 0.92,
     driftX: 50,
     driftY: 40,
     durationMs: 11000,
     breathMs: 6500,
     breathScale: 1.18,
-    opacityDark: 0.38,
-    opacityLight: 0.22,
+    opacityDark: 0.22,
+    opacityLight: 0.15,
     startDelayMs: 1600,
   },
   {
     id: 'glow-magenta',
-    colorDark: '#d946ef',
-    colorLight: '#f0abfc',
-    sizeRatio: 0.38,
-    xRatio: 0.9,
-    yRatio: 1.04,
+    colorDark: '#a855f7',
+    colorLight: '#e9d5ff',
+    sizeRatio: 0.68,
+    xRatio: 0.88,
+    yRatio: 0.95,
     driftX: 40,
     driftY: 32,
     durationMs: 13000,
     breathMs: 5000,
     breathScale: 1.2,
-    opacityDark: 0.3,
-    opacityLight: 0.18,
+    opacityDark: 0.14,
+    opacityLight: 0.12,
     startDelayMs: 2400,
   },
 ];
@@ -148,7 +148,8 @@ function GlowBlob({
     opacity: interpolate(drift.value, [0, 0.5, 1], [1, 0.78, 1]),
   }));
 
-  const size = Math.round(height * spec.sizeRatio);
+  const base = Math.max(height, width * 0.72);
+  const size = Math.round(base * spec.sizeRatio);
   const left = spec.xRatio * width - size / 2;
   const top = spec.yRatio * height - size / 2;
   const color = isDark ? spec.colorDark : spec.colorLight;
@@ -169,9 +170,10 @@ function GlowBlob({
         <Svg width={size} height={size}>
           <Defs>
             <RadialGradient id={gradientId} cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor={color} stopOpacity={0.95} />
-              <Stop offset="38%" stopColor={color} stopOpacity={0.55} />
-              <Stop offset="68%" stopColor={color} stopOpacity={0.16} />
+              <Stop offset="0%" stopColor={color} stopOpacity={0.72} />
+              <Stop offset="30%" stopColor={color} stopOpacity={0.42} />
+              <Stop offset="60%" stopColor={color} stopOpacity={0.14} />
+              <Stop offset="85%" stopColor={color} stopOpacity={0.03} />
               <Stop offset="100%" stopColor={color} stopOpacity={0} />
             </RadialGradient>
           </Defs>

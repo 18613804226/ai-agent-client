@@ -75,7 +75,17 @@ export interface ThemeType {
   isDark: boolean
   textMain: string
   textMuted: string
+  textSecondary?: string
+  textTertiary?: string
   border: string
+  borderSubtle?: string
+  borderStrong?: string
+  surfaceElevated?: string
+  codeBg?: string
+  codeBorder?: string
+  primary?: string
+  primaryHover?: string
+  sendBtnActive?: string
   bubbleUserBg: string
   bubbleUserText: string
   bubbleAiBg: string

@@ -140,14 +140,14 @@ const LIST_ROW_STYLE = {
   alignItems: 'flex-start' as const,
   marginVertical: 2,
 };
-// 序号列：字号/行高与正文（body 15/24）对齐，防止首行错位；
+// 序号列：字号/行高与正文（body 15/26）对齐，防止首行错位；
 // marginVertical 归零（行容器已给），flexShrink 防止长序号被压缩。
 const LIST_MARKER_STYLE = {
   flexShrink: 0,
   marginVertical: 0,
   marginRight: 4,
   fontSize: 15,
-  lineHeight: 24,
+  lineHeight: 26,
 };
 const LIST_CONTENT_STYLE = { flex: 1 };
 // 引用块回退 View 时去掉 web 专属的 display/verticalAlign（原生 View 上传非法值）
@@ -363,7 +363,7 @@ export const createMarkdownRules = (
           selectable={selectable}
           style={
             nativeSpan
-              ? [styles.blockquote, { backgroundColor: undefined, lineHeight: 24 }]
+              ? [styles.blockquote, { backgroundColor: undefined, lineHeight: 26 }]
               : styles.blockquote
           }
         >
@@ -652,6 +652,24 @@ export const webMarkdownRules: RenderRules = {
   ...renderRules,
   // Web 流式期也做同样的上标转换，否则落定换 rules 时文本会变、换行重排。
   text: citationTextRule(undefined, undefined, undefined),
+  paragraph: (node, children, parent, styles) => {
+    const ancestors = parent as any[] | undefined;
+    // AstRenderer 使用 parents.unshift(node)，parent[0] 才是直接父节点
+    const directInBody = ancestors?.[0]?.type === 'body';
+    return (
+      <View
+        key={node.key}
+        style={[
+          styles._VIEW_SAFE_paragraph,
+          directInBody
+            ? { marginBottom: 0, marginTop: node.index > 0 ? 10 : 0 }
+            : null,
+        ]}
+      >
+        {children}
+      </View>
+    );
+  },
   fence: (node, children, parent, styles) => {
     let { content } = node;
     if (typeof content === 'string' && content.endsWith('\n')) {

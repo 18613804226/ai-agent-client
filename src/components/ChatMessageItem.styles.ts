@@ -1,34 +1,47 @@
 import { StyleSheet, Platform, Dimensions } from 'react-native'
+import { RADIUS } from '../constants/theme'
 import { MONO_FONT } from './markdown/markdownRules'
 
 export const chatMessageStyles = StyleSheet.create({
   messageRow: {
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: 24,
     alignItems: 'flex-start'
   },
   rowUser: { justifyContent: 'flex-end' },
   rowAi: { justifyContent: 'flex-start' },
   /**
-   * maxWidth: '100%' 是必须的：气泡宽度默认跟着内容走（alignSelf: flex-start），
-   * 而内容里如果有代码块，就形成「气泡宽 ↔ 代码框宽」的循环依赖 ——
-   * 代码按当前宽度断行、行数又反算回高度，宽度一变行数就变，表现为
-   * 「出代码块时气泡被拉得很长、再缩回去」。把气泡宽度钉在容器宽度上，
-   * 代码框的断行宽度才稳定。
+   * 用户气泡样式（暗色走主色渐变/提亮纯色，亮色走淡蓝气泡）。
+   * AI 回复已去气泡化，不走这个样式。
    */
-  bubble: { padding: 14, borderRadius: 16, maxWidth: '100%' },
+  bubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: RADIUS.lg,
+    maxWidth: '88%'
+  },
   bubbleUser: { borderTopRightRadius: 4, alignSelf: 'flex-end' },
+  /**
+   * AI 回复去气泡：铺满行宽、无背景无描边，仅留 2px 微距对齐边缘。
+   * 必须写 flex: 1 + width: '100%'，让内部代码块拿到确定宽度，
+   * 避免「气泡宽 ↔ 代码框宽」循环依赖导致抖动。
+   */
   bubbleAi: {
-    borderTopLeftRadius: 4,
-    borderWidth: 1,
-    alignSelf: 'flex-start'
+    flex: 1,
+    width: '100%',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderRadius: 0,
+    alignSelf: 'stretch'
   },
   thinkingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 2
+    paddingVertical: 6
   },
-  messageText: { fontSize: 15, lineHeight: 22 },
+  messageText: { fontSize: 15, lineHeight: 23, fontWeight: '400' },
   /** 用户消息里的引用追问小卡片 */
   userQuoteWrap: {
     gap: 8
@@ -57,7 +70,8 @@ export const chatMessageStyles = StyleSheet.create({
   userAttachmentsColumn: {
     flexDirection: 'column',
     alignItems: 'flex-end',
-    gap: 6
+    gap: 6,
+    maxWidth: '88%'
   },
   /** 文档 / 视频附件卡片：跟气泡同色背景 + 圆角 + 阴影 */
   attachmentCard: {
@@ -123,7 +137,8 @@ export const chatMessageStyles = StyleSheet.create({
   },
   /** 文本气泡在附件下方的顶部外边距 */
   textBubbleBelowAttachments: {
-    marginTop: 6
+    marginTop: 6,
+    maxWidth: '100%'
   },
   systemNoteRow: {
     width: '100%',
@@ -144,7 +159,7 @@ export const chatMessageStyles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
     borderWidth: 1,
-    borderRadius: 10
+    borderRadius: RADIUS.md
   },
   docCardIcon: { fontSize: 18, marginRight: 10 },
   docCardText: { flex: 1 },
@@ -163,12 +178,23 @@ export const createDynamicMarkdownStyles = (
     textMain: string
     textMuted: string
     border: string
+    borderSubtle?: string
+    codeBg?: string
+    codeBorder?: string
   },
   rowWidth = 0
 ) =>
   StyleSheet.create({
-    body: { fontSize: 15, lineHeight: 24, color: theme.textMain },
-    strong: { fontWeight: 'bold' as const, color: theme.textMain },
+    body: {
+      fontSize: 15,
+      lineHeight: 26,
+      fontWeight: '400' as const,
+      color: theme.textMain
+    },
+    strong: {
+      fontWeight: '700' as const,
+      color: theme.isDark ? '#FFFFFF' : '#111111'
+    },
     // 角标只做颜色弱化：不加背景色块、不叠字号（缩字号会贴基线变下标）。
     // 上标效果由 toSuperscriptCitations 的 Unicode 上标字符实现。
     citation: {
@@ -185,31 +211,32 @@ export const createDynamicMarkdownStyles = (
       // 列表/引用回退 View 盒子后，段落不再坐在 body 的 <Text> 里，
       // 字号/行高必须自带，否则文字掉回默认 14px、与正文行高错位压行
       fontSize: 15,
-      lineHeight: 24
+      lineHeight: 26,
+      fontWeight: '400' as const
     },
     heading1: {
       fontSize: 20,
-      fontWeight: 'bold' as const,
-      color: theme.textMain,
-      marginTop: 14,
-      marginBottom: 6,
-      lineHeight: 28
+      fontWeight: '700' as const,
+      color: theme.isDark ? '#FFFFFF' : theme.textMain,
+      marginTop: 8,
+      marginBottom: 4,
+      lineHeight: 30
     },
     heading2: {
       fontSize: 18,
-      fontWeight: 'bold' as const,
-      color: theme.textMain,
-      marginTop: 12,
-      marginBottom: 6,
-      lineHeight: 24
+      fontWeight: '700' as const,
+      color: theme.isDark ? '#FFFFFF' : theme.textMain,
+      marginTop: 6,
+      marginBottom: 4,
+      lineHeight: 26
     },
     heading3: {
       fontSize: 16,
-      fontWeight: 'bold' as const,
-      color: theme.textMain,
-      marginTop: 10,
-      marginBottom: 4,
-      lineHeight: 22
+      fontWeight: '600' as const,
+      color: theme.isDark ? '#FFFFFF' : theme.textMain,
+      marginTop: 4,
+      marginBottom: 2,
+      lineHeight: 24
     },
     code_inline: {
       color: theme.textMain,
@@ -220,19 +247,19 @@ export const createDynamicMarkdownStyles = (
       ...(Platform.OS === 'web'
         ? {
             backgroundColor: theme.isDark
-              ? 'rgba(255,255,255,0.12)'
+              ? 'rgba(255,255,255,0.09)'
               : 'rgba(0,0,0,0.06)',
-            borderRadius: 4,
+            borderRadius: 5,
             paddingHorizontal: 5
           }
         : { backgroundColor: 'transparent' as const })
     },
     fence: {
-      backgroundColor: theme.isDark ? '#000' : '#eee',
+      backgroundColor: 'transparent',
       color: theme.isDark ? '#d4d4d4' : '#333333',
-      borderRadius: 8,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
+      borderRadius: 0,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
       lineHeight: 20,
       fontSize: 14,
       fontFamily: MONO_FONT,
@@ -240,42 +267,47 @@ export const createDynamicMarkdownStyles = (
       display: (Platform.OS === 'web' ? 'block' : 'inline-block') as any,
       ...(Platform.OS === 'web' ? { width: '100%' as const } : null),
       verticalAlign: 'top' as any,
-      marginTop: 10,
-      marginBottom: 4
+      marginTop: 0,
+      marginBottom: 0
     },
     code_block: {
-      backgroundColor: theme.isDark ? '#1e1e1e' : '#f5f5f5',
+      backgroundColor: 'transparent',
       color: theme.isDark ? '#d4d4d4' : '#333333',
-      borderRadius: 8,
-      paddingHorizontal: 10,
-      lineHeight: 22,
+      borderRadius: 0,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+      lineHeight: 20,
       fontSize: 14,
       fontFamily: MONO_FONT,
       borderWidth: 0,
       display: (Platform.OS === 'web' ? 'block' : 'inline-block') as any,
       ...(Platform.OS === 'web' ? { width: '100%' as const } : null),
       verticalAlign: 'top' as any,
-      marginTop: 8,
-      marginBottom: 4
+      marginTop: 0,
+      marginBottom: 0
     },
     codeBox: {
-      backgroundColor: theme.isDark ? '#000' : '#eee',
-      borderRadius: 8,
-      paddingHorizontal: 10,
+      backgroundColor: theme.codeBg ?? (theme.isDark ? '#141518' : '#F4F6F8'),
+      borderWidth: 1,
+      borderColor:
+        theme.codeBorder ??
+        (theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'),
+      borderRadius: RADIUS.md,
+      paddingHorizontal: 12,
       paddingTop: 34,
-      paddingBottom: 8,
-      marginTop: 10,
-      marginBottom: 4,
-      // 代码框宽度必须**钉死**：不写的话它跟着内容宽（最长代码行），气泡又是
-      // shrink-to-fit → 气泡宽跟着内容走 → 代码按宽度断行、行数反算回高度，
+      paddingBottom: 10,
+      marginTop: 12,
+      marginBottom: 0,
+      // 代码框宽度必须**钉死**：不写的话它跟着内容宽（最长代码行），容器又是
+      // shrink-to-fit → 宽度跟着内容走 → 代码按宽度断行、行数反算回高度，
       // 宽度抖一下高度就抖一下。封顶用的 maxWidth 不算钉死（内容变宽它仍会变宽），
-      // 所以这里用确定值：Web 用 100%，原生用「消息行宽 − 气泡 padding/border」。
-      // 30 = 气泡 padding 14*2 + border 1*2；量不到时退回按窗口宽度估算。
+      // 所以这里用确定值：Web 用 100%，原生用「消息行宽 − bubbleAi 水平内边距」。
+      // 4 = bubbleAi paddingHorizontal 2*2（已去气泡、无边框）；量不到时退回按窗口宽度估算（scrollContent 16*2 + 4 = 36）。
       ...(Platform.OS === 'web'
         ? { width: '100%' as const }
         : rowWidth > 0
-          ? { width: Math.max(120, rowWidth - 30) }
-          : { maxWidth: Math.max(120, Dimensions.get('window').width - 64) }),
+          ? { width: Math.max(120, rowWidth - 4) }
+          : { maxWidth: Math.max(120, Dimensions.get('window').width - 36) }),
     },
     codeText: {
       color: theme.isDark ? '#d4d4d4' : '#333333',
@@ -325,15 +357,25 @@ export const createDynamicMarkdownStyles = (
     },
     blockquote: {
       backgroundColor: theme.isDark
-        ? 'rgba(255,255,255,0.06)'
+        ? 'rgba(255,255,255,0.04)'
         : 'rgba(0,0,0,0.05)',
       paddingHorizontal: 10,
-      lineHeight: 22,
+      lineHeight: 24,
       color: theme.textMain,
       display: (Platform.OS === 'web' ? 'block' : 'inline-block') as any,
       verticalAlign: 'top' as any,
       marginTop: 8,
-      marginBottom: 4
+      marginBottom: 4,
+      ...(Platform.OS === 'web'
+        ? {
+            borderLeftWidth: 3,
+            borderLeftColor: theme.isDark
+              ? 'rgba(255,255,255,0.22)'
+              : 'rgba(0,0,0,0.18)',
+            borderRadius: 4,
+            paddingVertical: 6
+          }
+        : null)
     },
     list_item: { color: theme.textMain, marginVertical: 2 },
     table: {
@@ -348,5 +390,9 @@ export const createDynamicMarkdownStyles = (
           ordered_list: { marginTop: 2, marginBottom: 6 }
         }
       : null),
-    hr: { backgroundColor: theme.border, height: 1, marginVertical: 12 }
+    hr: {
+      backgroundColor: theme.borderSubtle ?? theme.border,
+      height: 1,
+      marginVertical: 12
+    }
   })
