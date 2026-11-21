@@ -228,7 +228,7 @@ export const createMarkdownRules = (
   // 代码块与水平线单独抽成 View 盒子 —— 原生 Text 内不能嵌 View，抽出来后
   // 代码块才有 web 同款的圆角/内边距/背景块样式（见 codeBox / codeText），
   // 分割线也才是真 1px 线而不是用全角字符硬凑。
-  body: (node, children, _parent, styles) => {
+  body: (_node, children, _parent, styles) => {
     // View 块必须从文本 run 里切出来当兄弟节点，否则出现「Text 里嵌 View」
     // —— Fabric / release 下布局直接坏（代码框叠字、气泡底部撑空白）。
     // 判据用「渲染后的元素是 <View>」而不是 AST 类型：fence/hr/code_block
@@ -236,6 +236,7 @@ export const createMarkdownRules = (
     const blocks: React.ReactNode[] = [];
     let run: React.ReactNode[] = [];
     let runKey = 0;
+    let viewKey = 0;
     const flushRun = () => {
       if (run.length) {
         // 块间只用**单换行**分隔，不能补 `\n\n`（两个换行 = 一行可见空白）。
@@ -269,13 +270,19 @@ export const createMarkdownRules = (
     (children || []).forEach((el: any) => {
       if (el && el.type === View) {
         flushRun();
-        blocks.push(el);
+        blocks.push(
+          React.isValidElement(el)
+            ? React.cloneElement(el, { key: `view-${viewKey++}` })
+            : el,
+        );
       } else {
         run.push(el);
       }
     });
     flushRun();
-    return <View key={node.key}>{blocks}</View>;
+    // AstRenderer 每次渲染都会给 body 生成自增 node.key，用稳定 key
+    // 防止切主题重建 style 时卸载重挂整棵子树并清零 SelectableTextTrimWrap 的 surplus。
+    return <View key="md-body">{blocks}</View>;
   },
   // 段落：块间由 body 规则统一补**单换行**（见上），这里不再自己补 ——
   // 各块规则自己补的话，run 起始处的换行数会和 run 内部对不上。
@@ -650,6 +657,13 @@ export const nonSelectableMarkdownRules = createMarkdownRules(false);
 // 默认规则把 fence/code_block 渲染成 Text，这里把它们包在 View 里加按钮
 export const webMarkdownRules: RenderRules = {
   ...renderRules,
+  // 与原生端同理：AstRenderer 每次渲染都会给 body 生成自增 key，用稳定 key
+  // 防止切主题重建 style 时卸载重挂整棵 Markdown DOM。
+  body: (_node, children, _parent, styles) => (
+    <View key="md-body" style={styles._VIEW_SAFE_body}>
+      {children}
+    </View>
+  ),
   // Web 流式期也做同样的上标转换，否则落定换 rules 时文本会变、换行重排。
   text: citationTextRule(undefined, undefined, undefined),
   paragraph: (node, children, parent, styles) => {

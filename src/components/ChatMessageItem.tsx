@@ -611,10 +611,12 @@ const ChatMessageItem = memo(
           ? [
               chatMessageStyles.bubble,
               chatMessageStyles.bubbleUser,
-              { backgroundColor: theme.bubbleUserBg },
-              theme.isDark && {
+              {
+                backgroundColor: theme.bubbleUserBg,
                 borderWidth: 1,
-                borderColor: 'rgba(47, 125, 225, 0.30)',
+                borderColor: theme.isDark
+                  ? 'rgba(47, 125, 225, 0.30)'
+                  : 'transparent',
               },
             ]
           : [chatMessageStyles.bubbleAi],
