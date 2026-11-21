@@ -103,9 +103,14 @@ function ChatInputBar({
   onOverlayHeightChange
 }: ChatInputBarProps) {
   const [isHovered, setIsHovered] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
   const [isVoiceMode, setIsVoiceMode] = useState(false) // 语音/键盘模式
   const inputRef = useRef<any>(null)
   const quoteText = useChatQuote()
+
+  useEffect(() => {
+    if (isVoiceMode || isGenerating) setIsFocused(false)
+  }, [isVoiceMode, isGenerating])
 
   useEffect(() => {
     registerInputFocusHandler(() => {
@@ -154,7 +159,7 @@ function ChatInputBar({
     // 原生分支取反 (1 - p) 与 JS 兜底 (isKeyboardUp ? 0 : 1) 语义对齐。
     const p = keyboardProgress ? 1 - keyboardProgress.value : footerProgress.value
     return {
-      height: 14,
+      height: 16,
       opacity: p,
       overflow: 'hidden' as const,
     }
@@ -190,6 +195,15 @@ function ChatInputBar({
       : isHovered
         ? (theme?.sendBtnHover ?? theme?.sendBtnActive ?? '#2563eb')
         : (theme?.sendBtnActive ?? '#3b82f6')
+
+  const focusBorderColor = theme.isDark
+    ? 'rgba(47, 125, 225, 0.75)'
+    : 'rgba(37, 99, 235, 0.62)'
+  const sendIconColor = isSendDisabled
+    ? theme.isDark
+      ? 'rgba(255, 255, 255, 0.35)'
+      : 'rgba(31, 31, 31, 0.32)'
+    : '#FFFFFF'
 
   const handleSendOrStop = useCallback(() => {
     if (isGenerating) {
@@ -375,22 +389,33 @@ function ChatInputBar({
           {
             backgroundColor: theme.bgApp,
             // Web：输入栏底色与页面底色相同，边框必须更高对比，
-            // 否则整条输入框会「融进背景」看不出边界。
-            // 用 1.5px 边框 + 较强透明度 + 投影三层勾勒。
+            // 否则整条输入框会「融进背景」看不出边界；聚焦时切主色 + 外微光。
             ...(isWeb
-              ? {
+              ? ({
                 borderWidth: 1,
-                borderColor: theme.isDark
-                  ? 'rgba(255,255,255,0.30)'
-                  : 'rgba(0,0,0,0.40)',
-                boxShadow: theme.isDark
-                  ? '0 2px 10px rgba(0,0,0,0.5)'
-                  : '0 2px 10px rgba(0,0,0,0.12)'
-              }
+                borderColor: isFocused
+                  ? focusBorderColor
+                  : theme.isDark
+                    ? 'rgba(255,255,255,0.26)'
+                    : 'rgba(0,0,0,0.32)',
+                boxShadow: isFocused
+                  ? theme.isDark
+                    ? '0 0 0 3px rgba(47, 125, 225, 0.22), 0 2px 12px rgba(0,0,0,0.5)'
+                    : '0 0 0 3px rgba(37, 99, 235, 0.16), 0 2px 10px rgba(0,0,0,0.10)'
+                  : theme.isDark
+                    ? '0 2px 10px rgba(0,0,0,0.5)'
+                    : '0 2px 10px rgba(0,0,0,0.12)',
+                transitionProperty: 'border-color, box-shadow',
+                transitionDuration: '0.18s',
+                transitionTimingFunction: 'ease'
+              } as any)
               : {
-                borderColor: theme.isDark
-                  ? 'rgba(255,255,255,0.14)'
-                  : 'rgba(0,0,0,0.12)'
+                // 原生端仅改边框色，绝不加 Android elevation（半透明底会透白条）
+                borderColor: isFocused
+                  ? focusBorderColor
+                  : theme.isDark
+                    ? 'rgba(255,255,255,0.14)'
+                    : 'rgba(0,0,0,0.12)'
               }),
             marginBottom: INPUT_BAR.pillPanelGap
           }
@@ -454,6 +479,7 @@ function ChatInputBar({
             onPress={onPickImage}
             disabled={isGenerating}
             activeOpacity={0.6}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           >
             <InputBarIcon name="plus" size={20} color={theme.textMuted} />
           </HoverTouchable>
@@ -488,6 +514,8 @@ function ChatInputBar({
             placeholderTextColor={theme.textMuted}
             value={inputText}
             onChangeText={handleInputChange}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             editable={!isGenerating}
             multiline
             // Web：iOS Safari 要求表单控件计算字号 ≥16px 才不自动放大；
@@ -512,6 +540,7 @@ function ChatInputBar({
             hoverBg={webHoverBgStrong}
             onPress={toggleVoiceMode}
             activeOpacity={0.6}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           >
             {isVoiceMode ? (
               <InputBarIcon
@@ -544,7 +573,7 @@ function ChatInputBar({
             <InputBarIcon
               name={isStopMode ? 'square' : 'arrow-up'}
               size={20}
-              color="#FFFFFF"
+              color={sendIconColor}
             />
           </Pressable>
         ) : (
@@ -575,7 +604,7 @@ function ChatInputBar({
             <InputBarIcon
               name={isStopMode ? 'square' : 'arrow-up'}
               size={20}
-              color="#FFFFFF"
+              color={sendIconColor}
             />
           </TouchableOpacity>
         )}

@@ -39,7 +39,7 @@ export const sidebarStyles = StyleSheet.create({
     minHeight: 42,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: RADIUS.md,
+    borderRadius: 18,
     borderWidth: 1
   },
   newChatBtnText: {
@@ -51,15 +51,15 @@ export const sidebarStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     marginVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
+    borderRadius: 22,
     borderWidth: 1
   },
   uploadIconBadge: {
     width: 30,
     height: 30,
-    borderRadius: RADIUS.sm,
+    borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0
@@ -97,8 +97,8 @@ export const sidebarStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    borderRadius: 18,
     borderWidth: 1,
     marginBottom: 6
   },
@@ -197,9 +197,9 @@ export const sidebarStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 9,
-    paddingLeft: 12,
-    paddingRight: 8,
-    borderRadius: RADIUS.sm,
+    paddingLeft: 14,
+    paddingRight: 10,
+    borderRadius: 18,
     marginBottom: 3,
     overflow: 'hidden'
   },
@@ -226,7 +226,7 @@ export const sidebarStyles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: RADIUS.sm
+    borderRadius: RADIUS.pill
   },
   sidebarFooter: {
     borderTopWidth: 1,
@@ -238,9 +238,9 @@ export const sidebarStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     marginBottom: 10,
-    borderRadius: RADIUS.sm,
+    borderRadius: RADIUS.lg,
     borderWidth: 1
   },
   adminEntryLeft: {
@@ -286,7 +286,7 @@ export const sidebarStyles = StyleSheet.create({
     alignItems: 'center',
     padding: 3,
     gap: 3,
-    borderRadius: RADIUS.md,
+    borderRadius: 18,
     borderWidth: 1
   },
   appearanceOption: {
@@ -297,7 +297,7 @@ export const sidebarStyles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 7,
     paddingHorizontal: 4,
-    borderRadius: RADIUS.sm,
+    borderRadius: 14,
     borderWidth: 1
   },
   appearanceOptionText: {
@@ -315,7 +315,7 @@ export const sidebarStyles = StyleSheet.create({
   sheetCard: {
     position: 'absolute',
     width: CTX_CARD_W,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     paddingVertical: 4,
     boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.25)',
@@ -353,7 +353,7 @@ export const sidebarStyles = StyleSheet.create({
     width: '80%',
     maxWidth: 320,
     padding: SPACING.xl,
-    borderRadius: RADIUS.lg,
+    borderRadius: 24,
     borderWidth: 1,
     alignItems: 'center',
     boxShadow: '0px 10px 12px rgba(0, 0, 0, 0.4)',
@@ -378,7 +378,7 @@ export const sidebarStyles = StyleSheet.create({
   confirmBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: RADIUS.md,
+    borderRadius: 18,
     alignItems: 'center'
   },
   confirmBtnText: {

@@ -6,10 +6,10 @@ import { Platform, StyleSheet } from 'react-native'
 export const INPUT_BAR = {
   pillMinH: 56,
   pillPanelGap: 0,
-  panelH: 18,
+  panelH: 22,
   /** 渐变纱幕高度（不含安全区）：从 pill 中部（pillMinH/2 + panelH）开始
    *              往下渐变为半透，到底部约 90% 不透明（接近全实，仍透一点）。 */
-  panelFadeH: 49,
+  panelFadeH: 53,
   sheetMargin: 17,
 } as const
 
@@ -174,7 +174,8 @@ export const inputBarStyles = StyleSheet.create({
     flex: 1,
     maxHeight: 280,
     fontSize: 15,
-    paddingLeft: 4,
+    paddingLeft: 10,
+    paddingRight: 6,
     paddingTop: Platform.OS === 'ios' ? 10 : 9,
     paddingBottom: Platform.OS === 'ios' ? 10 : 9,
     textAlignVertical: 'center',
@@ -198,7 +199,7 @@ export const inputBarStyles = StyleSheet.create({
     })
   },
   inputWithLeftPadding: {
-    paddingLeft: 4
+    paddingLeft: 8
   },
 
   /* ---------- 按住说话（科技感） ---------- */
@@ -278,8 +279,8 @@ export const inputBarStyles = StyleSheet.create({
     alignItems: 'center'
   },
   footerTip: {
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 11,
+    lineHeight: 15,
     textAlign: 'center',
     marginTop: 0
   },

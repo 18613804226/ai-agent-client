@@ -50,6 +50,13 @@ export const MobileHeader = memo(function MobileHeader({
   //（原 34 让 H5 头部离顶太远）。
   const topInset = Platform.OS === 'web' ? 0 : insetsTop
   const { width: screenW } = useWindowDimensions()
+  const neutralHoverBg = theme.isDark
+    ? 'rgba(255, 255, 255, 0.12)'
+    : 'rgba(0, 0, 0, 0.08)'
+  const neutralRippleColor = theme.isDark
+    ? 'rgba(255, 255, 255, 0.25)'
+    : 'rgba(0, 0, 0, 0.15)'
+  const autoReadBg = theme.primarySoft ?? 'rgba(47, 125, 225, 0.16)'
   return (
     <View
       style={[
@@ -89,7 +96,10 @@ export const MobileHeader = memo(function MobileHeader({
 
       {/* 左侧：菜单切换按钮 (☰) */}
       <HoverTouchable
-        style={styles.menuToggleBtn}
+        style={styles.headerIconBtn}
+        hoverBg={neutralHoverBg}
+        rippleColor={neutralRippleColor}
+        hitSlop={{ top: 4, bottom: 4, left: 6, right: 6 }}
         onPress={onToggleDrawer}
         accessibilityRole="button"
         accessibilityLabel="打开侧边栏"
@@ -104,19 +114,13 @@ export const MobileHeader = memo(function MobileHeader({
       >
         {title || '新会话'}
       </Text> */}
-      <View style={styles.menuToggleBtn}>
+      <View style={styles.rightActions}>
         {/* 右侧：新建会话按钮 (+) */}
         <HoverTouchable
-          style={{
-            borderRadius: 8,
-            padding: 4
-          }}
-          hoverBg={
-            theme.isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
-          }
-          rippleColor={
-            theme.isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.15)'
-          }
+          style={styles.headerIconBtn}
+          hoverBg={neutralHoverBg}
+          rippleColor={neutralRippleColor}
+          hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
           onPress={onNewChat}
           accessibilityRole="button"
           accessibilityLabel="新建对话"
@@ -130,29 +134,16 @@ export const MobileHeader = memo(function MobileHeader({
         {/* 💡 右侧：自动朗读开关按钮 */}
         <HoverTouchable
           style={[
+            styles.headerIconBtn,
             {
-              backgroundColor: autoRead
-                ? 'rgba(29, 161, 242, 0.15)'
-                : 'transparent',
-              borderRadius: 8,
-              marginLeft: 20,
-              padding: 4
+              backgroundColor: autoRead ? autoReadBg : 'transparent'
             }
           ]}
-          hoverBg={
-            autoRead
-              ? 'rgba(29, 161, 242, 0.15)'
-              : theme.isDark
-                ? 'rgba(255, 255, 255, 0.12)'
-                : 'rgba(0, 0, 0, 0.08)'
-          }
+          hoverBg={autoRead ? autoReadBg : neutralHoverBg}
           rippleColor={
-            autoRead
-              ? theme.historyActiveText
-              : theme.isDark
-                ? 'rgba(255, 255, 255, 0.25)'
-                : 'rgba(0, 0, 0, 0.15)'
+            autoRead ? theme.historyActiveText : neutralRippleColor
           }
+          hitSlop={{ top: 4, bottom: 4, left: 2, right: 6 }}
           onPress={onToggleAutoRead}
           accessibilityRole="button"
           accessibilityLabel={autoRead ? '关闭自动朗读' : '开启自动朗读'}
@@ -195,14 +186,17 @@ const styles = StyleSheet.create({
     bottom: -FADE_H,
     height: FADE_H
   },
-  menuToggleBtn: {
-    minWidth: 30,
-    display: 'flex',
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  rightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    padding: 4
+    gap: 6
   },
   mobileTopTitle: {
     fontSize: 15,

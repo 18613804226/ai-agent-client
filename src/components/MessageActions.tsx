@@ -19,6 +19,7 @@ import { IconSpeakerOff, IconHelpCircle } from './Icons';
 export interface MessageActionsTheme {
   isDark: boolean;
   textMuted: string;
+  textSecondary?: string;
   historyActiveText: string;
   /** 详情抽屉用：调用方传完整 theme 时带上，没带则用深浅色兜底 */
   textMain?: string;
@@ -29,8 +30,8 @@ export interface MessageActionsTheme {
 }
 
 /** 操作行整体高度固定：吐字完成前后布局完全一致，不会把气泡顶下去造成抖动 */
-const ACTION_ROW_HEIGHT = 26;
-const ACTION_BTN_SIZE = 24;
+const ACTION_ROW_HEIGHT = 30;
+const ACTION_BTN_SIZE = 28;
 
 interface MessageActionsProps {
   content: string;
@@ -50,7 +51,7 @@ interface MessageActionsProps {
   useTooltip?: boolean;
 }
 
-const CopyIcon = ({ color, size = 14 }: { color: string; size?: number }) => (
+const CopyIcon = ({ color, size = 15 }: { color: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Rect
       x="9"
@@ -74,7 +75,7 @@ const CopyIcon = ({ color, size = 14 }: { color: string; size?: number }) => (
 );
 
 /** 停止方块：朗读时喇叭位替换成它，暗示「点这里中断」 */
-const StopIcon = ({ color, size = 12 }: { color: string; size?: number }) => (
+const StopIcon = ({ color, size = 13 }: { color: string; size?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Rect
       x="5"
@@ -169,9 +170,9 @@ const MessageActions = memo(
     }, [content, isPlaying, messageId, onPlayingChange]);
 
     const active = isPlaying || preparing;
-    // 复制图标颜色与播放状态无关，始终 textMuted；只有喇叭反映播放/加载高亮。
-    const copyColor = theme.textMuted;
-    const activeColor = active ? theme.historyActiveText : theme.textMuted;
+    // 常态图标用次要灰（比弱化灰更易辨识）；喇叭播放/加载时高亮。
+    const idleColor = theme.textSecondary ?? theme.textMuted;
+    const activeColor = active ? theme.historyActiveText : idleColor;
     const hoverBg = theme.isDark
       ? 'rgba(255, 255, 255, 0.12)'
       : 'rgba(0, 0, 0, 0.08)';
@@ -226,14 +227,14 @@ const MessageActions = memo(
                       onMouseLeave: () => setShowDetail(false),
                     }
                   : {})}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                 accessibilityRole="button"
                 accessibilityLabel="查看统计说明"
               >
                 <IconHelpCircle
-                  size={14}
+                  size={15}
                   color={
-                    showDetail ? theme.historyActiveText : theme.textMuted
+                    showDetail ? theme.historyActiveText : idleColor
                   }
                 />
               </HoverTouchable>
@@ -306,7 +307,7 @@ const MessageActions = memo(
               rippleColor={theme.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'}
               onPress={handleCopy}
               disabled={!ready}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               accessibilityRole="button"
               accessibilityLabel="复制内容"
               {...(useTooltip
@@ -316,7 +317,7 @@ const MessageActions = memo(
                   }
                 : {})}
             >
-              <CopyIcon color={copyColor} />
+              <CopyIcon color={idleColor} />
             </HoverTouchable>
             {useTooltip && btnTip === 'copy' ? (
               <View
@@ -362,7 +363,7 @@ const MessageActions = memo(
               }
               onPress={handleToggleSpeech}
               disabled={!ready}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               accessibilityRole="button"
               accessibilityLabel={
                 preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读内容'
@@ -379,7 +380,7 @@ const MessageActions = memo(
               ) : isPlaying ? (
                 <StopIcon color={activeColor} />
               ) : (
-                <IconSpeakerOff size={16} color={activeColor} />
+                <IconSpeakerOff size={17} color={activeColor} />
               )}
             </HoverTouchable>
             {useTooltip && btnTip === 'speaker' ? (
@@ -473,7 +474,7 @@ const styles = StyleSheet.create({
   /** 桌面 Web 的轻量浮层，浮在按钮上方，不弹抽屉、不占聊天流布局 */
   tooltip: {
     position: 'absolute' as const,
-    bottom: 32,
+    bottom: 36,
     right: 0,
     width: 340,
     padding: 12,
@@ -495,7 +496,7 @@ const styles = StyleSheet.create({
    *  最小内容宽 = 整行文字宽，气泡溢出居中、单行展示 */
   miniTip: {
     position: 'absolute' as const,
-    bottom: 30,
+    bottom: 34,
     left: '50%' as const,
     transform: [{ translateX: '-50%' }],
     paddingHorizontal: 8,
@@ -513,7 +514,7 @@ const styles = StyleSheet.create({
   miniTipText: { fontSize: 11, lineHeight: 16, textAlign: 'center' as const },
   tooltipRow: { fontSize: 12, lineHeight: 18 },
   tooltipHintRow: { fontSize: 11, lineHeight: 16 },
-  item: { marginLeft: 4 },
+  item: { marginLeft: 8 },
   btn: {
     width: ACTION_BTN_SIZE,
     height: ACTION_BTN_SIZE,
