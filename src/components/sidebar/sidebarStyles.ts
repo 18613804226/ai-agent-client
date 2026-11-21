@@ -200,6 +200,7 @@ export const sidebarStyles = StyleSheet.create({
     paddingLeft: 14,
     paddingRight: 10,
     borderRadius: 18,
+    borderWidth: 1,
     marginBottom: 3,
     overflow: 'hidden'
   },
@@ -285,9 +286,27 @@ export const sidebarStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 3,
-    gap: 3,
     borderRadius: 18,
     borderWidth: 1
+  },
+  appearanceTrackInner: {
+    position: 'relative',
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 3
+  },
+  appearanceThumb: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 14,
+    borderWidth: 1,
+    pointerEvents: 'none'
+  },
+  appearanceThumbLightShadow: {
+    boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.08)'
   },
   appearanceOption: {
     flex: 1,

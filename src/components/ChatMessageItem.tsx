@@ -18,7 +18,7 @@ import {
 import { StreamingMarkdown } from './markdown/StreamingMarkdown'
 import ThoughtCollapsible from './ThoughtCollapsible'
 import MessageActions from './MessageActions'
-import type { StatsSection } from './StatsDrawer'
+import type { MessageStatsData, StatsSection } from './StatsDrawer'
 import { normalizeInlineEmphasis } from '../utils/normalizeEmphasis'
 import { EMPTY_CITATIONS, openSourceUrl, webCitations } from '../utils/citations'
 import { SourcesList } from './SourcesList'
@@ -28,6 +28,11 @@ import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
 import { extractDocument, openChatDocument, stripDocumentFences, type DocFormat } from '../utils/chatDocument'
 import { parseQuotedMessage } from '../utils/chatQuote'
+
+/** 千分位整数格式化（三端表现一致，供桌面 tooltip 与统计展示用） */
+function formatInt(n: number): string {
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
 
 /** 耗时格式化：<1s 显示 ms，<60s 显示 X.Xs，否则 m:ss */
 function formatDurationMs(ms: number): string {
@@ -400,8 +405,13 @@ const ChatMessageItem = memo(
      * 只有 done 帧真的带了统计数字才返回内容 —— 旧历史消息没有这些字段，
      * 点开只剩口径文字，不该给一个空的「?」按钮。
      */
-    const metaDetail = (() => {
-      if (isUser) return [] as StatsSection[]
+    const { metaDetail, statsData } = useMemo(() => {
+      if (isUser) {
+        return {
+          metaDetail: [] as StatsSection[],
+          statsData: null as MessageStatsData | null,
+        }
+      }
       // 只认服务端 done 帧上报的数字：客户端自算的 durationMs 每条回复都有，
       // 若算进来「?」会常驻，旧历史消息点开就只剩口径文字。
       // ttftMs / serverDurationMs 在 done 里缺值时是 null / 0，故要求 > 0。
@@ -416,7 +426,12 @@ const ChatMessageItem = memo(
         item.answerDurationMs != null ||
         (item.ttftMs != null && item.ttftMs > 0) ||
         (item.serverDurationMs != null && item.serverDurationMs > 0)
-      if (!hasStats) return [] as StatsSection[]
+      if (!hasStats) {
+        return {
+          metaDetail: [] as StatsSection[],
+          statsData: null as MessageStatsData | null,
+        }
+      }
 
       const { input, output, thought, answer } = tokenStats
       const sections: StatsSection[] = []
@@ -424,12 +439,17 @@ const ChatMessageItem = memo(
         if (rows.length) sections.push({ title, rows, hint })
       }
 
+      const modelLabel = item.model
+        ? item.model.replace(/^[^:|]+[:|]\s*/, '').trim()
+        : ''
+      const cacheHitPercent =
+        item.cachedTokens && input != null && input > 0
+          ? Math.round((item.cachedTokens / input) * 100)
+          : null
+
       // ① 上下文：模型 / 引用 / 记忆 / 结束状态
       const ctx: string[] = []
-      if (item.model) {
-        const label = item.model.replace(/^[^:|]+[:|]\s*/, '').trim()
-        if (label) ctx.push(label)
-      }
+      if (modelLabel) ctx.push(modelLabel)
       if (item.sourcesCount) ctx.push(`引用 ${item.sourcesCount}`)
       if (item.historyKept || item.historyDropped) {
         ctx.push(`记忆 ${item.historyKept ?? 0}/${item.historyDropped ?? 0}`)
@@ -443,19 +463,17 @@ const ChatMessageItem = memo(
 
       // ② token 全表（含缓存命中率）
       const tokenRows: string[] = []
-      if (item.tokens != null) tokenRows.push(`共 ${item.tokens}`)
+      if (item.tokens != null) tokenRows.push(`共 ${formatInt(item.tokens)}`)
       if (input != null) {
         const hit =
-          item.cachedTokens && input > 0
-            ? ` · 缓存 ${item.cachedTokens}（${Math.round(
-                (item.cachedTokens / input) * 100
-              )}%）`
+          item.cachedTokens && cacheHitPercent != null
+            ? ` · 缓存 ${formatInt(item.cachedTokens)}（${cacheHitPercent}%）`
             : ''
-        tokenRows.push(`输入 ${input}${hit}`)
+        tokenRows.push(`输入 ${formatInt(input)}${hit}`)
       }
       if (output != null) {
         tokenRows.push(
-          `输出 ${output} = 思考 ${thought ?? 0} + 正文 ${answer ?? 0}`
+          `输出 ${formatInt(output)} = 思考 ${formatInt(thought ?? 0)} + 正文 ${formatInt(answer ?? 0)}`
         )
       }
       push('Token', tokenRows)
@@ -485,53 +503,107 @@ const ChatMessageItem = memo(
       push('耗时', timeRows)
 
       // ④ 速度：每行最多两个指标，窄屏上比全部挤在一行更容易扫读
-      const speed: string[] = []
-      if (tps != null) speed.push(`整体 ${tps} t/s`)
-      if (
+      const thoughtTps =
         thought != null &&
         thought > 0 &&
         item.thoughtDurationMs != null &&
         item.thoughtDurationMs > 0
-      ) {
-        speed.push(
-          `思考 ${Math.round(thought / (item.thoughtDurationMs / 1000))} t/s`
-        )
-      }
-      if (
+          ? Math.round(thought / (item.thoughtDurationMs / 1000))
+          : null
+      const answerTps =
         answer != null &&
         answer > 0 &&
         item.answerDurationMs != null &&
         item.answerDurationMs > 0
-      ) {
-        speed.push(
-          `正文 ${Math.round(answer / (item.answerDurationMs / 1000))} t/s`
-        )
-      }
-      if (input != null && item.ttftMs != null && item.ttftMs > 0) {
-        speed.push(
-          `prefill ${Math.round(input / (item.ttftMs / 1000))} t/s`
-        )
-      }
+          ? Math.round(answer / (item.answerDurationMs / 1000))
+          : null
+      const prefillTps =
+        input != null && item.ttftMs != null && item.ttftMs > 0
+          ? Math.round(input / (item.ttftMs / 1000))
+          : null
+
+      const speed: string[] = []
+      if (tps != null) speed.push(`整体 ${formatInt(tps)} t/s`)
+      if (thoughtTps != null) speed.push(`思考 ${formatInt(thoughtTps)} t/s`)
+      if (answerTps != null) speed.push(`正文 ${formatInt(answerTps)} t/s`)
+      if (prefillTps != null) speed.push(`prefill ${formatInt(prefillTps)} t/s`)
       const speedRows: string[] = []
       for (let i = 0; i < speed.length; i += 2) {
         speedRows.push(speed.slice(i, i + 2).join(' · '))
       }
       push('速度', speedRows)
 
-      // ⑤ 口径：短句 + 项目符号（hint 节，抽屉里以脚注样式收尾）
-      push(
-        '口径',
-        [
-          '· 耗时 服务端整轮含检索/工具/落库，不含传输与打字机',
-          '· t/s 输出÷纯吐字，不含检索/工具/网络',
-          '· 首字含 prefill 与网络；缓存率 = 缓存÷输入',
-          '· 单 chunk 无阶段时长；未开思考链时思考为 0',
-        ],
-        true
-      )
+      // ⑤ 口径：短句 + 项目符号（hint 节，抽屉里以可折叠脚注样式收尾）
+      const notes = [
+        '· 耗时 服务端整轮含检索/工具/落库，不含传输与打字机',
+        '· t/s 输出÷纯吐字，不含检索/工具/网络',
+        '· 首字含 prefill 与网络；缓存率 = 缓存÷输入',
+        '· 单 chunk 无阶段时长；未开思考链时思考为 0',
+      ]
+      push('口径', notes, true)
 
-      return sections
-    })()
+      const structured: MessageStatsData = {
+        context: {
+          modelLabel: modelLabel || undefined,
+          sourcesCount: item.sourcesCount ?? undefined,
+          historyKept: item.historyKept ?? undefined,
+          historyDropped: item.historyDropped ?? undefined,
+          hasMemoryInfo: !!(item.historyKept || item.historyDropped),
+          digestUsed: !!item.digestUsed,
+          truncated: !!item.truncated,
+          finishReason: item.finishReason ?? undefined,
+        },
+        tokens: {
+          total: item.tokens ?? null,
+          input,
+          cached: item.cachedTokens ?? null,
+          cacheHitPercent,
+          output,
+          thought,
+          answer,
+        },
+        latency: {
+          durationMs: durationMs ?? null,
+          ttftMs: item.ttftMs ?? null,
+          firstAnswerTokenMs: item.firstAnswerTokenMs ?? null,
+          thoughtDurationMs: item.thoughtDurationMs ?? null,
+          answerDurationMs: item.answerDurationMs ?? null,
+          generationDurationMs: item.generationDurationMs ?? null,
+        },
+        speed: {
+          overallTps: tps,
+          thoughtTps,
+          answerTps,
+          prefillTps,
+        },
+        notes,
+      }
+
+      return { metaDetail: sections, statsData: structured }
+    }, [
+      isUser,
+      item.tokens,
+      item.completionTokens,
+      item.inputTokens,
+      item.reasoningTokens,
+      item.cachedTokens,
+      item.generationDurationMs,
+      item.thoughtDurationMs,
+      item.answerDurationMs,
+      item.ttftMs,
+      item.serverDurationMs,
+      item.firstAnswerTokenMs,
+      item.model,
+      item.sourcesCount,
+      item.historyKept,
+      item.historyDropped,
+      item.digestUsed,
+      item.truncated,
+      item.finishReason,
+      tokenStats,
+      durationMs,
+      tps,
+    ])
 
     const bubbleStyle = useMemo(
       () =>
@@ -865,6 +937,7 @@ const ChatMessageItem = memo(
                   ready={!isStreaming}
                   metaText={metaText}
                   metaDetail={metaDetail}
+                  statsData={statsData}
                   // 桌面 Web 用轻量 tooltip，APP / H5 用底部抽屉
                   useTooltip={!compactMeta}
                   // 窄屏单行（用户要求不折行）；桌面留 2 行放下完整统计

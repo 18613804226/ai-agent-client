@@ -7,7 +7,10 @@ import {
   View,
 } from 'react-native';
 import { HoverTouchable } from './HoverTouchable';
-import StatsDrawer, { type StatsSection } from './StatsDrawer';
+import StatsDrawer, {
+  type MessageStatsData,
+  type StatsSection,
+} from './StatsDrawer';
 import * as Clipboard from 'expo-clipboard';
 import Svg, { Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
@@ -25,8 +28,13 @@ export interface MessageActionsTheme {
   textMain?: string;
   border?: string;
   borderSubtle?: string;
+  surfaceElevated?: string;
   primary?: string;
+  primarySoft?: string;
+  primaryBorder?: string;
   sendBtnActive?: string;
+  warning?: string;
+  danger?: string;
 }
 
 /** 操作行整体高度固定：吐字完成前后布局完全一致，不会把气泡顶下去造成抖动 */
@@ -47,6 +55,8 @@ interface MessageActionsProps {
   metaLines?: number;
   /** 点「?」展开的多行详细统计与口径说明；空数组（无统计数字）不显示「?」按钮 */
   metaDetail?: StatsSection[];
+  /** 移动端底部抽屉用的结构化统计数据 */
+  statsData?: MessageStatsData | null;
   /** 桌面 Web：hover 出轻量 tooltip；false 则点「?」弹底部抽屉 */
   useTooltip?: boolean;
 }
@@ -109,6 +119,7 @@ const MessageActions = memo(
     metaText,
     metaLines = 1,
     metaDetail,
+    statsData,
     useTooltip = false,
   }: MessageActionsProps) {
     // 三个视觉状态：
@@ -415,15 +426,24 @@ const MessageActions = memo(
 
         {/* 详细统计与口径说明：挂到根视图的底部抽屉，不占聊天流布局 */}
         <StatsDrawer
-          visible={!useTooltip && showDetail && !!metaDetail?.length}
+          visible={!useTooltip && showDetail && !!(metaDetail?.length || statsData)}
           onClose={closeDetail}
           sections={metaDetail || []}
+          stats={statsData}
           theme={{
             isDark: theme.isDark,
             textMain:
               theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
             textMuted: theme.textMuted,
+            textSecondary: theme.textSecondary,
             border: theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+            borderSubtle: theme.borderSubtle,
+            surfaceElevated: theme.surfaceElevated,
+            primary: theme.primary,
+            primarySoft: theme.primarySoft,
+            primaryBorder: theme.primaryBorder,
+            warning: theme.warning,
+            danger: theme.danger,
           }}
         />
       </View>
@@ -438,6 +458,7 @@ const MessageActions = memo(
     prev.metaText === next.metaText &&
     prev.metaLines === next.metaLines &&
     prev.metaDetail === next.metaDetail &&
+    prev.statsData === next.statsData &&
     prev.useTooltip === next.useTooltip,
 );
 
@@ -512,7 +533,7 @@ const styles = StyleSheet.create({
       : null),
   },
   miniTipText: { fontSize: 11, lineHeight: 16, textAlign: 'center' as const },
-  tooltipRow: { fontSize: 12, lineHeight: 18 },
+  tooltipRow: { fontSize: 12, lineHeight: 18, fontVariant: ['tabular-nums'] },
   tooltipHintRow: { fontSize: 11, lineHeight: 16 },
   item: { marginLeft: 8 },
   btn: {

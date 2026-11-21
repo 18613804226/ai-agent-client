@@ -21,6 +21,7 @@ import { InputBarIcon } from './InputBarIcon'
 import { attachCalloutSuppress } from '../hooks/useSuppressBrowserCallout'
 import { sidebarStyles, SECTION_NO_CALLOUT_STYLE } from './sidebar/sidebarStyles'
 import { FileEnabledSwitch } from './sidebar/FileEnabledSwitch'
+import { SegmentedControl, type SegmentedOption } from './sidebar/SegmentedControl'
 import {
   SidebarLongPressItem,
   measureWindowPos
@@ -33,6 +34,17 @@ import {
   ConfirmDeleteDialog,
   ConfirmDeleteConversationDialog
 } from './sidebar/ConfirmDialogs'
+
+const ROLE_OPTIONS: readonly SegmentedOption<RoleMode>[] = [
+  { value: 'user', label: 'User' },
+  { value: 'admin', label: 'Admin' }
+]
+
+const THEME_OPTIONS: readonly SegmentedOption<ThemeMode>[] = [
+  { value: 'light', label: '浅色', accessibilityLabel: '浅色模式' },
+  { value: 'dark', label: '深色', accessibilityLabel: '深色模式' },
+  { value: 'system', label: '跟随系统', accessibilityLabel: '跟随系统模式' }
+]
 
 interface SidebarProps {
   conversations: any[]
@@ -270,9 +282,22 @@ export default function Sidebar({
     ? 'rgba(47, 125, 225, 0.26)'
     : 'rgba(37, 99, 235, 0.16)'
   const newChatTextColor = isDarkMode ? '#D6ECFF' : primaryColor
+  const uploadIconBg = isDarkMode
+    ? 'rgba(148, 163, 184, 0.14)'
+    : 'rgba(100, 116, 139, 0.12)'
+  const uploadIconColor = isDarkMode ? '#94A3B8' : '#64748B'
+  const historyActiveBg = isDarkMode
+    ? 'rgba(47, 125, 225, 0.26)'
+    : 'rgba(37, 99, 235, 0.12)'
+  const historyActiveBorder = isDarkMode
+    ? 'rgba(47, 125, 225, 0.48)'
+    : 'rgba(37, 99, 235, 0.26)'
   const activeItemHoverBg = isDarkMode
-    ? 'rgba(47, 125, 225, 0.22)'
-    : 'rgba(37, 99, 235, 0.14)'
+    ? 'rgba(47, 125, 225, 0.34)'
+    : 'rgba(37, 99, 235, 0.17)'
+  const menuOpenBg = isDarkMode
+    ? 'rgba(255, 255, 255, 0.10)'
+    : 'rgba(0, 0, 0, 0.06)'
   const deleteHoverBg = theme.deleteHoverBg || 'rgba(239, 68, 68, 0.14)'
   const successColor = theme.success ?? SEMANTIC_COLORS.success
 
@@ -290,10 +315,9 @@ export default function Sidebar({
       : quotaRatio >= 0.75
         ? (theme.warning ?? SEMANTIC_COLORS.warning)
         : theme.textMuted
-  const userSelectedBg = isDarkMode ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF'
-  const userSelectedHoverBg = isDarkMode
-    ? 'rgba(255, 255, 255, 0.16)'
-    : '#FFFFFF'
+  const segmentTrackBg = isDarkMode
+    ? 'rgba(255, 255, 255, 0.05)'
+    : 'rgba(0, 0, 0, 0.045)'
 
   return (
     <View
@@ -354,10 +378,10 @@ export default function Sidebar({
           <View
             style={[
               sidebarStyles.uploadIconBadge,
-              { backgroundColor: primarySoft }
+              { backgroundColor: uploadIconBg }
             ]}
           >
-            <InputBarIcon name="upload" size={15} color={primaryColor} />
+            <InputBarIcon name="upload" size={15} color={uploadIconColor} />
           </View>
           <View style={sidebarStyles.uploadTextGroup}>
             <Text
@@ -617,7 +641,18 @@ export default function Sidebar({
                   style={[
                     sidebarStyles.historyItem,
                     !isPCWeb && { minHeight: 44, paddingVertical: 11 },
-                    (isActive || isMenuOpen) && { backgroundColor: primarySoft }
+                    { borderColor: 'transparent' },
+                    isActive
+                      ? {
+                          backgroundColor: historyActiveBg,
+                          borderColor: historyActiveBorder
+                        }
+                      : isMenuOpen
+                        ? {
+                            backgroundColor: menuOpenBg,
+                            borderColor: subtleBorder
+                          }
+                        : null
                   ]}
                   hoverBg={isActive ? activeItemHoverBg : neutralHoverBg}
                   onMouseEnter={
@@ -650,7 +685,7 @@ export default function Sidebar({
                       {
                         color: isActive
                           ? isDarkMode
-                            ? '#EBF4FF'
+                            ? '#FFFFFF'
                             : primaryColor
                           : theme.textMain,
                         fontWeight: isActive ? '600' : '400',
@@ -693,7 +728,7 @@ export default function Sidebar({
                           color={
                             isActive
                               ? isDarkMode
-                                ? '#D6ECFF'
+                                ? '#EBF4FF'
                                 : primaryColor
                               : theme.textMuted
                           }
@@ -738,7 +773,7 @@ export default function Sidebar({
             </HoverTouchable>
           )}
 
-          {/* 角色切换：中性选中态与外观主色区分层级，仅 Admin 激活态亮主色 */}
+          {/* 角色切换与外观切换共用统一「浅色滑块」分段控件，保持视觉体系一致 */}
           <View style={sidebarStyles.appearanceSection}>
             <View style={sidebarStyles.appearanceLabelRow}>
               <Text
@@ -759,67 +794,20 @@ export default function Sidebar({
                 </Text>
               ) : null}
             </View>
-            <View
-              style={[
-                sidebarStyles.appearanceOptions,
-                { backgroundColor: elevatedBg, borderColor: subtleBorder }
-              ]}
-            >
-              {(
-                [
-                  { value: 'user', label: 'User' },
-                  { value: 'admin', label: 'Admin' }
-                ] as { value: RoleMode; label: string }[]
-              ).map(({ value, label }) => {
-                const selected = effectiveRole === value
-                const isAdminTab = value === 'admin'
-                const selectedBg = isAdminTab ? primarySoft : userSelectedBg
-                const selectedBorder = isAdminTab ? primaryBorder : subtleBorder
-                const selectedText = isAdminTab
-                  ? isDarkMode
-                    ? '#EBF4FF'
-                    : primaryColor
-                  : theme.textMain
-                return (
-                  <HoverTouchable
-                    key={value}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={label}
-                    style={[
-                      sidebarStyles.appearanceOption,
-                      !isPCWeb && { paddingVertical: 9 },
-                      selected
-                        ? {
-                            backgroundColor: selectedBg,
-                            borderColor: selectedBorder
-                          }
-                        : { borderColor: 'transparent' }
-                    ]}
-                    hoverBg={
-                      selected
-                        ? isAdminTab
-                          ? activeItemHoverBg
-                          : userSelectedHoverBg
-                        : neutralHoverBg
-                    }
-                    onPress={isAdminTab ? handleSwitchToAdmin : handleSwitchToUser}
-                  >
-                    <Text
-                      style={[
-                        sidebarStyles.appearanceOptionText,
-                        {
-                          color: selected ? selectedText : theme.textMuted,
-                          fontWeight: selected ? '600' : '500'
-                        }
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  </HoverTouchable>
-                )
-              })}
-            </View>
+            <SegmentedControl
+              options={ROLE_OPTIONS}
+              value={effectiveRole}
+              onChange={(next) =>
+                next === 'admin' ? handleSwitchToAdmin() : handleSwitchToUser()
+              }
+              isDarkMode={isDarkMode}
+              isPCWeb={isPCWeb}
+              trackBg={segmentTrackBg}
+              trackBorder={subtleBorder}
+              hoverBg={neutralHoverBg}
+              textMain={theme.textMain}
+              textMuted={theme.textMuted}
+            />
           </View>
 
           <View style={[sidebarStyles.appearanceSection, { marginBottom: 0 }]}>
@@ -832,55 +820,18 @@ export default function Sidebar({
             >
               外观
             </Text>
-            <View
-              style={[
-                sidebarStyles.appearanceOptions,
-                { backgroundColor: elevatedBg, borderColor: subtleBorder }
-              ]}
-            >
-              {(
-                [
-                  { mode: 'light', label: '浅色' },
-                  { mode: 'dark', label: '深色' },
-                  { mode: 'system', label: '跟随系统' }
-                ] as const
-              ).map(({ mode, label }) => {
-                const selected = themeMode === mode
-                const selectedText = isDarkMode ? '#EBF4FF' : primaryColor
-                return (
-                  <HoverTouchable
-                    key={mode}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={`${label}模式`}
-                    style={[
-                      sidebarStyles.appearanceOption,
-                      !isPCWeb && { paddingVertical: 9 },
-                      selected
-                        ? {
-                            backgroundColor: primarySoft,
-                            borderColor: primaryBorder
-                          }
-                        : { borderColor: 'transparent' }
-                    ]}
-                    hoverBg={selected ? activeItemHoverBg : neutralHoverBg}
-                    onPress={() => onThemeModeChange(mode)}
-                  >
-                    <Text
-                      style={[
-                        sidebarStyles.appearanceOptionText,
-                        {
-                          color: selected ? selectedText : theme.textMuted,
-                          fontWeight: selected ? '600' : '500'
-                        }
-                      ]}
-                    >
-                      {label}
-                    </Text>
-                  </HoverTouchable>
-                )
-              })}
-            </View>
+            <SegmentedControl
+              options={THEME_OPTIONS}
+              value={themeMode}
+              onChange={onThemeModeChange}
+              isDarkMode={isDarkMode}
+              isPCWeb={isPCWeb}
+              trackBg={segmentTrackBg}
+              trackBorder={subtleBorder}
+              hoverBg={neutralHoverBg}
+              textMain={theme.textMain}
+              textMuted={theme.textMuted}
+            />
           </View>
         </View>
       </View>

@@ -85,7 +85,11 @@ export interface ThemeType {
   codeBorder?: string
   primary?: string
   primaryHover?: string
+  primarySoft?: string
+  primaryBorder?: string
   sendBtnActive?: string
+  warning?: string
+  danger?: string
   bubbleUserBg: string
   bubbleUserText: string
   bubbleAiBg: string
