@@ -105,6 +105,93 @@ const StopIcon = ({ color, size = 13 }: { color: string; size?: number }) => (
 const miniTipWidth = (label: string) => 22 + label.length * 11;
 
 /**
+ * 桌面 Web 悬停气泡动画外壳：
+ * - 外层负责绝对定位/居中，挂 pointerEvents="none"，不干扰按钮的 hover 判定；
+ * - 内层做 GPU 合成层 opacity + translateY + scale 进出场过渡，退出完成后再卸载。
+ */
+function HoverPopover({
+  visible,
+  origin = 'bottom right',
+  offsetY = 6,
+  enterScale = 0.96,
+  enterMs = 170,
+  exitMs = 115,
+  anchorStyle,
+  cardStyle,
+  children,
+}: {
+  visible: boolean;
+  origin?: string;
+  offsetY?: number;
+  enterScale?: number;
+  enterMs?: number;
+  exitMs?: number;
+  anchorStyle?: any;
+  cardStyle?: any;
+  children: React.ReactNode;
+}) {
+  const [rendered, setRendered] = useState(visible);
+  const [shown, setShown] = useState(false);
+
+  if (visible && !rendered) {
+    setRendered(true);
+  }
+
+  useEffect(() => {
+    let raf1 = 0;
+    let raf2 = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    if (visible) {
+      raf1 = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => setShown(true));
+      });
+    } else {
+      setShown(false);
+      timer = setTimeout(() => setRendered(false), exitMs + 20);
+    }
+
+    return () => {
+      if (raf1) cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+      if (timer) clearTimeout(timer);
+    };
+  }, [visible, exitMs]);
+
+  if (!rendered) return null;
+
+  return (
+    <View style={[anchorStyle, { pointerEvents: 'none' }]}>
+      <View
+        style={[
+          cardStyle,
+          {
+            opacity: shown ? 1 : 0,
+            transform: [
+              { translateY: shown ? 0 : offsetY },
+              { scale: shown ? 1 : enterScale },
+            ],
+            ...(Platform.OS === 'web'
+              ? ({
+                  transformOrigin: origin,
+                  transitionProperty: 'opacity, transform',
+                  transitionDuration: `${shown ? enterMs : exitMs}ms`,
+                  transitionTimingFunction: shown
+                    ? 'cubic-bezier(0.16, 1, 0.3, 1)'
+                    : 'ease-out',
+                  willChange: 'opacity, transform',
+                } as any)
+              : null),
+          },
+        ]}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
+
+/**
  * AI 气泡底部操作区：复制 icon + 喇叭 icon。
  * 组件自身保持固定高度，外部只需切换 opacity，避免「吐字完成」瞬间整条气泡重排。
  */
@@ -250,57 +337,60 @@ const MessageActions = memo(
                 />
               </HoverTouchable>
 
-              {useTooltip && showDetail ? (
-                <View
-                  style={[
-                    styles.tooltip,
-                    !metaText && { left: 0, right: undefined },
-                    {
-                      backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
-                      borderColor:
-                        theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
-                    },
-                  ]}
-                >
-                  {/* 不套 ScrollView：内容全量展示，不出滚动条 */}
-                  <View>
-                    {metaDetail.map((s, idx) => (
-                      <View key={s.title} style={idx > 0 ? styles.tooltipSectionSpacing : null}>
+              <HoverPopover
+                visible={useTooltip && showDetail}
+                origin={metaText ? 'bottom right' : 'bottom left'}
+                anchorStyle={[
+                  styles.tooltipAnchor,
+                  !metaText && styles.tooltipAnchorLeft,
+                ]}
+                cardStyle={[
+                  styles.tooltip,
+                  {
+                    backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
+                    borderColor:
+                      theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                  },
+                ]}
+              >
+                {/* 不套 ScrollView：内容全量展示，不出滚动条 */}
+                <View>
+                  {metaDetail.map((s, idx) => (
+                    <View key={s.title} style={idx > 0 ? styles.tooltipSectionSpacing : null}>
+                      <Text
+                        style={[
+                          styles.tooltipTitle,
+                          {
+                            color:
+                              theme.textMain ||
+                              (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
+                          },
+                        ]}
+                      >
+                        {s.title}
+                      </Text>
+                      {s.rows.map((r, i) => (
                         <Text
+                          key={i}
                           style={[
-                            styles.tooltipTitle,
+                            styles.tooltipRow,
+                            s.hint && styles.tooltipHintRow,
                             {
-                              color:
-                                theme.textMain ||
-                                (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
+                              // 深色主题正文用纯白；浅色主题白底卡片
+                              // 纯白会隐形，退到深灰保持可读
+                              color: theme.isDark
+                                ? '#FFFFFF'
+                                : 'rgba(0,0,0,0.65)',
                             },
                           ]}
                         >
-                          {s.title}
+                          {r}
                         </Text>
-                        {s.rows.map((r, i) => (
-                          <Text
-                            key={i}
-                            style={[
-                              styles.tooltipRow,
-                              s.hint && styles.tooltipHintRow,
-                              {
-                                // 深色主题正文用纯白；浅色主题白底卡片
-                                // 纯白会隐形，退到深灰保持可读
-                                color: theme.isDark
-                                  ? '#FFFFFF'
-                                  : 'rgba(0,0,0,0.65)',
-                              },
-                            ]}
-                          >
-                            {r}
-                          </Text>
-                        ))}
-                      </View>
-                    ))}
-                  </View>
+                      ))}
+                    </View>
+                  ))}
                 </View>
-              ) : null}
+              </HoverPopover>
             </View>
           ) : null}
 
@@ -330,31 +420,36 @@ const MessageActions = memo(
             >
               <CopyIcon color={idleColor} />
             </HoverTouchable>
-            {useTooltip && btnTip === 'copy' ? (
-              <View
+            <HoverPopover
+              visible={useTooltip && btnTip === 'copy'}
+              origin="bottom center"
+              offsetY={4}
+              enterScale={0.94}
+              enterMs={140}
+              exitMs={100}
+              anchorStyle={styles.miniTipAnchor}
+              cardStyle={[
+                styles.miniTip,
+                {
+                  width: miniTipWidth('复制'),
+                  backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
+                  borderColor:
+                    theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                },
+              ]}
+            >
+              <Text
                 style={[
-                  styles.miniTip,
+                  styles.miniTipText,
                   {
-                    width: miniTipWidth('复制'),
-                    backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
-                    borderColor:
-                      theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                    color:
+                      theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
                   },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.miniTipText,
-                    {
-                      color:
-                        theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
-                    },
-                  ]}
-                >
-                  复制
-                </Text>
-              </View>
-            ) : null}
+                复制
+              </Text>
+            </HoverPopover>
           </View>
 
           {/* 喇叭：播放/加载时用高亮色 + 高亮底；hover 只影响非播放态 */}
@@ -394,33 +489,38 @@ const MessageActions = memo(
                 <IconSpeakerOff size={17} color={activeColor} />
               )}
             </HoverTouchable>
-            {useTooltip && btnTip === 'speaker' ? (
-              <View
+            <HoverPopover
+              visible={useTooltip && btnTip === 'speaker'}
+              origin="bottom center"
+              offsetY={4}
+              enterScale={0.94}
+              enterMs={140}
+              exitMs={100}
+              anchorStyle={styles.miniTipAnchor}
+              cardStyle={[
+                styles.miniTip,
+                {
+                  width: miniTipWidth(
+                    preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读'
+                  ),
+                  backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
+                  borderColor:
+                    theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                },
+              ]}
+            >
+              <Text
                 style={[
-                  styles.miniTip,
+                  styles.miniTipText,
                   {
-                    width: miniTipWidth(
-                      preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读'
-                    ),
-                    backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
-                    borderColor:
-                      theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+                    color:
+                      theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
                   },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.miniTipText,
-                    {
-                      color:
-                        theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
-                    },
-                  ]}
-                >
-                  {preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读'}
-                </Text>
-              </View>
-            ) : null}
+                {preparing ? '朗读准备中' : isPlaying ? '停止朗读' : '朗读'}
+              </Text>
+            </HoverPopover>
           </View>
         </View>
 
@@ -493,15 +593,21 @@ const styles = StyleSheet.create({
     position: 'relative' as const,
   },
   /** 桌面 Web 的轻量浮层，浮在按钮上方，不弹抽屉、不占聊天流布局 */
-  tooltip: {
+  tooltipAnchor: {
     position: 'absolute' as const,
     bottom: 36,
     right: 0,
+    zIndex: 999,
+  },
+  tooltipAnchorLeft: {
+    left: 0,
+    right: undefined,
+  },
+  tooltip: {
     width: 340,
     padding: 12,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
-    zIndex: 999,
     ...(Platform.OS === 'web'
       ? ({ boxShadow: '0 8px 28px rgba(0,0,0,0.22)' } as any)
       : null),
@@ -515,16 +621,18 @@ const styles = StyleSheet.create({
    *  nowrap 必须有：绝对定位的 shrink-to-fit 可用宽度被锚容器（24px 按钮）
    *  减去 left 50% 后只剩十几像素，文字被迫逐字换行竖排；禁止换行后
    *  最小内容宽 = 整行文字宽，气泡溢出居中、单行展示 */
-  miniTip: {
+  miniTipAnchor: {
     position: 'absolute' as const,
     bottom: 34,
     left: '50%' as const,
     transform: [{ translateX: '-50%' }],
+    zIndex: 999,
+  },
+  miniTip: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
     borderWidth: StyleSheet.hairlineWidth,
-    zIndex: 999,
     ...(Platform.OS === 'web'
       ? ({
           whiteSpace: 'nowrap',
