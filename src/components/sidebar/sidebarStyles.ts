@@ -36,7 +36,8 @@ export const sidebarStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 11,
+    minHeight: 42,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: RADIUS.md,
     borderWidth: 1
@@ -45,17 +46,13 @@ export const sidebarStyles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14
   },
-  uploadWrap: {
-    position: 'relative',
-    zIndex: 20,
-    marginVertical: SPACING.sm
-  },
   uploadSection: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 10,
     paddingHorizontal: 10,
+    marginVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     borderWidth: 1
   },
@@ -77,26 +74,8 @@ export const sidebarStyles = StyleSheet.create({
   },
   uploadHint: {
     fontSize: 11,
-    marginTop: 1
-  },
-  uploadTooltip: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    marginTop: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
-    zIndex: 30,
-    ...(Platform.OS === 'web'
-      ? ({ boxShadow: '0 6px 18px rgba(0, 0, 0, 0.28)' } as any)
-      : null)
-  },
-  uploadTooltipText: {
-    fontSize: 11,
-    lineHeight: 16
+    lineHeight: 15,
+    marginTop: 2
   },
   categoryTitle: {
     fontSize: 12,
@@ -218,7 +197,7 @@ export const sidebarStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 9,
-    paddingLeft: 12,
+    paddingLeft: 14,
     paddingRight: 8,
     borderRadius: RADIUS.sm,
     marginBottom: 3,
@@ -226,12 +205,11 @@ export const sidebarStyles = StyleSheet.create({
   },
   historyActiveBar: {
     position: 'absolute',
-    left: 0,
-    top: 6,
-    bottom: 6,
+    left: 4,
+    top: 10,
+    bottom: 10,
     width: 3,
-    borderTopRightRadius: 3,
-    borderBottomRightRadius: 3
+    borderRadius: 2
   },
   historyText: {
     fontSize: 14
@@ -247,15 +225,15 @@ export const sidebarStyles = StyleSheet.create({
   sidebarFooter: {
     borderTopWidth: 1,
     paddingTop: 10,
-    marginTop: 4,
-    gap: SPACING.sm
+    marginTop: 4
   },
   adminEntry: {
-    minHeight: 36,
+    minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 10,
+    marginBottom: 10,
     borderRadius: RADIUS.sm,
     borderWidth: 1
   },
@@ -274,67 +252,51 @@ export const sidebarStyles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.8
   },
-  quotaCard: {
-    paddingHorizontal: 6,
-    paddingVertical: 4
+  appearanceSection: {
+    marginBottom: 10
   },
-  quotaHeaderRow: {
+  appearanceLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 5
+    marginBottom: 6,
+    paddingHorizontal: 4
   },
-  quotaLabel: {
-    fontSize: 11,
-    fontWeight: '500'
-  },
-  quotaValue: {
+  quotaText: {
     fontSize: 11,
     fontWeight: '600'
   },
-  quotaTrack: {
-    height: 3,
-    borderRadius: 2,
-    overflow: 'hidden'
+  appearanceLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2
   },
-  quotaFill: {
-    height: '100%',
-    borderRadius: 2
+  appearanceLabelStandalone: {
+    marginBottom: 6,
+    paddingHorizontal: 4
   },
-  footerActionRow: {
+  appearanceOptions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm
+    padding: 3,
+    gap: 3,
+    borderRadius: RADIUS.md,
+    borderWidth: 1
   },
-  settingsTriggerBtn: {
+  appearanceOption: {
     flex: 1,
-    height: 38,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 4,
     borderRadius: RADIUS.sm,
     borderWidth: 1
   },
-  settingsTriggerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  settingsTriggerText: {
-    fontSize: 13,
+  appearanceOptionText: {
+    fontSize: 12,
     fontWeight: '500'
-  },
-  settingsModeTag: {
-    fontSize: 11
-  },
-  quickThemeBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center'
   },
   sheetOverlay: {
     position: 'absolute',

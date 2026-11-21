@@ -33,7 +33,6 @@ import {
   ConfirmDeleteDialog,
   ConfirmDeleteConversationDialog
 } from './sidebar/ConfirmDialogs'
-import { SidebarSettingsModal } from './sidebar/SidebarSettingsModal'
 
 interface SidebarProps {
   conversations: any[]
@@ -137,10 +136,8 @@ export default function Sidebar({
   // 🖥️ PC 端悬停反馈（仅 isPCWeb 使用，移动端不挂 mouse 事件避免触屏粘滞）
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null)
   const [hoveredFileId, setHoveredFileId] = useState<string | null>(null)
-  const [uploadHovered, setUploadHovered] = useState(false)
-  const [settingsVisible, setSettingsVisible] = useState(false)
 
-  // ⚠️ 抽屉关闭时把长按菜单/二次确认/设置弹窗一起收掉：
+  // ⚠️ 抽屉关闭时把长按菜单/二次确认一起收掉：
   // Drawer 关闭不会卸载 Sidebar（状态全留在内存），不清理的话下次打开弹窗还飘在那。
   // 桌面常驻侧边栏不传 drawerOpen（undefined），这里直接跳过不影响。
   useEffect(() => {
@@ -149,10 +146,8 @@ export default function Sidebar({
       setConvMenu(null)
       setConfirmFile(null)
       setConfirmConv(null)
-      setSettingsVisible(false)
       setHoveredConvId(null)
       setHoveredFileId(null)
-      setUploadHovered(false)
     }
   }, [drawerOpen])
 
@@ -232,8 +227,6 @@ export default function Sidebar({
     try {
       const ok = await activateAdmin()
       if (!ok) {
-        // 跳路由前先关闭弹窗与抽屉，防止原生 Modal 挡在目标页之上
-        setSettingsVisible(false)
         onCloseDrawer?.()
         router.push('/admin-login')
       }
@@ -255,7 +248,6 @@ export default function Sidebar({
   }
 
   const handleOpenAdmin = () => {
-    setSettingsVisible(false)
     onCloseDrawer?.()
     router.push('/admin')
   }
@@ -292,14 +284,16 @@ export default function Sidebar({
     hasQuota && (device?.dailyQuota ?? 0) > 0
       ? Math.min(1, Math.max(0, (device?.usedToday ?? 0) / device!.dailyQuota!))
       : 0
-  const quotaFillColor =
+  const quotaTextColor =
     quotaRatio >= 0.9
       ? (theme.danger ?? SEMANTIC_COLORS.danger)
       : quotaRatio >= 0.75
         ? (theme.warning ?? SEMANTIC_COLORS.warning)
-        : primaryColor
-  const themeModeTag =
-    themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '系统'
+        : theme.textMuted
+  const userSelectedBg = isDarkMode ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF'
+  const userSelectedHoverBg = isDarkMode
+    ? 'rgba(255, 255, 255, 0.16)'
+    : '#FFFFFF'
 
   return (
     <View
@@ -316,7 +310,13 @@ export default function Sidebar({
                 ? isPCWeb
                   ? 40
                   : 10
-                : insets.top + 10
+                : insets.top + 10,
+            paddingBottom:
+              Platform.OS === 'web'
+                ? isPCWeb
+                  ? 12
+                  : ('max(16px, env(safe-area-inset-bottom))' as any)
+                : Math.max(12, insets.bottom + 8)
           }
         ]}
       >
@@ -327,7 +327,8 @@ export default function Sidebar({
             accessibilityLabel="发起新对话"
             style={[
               sidebarStyles.newChatBtn,
-              { backgroundColor: primarySoft, borderColor: primaryBorder }
+              { backgroundColor: primarySoft, borderColor: primaryBorder },
+              !isPCWeb && { minHeight: 44 }
             ]}
             hoverBg={newChatHoverBg}
             onPress={onNewChat}
@@ -340,71 +341,39 @@ export default function Sidebar({
         </View>
 
         {/* 2. 中部：知识库上传柔和卡片 */}
-        <View style={sidebarStyles.uploadWrap}>
-          <HoverTouchable
-            accessibilityRole="button"
-            accessibilityLabel="知识库上传"
+        <HoverTouchable
+          accessibilityRole="button"
+          accessibilityLabel="知识库上传"
+          style={[
+            sidebarStyles.uploadSection,
+            { backgroundColor: elevatedBg, borderColor: subtleBorder }
+          ]}
+          hoverBg={neutralHoverBg}
+          onPress={onUploadFile}
+        >
+          <View
             style={[
-              sidebarStyles.uploadSection,
-              { backgroundColor: elevatedBg, borderColor: subtleBorder }
+              sidebarStyles.uploadIconBadge,
+              { backgroundColor: primarySoft }
             ]}
-            hoverBg={neutralHoverBg}
-            onPress={onUploadFile}
-            {...(isPCWeb
-              ? {
-                  onMouseEnter: () => setUploadHovered(true),
-                  onMouseLeave: () => setUploadHovered(false)
-                }
-              : {})}
           >
-            <View
-              style={[
-                sidebarStyles.uploadIconBadge,
-                { backgroundColor: primarySoft }
-              ]}
+            <InputBarIcon name="upload" size={15} color={primaryColor} />
+          </View>
+          <View style={sidebarStyles.uploadTextGroup}>
+            <Text
+              style={[sidebarStyles.uploadText, { color: theme.textMain }]}
+              numberOfLines={1}
             >
-              <InputBarIcon name="upload" size={15} color={primaryColor} />
-            </View>
-            <View style={sidebarStyles.uploadTextGroup}>
-              <Text
-                style={[sidebarStyles.uploadText, { color: theme.textMain }]}
-                numberOfLines={1}
-              >
-                知识库上传
-              </Text>
-              <Text
-                style={[sidebarStyles.uploadHint, { color: theme.textMuted }]}
-                numberOfLines={1}
-              >
-                文档、代码等资料
-              </Text>
-            </View>
-          </HoverTouchable>
-
-          {isPCWeb && uploadHovered && (
-            <View
-              pointerEvents="none"
-              style={[
-                sidebarStyles.uploadTooltip,
-                {
-                  backgroundColor: isDarkMode ? '#18191C' : '#FFFFFF',
-                  borderColor: isDarkMode
-                    ? (theme.borderStrong ?? theme.border)
-                    : theme.border
-                }
-              ]}
+              知识库上传
+            </Text>
+            <Text
+              style={[sidebarStyles.uploadHint, { color: theme.textMuted }]}
+              numberOfLines={2}
             >
-              <Text
-                style={[
-                  sidebarStyles.uploadTooltipText,
-                  { color: theme.textSecondary ?? theme.textMuted }
-                ]}
-              >
-                支持 .txt .pdf .docx .md .js .ts .py 等文本/代码文件
-              </Text>
-            </View>
-          )}
-        </View>
+              支持 .txt .pdf .docx .md .js .ts .py 等
+            </Text>
+          </View>
+        </HoverTouchable>
 
         {/* 3. 已上传文件列表展示区 */}
         {uploadedFiles && uploadedFiles.length > 0 && (
@@ -636,6 +605,7 @@ export default function Sidebar({
                   measureRefs={convItemRefs}
                   style={[
                     sidebarStyles.historyItem,
+                    !isPCWeb && { minHeight: 44, paddingVertical: 11 },
                     (isActive || isMenuOpen) && { backgroundColor: primarySoft }
                   ]}
                   hoverBg={isActive ? activeItemHoverBg : neutralHoverBg}
@@ -723,7 +693,7 @@ export default function Sidebar({
           </ScrollView>
         </View>
 
-        {/* 5. 底部：配额说明与设置收敛入口 */}
+        {/* 5. 底部：外观设置与个人信息 */}
         <View
           style={[
             sidebarStyles.sidebarFooter,
@@ -736,7 +706,8 @@ export default function Sidebar({
               accessibilityLabel="管理后台"
               style={[
                 sidebarStyles.adminEntry,
-                { backgroundColor: elevatedBg, borderColor: subtleBorder }
+                { backgroundColor: elevatedBg, borderColor: subtleBorder },
+                !isPCWeb && { minHeight: 44 }
               ]}
               hoverBg={neutralHoverBg}
               onPress={handleOpenAdmin}
@@ -753,104 +724,152 @@ export default function Sidebar({
             </HoverTouchable>
           )}
 
-          {hasQuota && (
-            <View style={sidebarStyles.quotaCard}>
-              <View style={sidebarStyles.quotaHeaderRow}>
-                <Text
-                  style={[
-                    sidebarStyles.quotaLabel,
-                    { color: theme.textSecondary ?? theme.textMuted }
-                  ]}
-                >
-                  今日额度
-                </Text>
-                <Text style={[sidebarStyles.quotaValue, { color: theme.textMain }]}>
-                  {device!.usedToday} / {device!.dailyQuota}
-                </Text>
-              </View>
-              <View
+          {/* 角色切换：中性选中态与外观主色区分层级，仅 Admin 激活态亮主色 */}
+          <View style={sidebarStyles.appearanceSection}>
+            <View style={sidebarStyles.appearanceLabelRow}>
+              <Text
                 style={[
-                  sidebarStyles.quotaTrack,
-                  {
-                    backgroundColor: isDarkMode
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : 'rgba(0, 0, 0, 0.08)'
-                  }
+                  sidebarStyles.appearanceLabel,
+                  { color: theme.textSecondary ?? theme.textMuted }
                 ]}
               >
-                <View
-                  style={[
-                    sidebarStyles.quotaFill,
-                    {
-                      width: `${Math.round(quotaRatio * 100)}%`,
-                      backgroundColor: quotaFillColor
-                    }
-                  ]}
-                />
-              </View>
-            </View>
-          )}
-
-          <View style={sidebarStyles.footerActionRow}>
-            <HoverTouchable
-              accessibilityRole="button"
-              accessibilityLabel="打开设置"
-              style={[
-                sidebarStyles.settingsTriggerBtn,
-                { backgroundColor: elevatedBg, borderColor: subtleBorder }
-              ]}
-              hoverBg={neutralHoverBg}
-              onPress={() => setSettingsVisible(true)}
-            >
-              <View style={sidebarStyles.settingsTriggerLeft}>
-                <InputBarIcon name="settings" size={15} color={theme.textMuted} />
-                <Text
-                  style={[sidebarStyles.settingsTriggerText, { color: theme.textMain }]}
-                >
-                  设置
-                </Text>
-              </View>
-              <Text style={[sidebarStyles.settingsModeTag, { color: theme.textMuted }]}>
-                {themeModeTag}
+                角色
               </Text>
-            </HoverTouchable>
-
-            <HoverTouchable
-              accessibilityRole="button"
-              accessibilityLabel={isDarkMode ? '切换为浅色模式' : '切换为深色模式'}
+              {role === 'admin' ? (
+                <Text style={[sidebarStyles.quotaText, { color: theme.textMuted }]}>
+                  无额度限制
+                </Text>
+              ) : hasQuota ? (
+                <Text style={[sidebarStyles.quotaText, { color: quotaTextColor }]}>
+                  今日额度 {device!.usedToday}/{device!.dailyQuota}
+                </Text>
+              ) : null}
+            </View>
+            <View
               style={[
-                sidebarStyles.quickThemeBtn,
+                sidebarStyles.appearanceOptions,
                 { backgroundColor: elevatedBg, borderColor: subtleBorder }
               ]}
-              hoverBg={neutralHoverBg}
-              onPress={() => onThemeModeChange(isDarkMode ? 'light' : 'dark')}
             >
-              <InputBarIcon
-                name={isDarkMode ? 'sun' : 'moon'}
-                size={16}
-                color={theme.textMuted}
-              />
-            </HoverTouchable>
+              {(
+                [
+                  { value: 'user', label: 'User' },
+                  { value: 'admin', label: 'Admin' }
+                ] as { value: RoleMode; label: string }[]
+              ).map(({ value, label }) => {
+                const selected = effectiveRole === value
+                const isAdminTab = value === 'admin'
+                const selectedBg = isAdminTab ? primarySoft : userSelectedBg
+                const selectedBorder = isAdminTab ? primaryBorder : subtleBorder
+                const selectedText = isAdminTab
+                  ? isDarkMode
+                    ? '#EBF4FF'
+                    : primaryColor
+                  : theme.textMain
+                return (
+                  <HoverTouchable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={label}
+                    style={[
+                      sidebarStyles.appearanceOption,
+                      !isPCWeb && { paddingVertical: 9 },
+                      selected
+                        ? {
+                            backgroundColor: selectedBg,
+                            borderColor: selectedBorder
+                          }
+                        : { borderColor: 'transparent' }
+                    ]}
+                    hoverBg={
+                      selected
+                        ? isAdminTab
+                          ? activeItemHoverBg
+                          : userSelectedHoverBg
+                        : neutralHoverBg
+                    }
+                    onPress={isAdminTab ? handleSwitchToAdmin : handleSwitchToUser}
+                  >
+                    <Text
+                      style={[
+                        sidebarStyles.appearanceOptionText,
+                        {
+                          color: selected ? selectedText : theme.textMuted,
+                          fontWeight: selected ? '600' : '500'
+                        }
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </HoverTouchable>
+                )
+              })}
+            </View>
+          </View>
+
+          <View style={[sidebarStyles.appearanceSection, { marginBottom: 0 }]}>
+            <Text
+              style={[
+                sidebarStyles.appearanceLabel,
+                sidebarStyles.appearanceLabelStandalone,
+                { color: theme.textSecondary ?? theme.textMuted }
+              ]}
+            >
+              外观
+            </Text>
+            <View
+              style={[
+                sidebarStyles.appearanceOptions,
+                { backgroundColor: elevatedBg, borderColor: subtleBorder }
+              ]}
+            >
+              {(
+                [
+                  { mode: 'light', label: '浅色' },
+                  { mode: 'dark', label: '深色' },
+                  { mode: 'system', label: '跟随系统' }
+                ] as const
+              ).map(({ mode, label }) => {
+                const selected = themeMode === mode
+                const selectedText = isDarkMode ? '#EBF4FF' : primaryColor
+                return (
+                  <HoverTouchable
+                    key={mode}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`${label}模式`}
+                    style={[
+                      sidebarStyles.appearanceOption,
+                      !isPCWeb && { paddingVertical: 9 },
+                      selected
+                        ? {
+                            backgroundColor: primarySoft,
+                            borderColor: primaryBorder
+                          }
+                        : { borderColor: 'transparent' }
+                    ]}
+                    hoverBg={selected ? activeItemHoverBg : neutralHoverBg}
+                    onPress={() => onThemeModeChange(mode)}
+                  >
+                    <Text
+                      style={[
+                        sidebarStyles.appearanceOptionText,
+                        {
+                          color: selected ? selectedText : theme.textMuted,
+                          fontWeight: selected ? '600' : '500'
+                        }
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </HoverTouchable>
+                )
+              })}
+            </View>
           </View>
         </View>
       </View>
-
-      {/* ⚙️ 侧边栏设置弹窗（外观 + 低频高权的角色切换） */}
-      <SidebarSettingsModal
-        visible={settingsVisible}
-        onClose={() => setSettingsVisible(false)}
-        theme={theme}
-        isDarkMode={isDarkMode}
-        themeMode={themeMode}
-        onThemeModeChange={onThemeModeChange}
-        role={role}
-        effectiveRole={effectiveRole}
-        pendingRole={pendingRole}
-        device={device}
-        onSwitchToAdmin={handleSwitchToAdmin}
-        onSwitchToUser={handleSwitchToUser}
-        onOpenAdmin={handleOpenAdmin}
-      />
 
       {/* 📱 长按操作菜单（仅移动端 / H5，紧贴长按位置） */}
       {menu && (
