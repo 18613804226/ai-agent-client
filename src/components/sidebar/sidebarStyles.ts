@@ -197,29 +197,35 @@ export const sidebarStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 9,
-    paddingLeft: 14,
+    paddingLeft: 12,
     paddingRight: 8,
     borderRadius: RADIUS.sm,
     marginBottom: 3,
     overflow: 'hidden'
   },
-  historyActiveBar: {
-    position: 'absolute',
-    left: 4,
-    top: 10,
-    bottom: 10,
-    width: 3,
-    borderRadius: 2
-  },
   historyText: {
     fontSize: 14
+  },
+  deleteSlot: {
+    width: 24,
+    height: 24,
+    marginLeft: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    ...(Platform.OS === 'web'
+      ? ({
+          transitionProperty: 'opacity',
+          transitionDuration: '0.12s',
+          transitionTimingFunction: 'ease'
+        } as any)
+      : null)
   },
   deleteBtn: {
     width: 24,
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 4,
     borderRadius: RADIUS.sm
   },
   sidebarFooter: {

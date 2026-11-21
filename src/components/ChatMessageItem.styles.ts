@@ -84,8 +84,7 @@ export const chatMessageStyles = StyleSheet.create({
     maxWidth: 260,
     minHeight: 38,
     ...Platform.select({
-      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
-      default: { elevation: 1 }
+      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
     })
   },
   /** 文件类型图标背景圆形 */

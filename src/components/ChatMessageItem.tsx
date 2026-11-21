@@ -540,16 +540,10 @@ const ChatMessageItem = memo(
               chatMessageStyles.bubble,
               chatMessageStyles.bubbleUser,
               { backgroundColor: theme.bubbleUserBg },
-              theme.isDark &&
-                (Platform.OS === 'web'
-                  ? ({
-                      backgroundImage:
-                        'linear-gradient(135deg, #2F7DE1 0%, #1F5FBF 100%)',
-                    } as any)
-                  : {
-                      borderWidth: StyleSheet.hairlineWidth,
-                      borderColor: 'rgba(255,255,255,0.12)',
-                    }),
+              theme.isDark && {
+                borderWidth: 1,
+                borderColor: 'rgba(47, 125, 225, 0.30)',
+              },
             ]
           : [chatMessageStyles.bubbleAi],
       [isUser, theme]

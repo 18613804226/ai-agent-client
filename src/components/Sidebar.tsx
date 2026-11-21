@@ -555,18 +555,29 @@ export default function Sidebar({
                       theme={theme}
                     />
 
-                    {/* 🖥️ 仅电脑端网页在悬停时展示 X 删除；移动端 / H5 走长按菜单 */}
-                    {showDelete && (
-                      <HoverTouchable
-                        accessibilityRole="button"
-                        accessibilityLabel={`删除文件 ${file.name}`}
-                        style={sidebarStyles.deleteBtn}
-                        onPress={() => requestDeleteFile(file)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        hoverBg={deleteHoverBg}
+                    {/* 🖥️ 仅电脑端网页固定占位 + opacity 切换，防止 hover 时撑高/挤压布局；移动端 / H5 走长按菜单 */}
+                    {isPCWeb && (
+                      <View
+                        style={[
+                          sidebarStyles.deleteSlot,
+                          {
+                            opacity: showDelete ? 1 : 0,
+                            pointerEvents: showDelete ? 'auto' : 'none'
+                          }
+                        ]}
                       >
-                        <InputBarIcon name="x" size={14} color={theme.textMuted} />
-                      </HoverTouchable>
+                        <HoverTouchable
+                          accessibilityRole="button"
+                          accessibilityLabel={`删除文件 ${file.name}`}
+                          disabled={!showDelete}
+                          style={sidebarStyles.deleteBtn}
+                          onPress={() => requestDeleteFile(file)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          hoverBg={deleteHoverBg}
+                        >
+                          <InputBarIcon name="x" size={14} color={theme.textMuted} />
+                        </HoverTouchable>
+                      </View>
                     )}
                   </SidebarLongPressItem>
                 )
@@ -633,14 +644,6 @@ export default function Sidebar({
                       : undefined
                   }
                 >
-                  {isActive && (
-                    <View
-                      style={[
-                        sidebarStyles.historyActiveBar,
-                        { backgroundColor: primaryColor }
-                      ]}
-                    />
-                  )}
                   <Text
                     style={[
                       sidebarStyles.historyText,
@@ -659,33 +662,44 @@ export default function Sidebar({
                     {conv.title}
                   </Text>
 
-                  {/* 🖥️ 仅电脑端网页在悬停时展示 X 删除；移动端 / H5 走长按菜单 */}
-                  {showDelete && (
-                    <HoverTouchable
-                      accessibilityRole="button"
-                      accessibilityLabel={`删除对话 ${conv.title}`}
-                      style={sidebarStyles.deleteBtn}
-                      onPress={() =>
-                        requestDeleteConversation({
-                          id: conv.id,
-                          title: conv.title
-                        })
-                      }
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      hoverBg={deleteHoverBg}
-                    >
-                      <InputBarIcon
-                        name="x"
-                        size={14}
-                        color={
-                          isActive
-                            ? isDarkMode
-                              ? '#D6ECFF'
-                              : primaryColor
-                            : theme.textMuted
+                  {/* 🖥️ 仅电脑端网页固定占位 + opacity 切换，防止 hover 时撑高/挤压布局；移动端 / H5 走长按菜单 */}
+                  {isPCWeb && (
+                    <View
+                      style={[
+                        sidebarStyles.deleteSlot,
+                        {
+                          opacity: showDelete ? 1 : 0,
+                          pointerEvents: showDelete ? 'auto' : 'none'
                         }
-                      />
-                    </HoverTouchable>
+                      ]}
+                    >
+                      <HoverTouchable
+                        accessibilityRole="button"
+                        accessibilityLabel={`删除对话 ${conv.title}`}
+                        disabled={!showDelete}
+                        style={sidebarStyles.deleteBtn}
+                        onPress={() =>
+                          requestDeleteConversation({
+                            id: conv.id,
+                            title: conv.title
+                          })
+                        }
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        hoverBg={deleteHoverBg}
+                      >
+                        <InputBarIcon
+                          name="x"
+                          size={14}
+                          color={
+                            isActive
+                              ? isDarkMode
+                                ? '#D6ECFF'
+                                : primaryColor
+                              : theme.textMuted
+                          }
+                        />
+                      </HoverTouchable>
+                    </View>
                   )}
                 </SidebarLongPressItem>
               )
