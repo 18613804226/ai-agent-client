@@ -110,10 +110,10 @@ const ThoughtCollapsible = memo(
         ? isThinkingActive
         : Boolean(isStreaming && !thoughtDone)
 
-    /** 惰性初值：挂载时按 msgId 读回上次状态；没记录则正在思考展开 / 其余收起。
+    /** 惰性初值：挂载时按 msgId 读回上次状态；没记录则仅首轮正在思考展开 / 其余收起。
      *  刻意不走 setOpen —— 初始化绝不能触发 onToggle 的钉顶补偿。 */
     const [isOpen, setIsOpen] = useState(() =>
-      getThoughtOpen(messageId, thinkingActive)
+      getThoughtOpen(messageId, thinkingActive && !isRethinking)
     )
     const contentHeightRef = useRef(0)
     const progress = useSharedValue(isOpen ? 1 : 0)
@@ -227,6 +227,14 @@ const ThoughtCollapsible = memo(
       setThoughtOpen(messageId, nextState)
       setIsOpen(nextState)
       animateTo(nextState)
+      if (nextState && thinkingActiveRef.current) {
+        followThoughtBottom.current = true
+        requestAnimationFrame(() => {
+          if (followThoughtBottom.current) {
+            scrollViewportRef.current?.scrollToEnd?.({ animated: false })
+          }
+        })
+      }
     }
 
     const toggleOpen = () => setOpen(!isOpenRef.current)
@@ -246,6 +254,8 @@ const ThoughtCollapsible = memo(
     setOpenRef.current = setOpen
     const thinkingActiveRef = useRef(thinkingActive)
     thinkingActiveRef.current = thinkingActive
+    const isRethinkingRef = useRef(isRethinking)
+    isRethinkingRef.current = isRethinking
 
     useEffect(() => {
       const was = wasStreamingRef.current
@@ -263,8 +273,8 @@ const ThoughtCollapsible = memo(
           clearTimeout(autoCollapseTimerRef.current)
           autoCollapseTimerRef.current = null
         }
-        // 同一 msgId 原地重新生成且当前处于思考阶段时自动展开
-        if (thinkingActiveRef.current && !isOpenRef.current) {
+        // 同一 msgId 原地重新生成且处于首次思考阶段时自动展开；正文之后的二次思考不展开，避免顶动正文
+        if (thinkingActiveRef.current && !isRethinkingRef.current && !isOpenRef.current) {
           setOpenRef.current(true)
         }
       }
@@ -278,10 +288,11 @@ const ThoughtCollapsible = memo(
       }
     }, [isStreaming])
 
-    // ── 思考 <-> 正文阶段双向切换 ────────────────────────────────────────
+    // ── 思考 <-> 正文阶段状态同步 ────────────────────────────────────────
     // 1. 思考 → 正文（thinkingActive: true → false）：立即带动画平滑收起思考框；
-    // 2. 正文 → 再次思考（thinkingActive: false → true）：模型吐完一段正文后又回去
-    //    思考（工具调用/多轮思考），自动重新展开思考框并贴到底部展示最新思考；
+    // 2. 正文 → 再次思考（thinkingActive: false → true）：已有正文后不再自动展开，
+    //    避免把下方正文顶下去造成布局跳动（只通过标题「继续思考中…」+ 呼吸点 + 正文底部提示告知用户）；
+    //    若当前本就是展开态（如用户手动点开）则贴底跟随最新思考内容；
     // 3. 兜底路径（thought-only/中断）：流结束走上面的 isStreaming 400ms 延迟折叠。
     const wasThinkingActiveRef = useRef(thinkingActive)
     useEffect(() => {
@@ -299,13 +310,17 @@ const ThoughtCollapsible = memo(
           clearTimeout(autoCollapseTimerRef.current)
           autoCollapseTimerRef.current = null
         }
-        followThoughtBottom.current = true
-        if (!isOpenRef.current) setOpenRef.current(true)
-        requestAnimationFrame(() => {
-          if (followThoughtBottom.current) {
-            scrollViewportRef.current?.scrollToEnd?.({ animated: false })
-          }
-        })
+        if (!isRethinkingRef.current && !isOpenRef.current) {
+          setOpenRef.current(true)
+        }
+        if (isOpenRef.current) {
+          followThoughtBottom.current = true
+          requestAnimationFrame(() => {
+            if (followThoughtBottom.current) {
+              scrollViewportRef.current?.scrollToEnd?.({ animated: false })
+            }
+          })
+        }
       }
     }, [thinkingActive, isStreaming])
 
