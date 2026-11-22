@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from 'react'
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image, Dimensions } from 'react-native'
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
 import { InputBarIcon } from './InputBarIcon'
 import Animated, {
   useSharedValue,
@@ -16,14 +16,13 @@ import {
   createWebMarkdownRules
 } from './markdown/markdownRules'
 import { StreamingMarkdown } from './markdown/StreamingMarkdown'
-import ThoughtCollapsible from './ThoughtCollapsible'
+import ThoughtCollapsible, { ThinkingPulseDot } from './ThoughtCollapsible'
 import MessageActions from './MessageActions'
 import type { MessageStatsData, StatsSection } from './StatsDrawer'
 import { normalizeInlineEmphasis } from '../utils/normalizeEmphasis'
 import { EMPTY_CITATIONS, openSourceUrl, webCitations } from '../utils/citations'
 import { SourcesList } from './SourcesList'
 import { chatMessageStyles, createDynamicMarkdownStyles } from './ChatMessageItem.styles'
-import { isMobileWebWidth } from '../constants/theme'
 import type { Message, ThemeType } from '../types/chat'
 import { type PickedAttachment, formatFileSize } from '../hooks/useImagePicker'
 import { extractDocument, openChatDocument, stripDocumentFences, type DocFormat } from '../utils/chatDocument'
@@ -103,8 +102,15 @@ const ChatMessageItem = memo(
 
     const isUser = item.role === 'user'
     const hasContent = !!(item.content && item.content !== '...')
+    const hasTrimmedContent = !!(item.content && item.content.trim())
     const hasThought = !!item.thought
     const isThinking = !isUser && !hasContent && !hasThought
+    const isThinkingActive =
+      !isUser &&
+      !!isStreaming &&
+      (item.streamingPhase === 'thought' ||
+        (!item.streamingPhase && hasThought && !hasTrimmedContent))
+    const isRethinking = isThinkingActive && hasTrimmedContent
 
     /**
      * 附件统一渲染：图片、文档、视频全部来自 item.attachments（用 kind 区分）。
@@ -278,10 +284,9 @@ const ChatMessageItem = memo(
       [isUser, isStreaming, item.content, item.id, docRequested]
     )
 
-    // 现读视口宽度：桌面 Web 才有空间展开完整统计（并允许小字折成两行）
-    const compactMeta =
-      Platform.OS !== 'web' ||
-      isMobileWebWidth(Dimensions.get('window').width)
+    // 桌面 Web 才有空间展开完整统计（并允许小字折成两行）与居中统计弹窗；
+    // 复用外层响应式 isMobile，缩放浏览器窗口可动态切换
+    const compactMeta = isMobile
     /**
      * token 拆分：字段全部由服务端 done 帧直接给出，客户端不再推算 ——
      *   inputTokens（输入）/ completionTokens（输出，含思考）/ reasoningTokens（思考）。
@@ -837,9 +842,11 @@ const ChatMessageItem = memo(
                       thought={item.thought!}
                       theme={theme}
                       isStreaming={isStreaming}
-                      // 思考阶段边界：正文（answer）开始吐字 → 立即秒收思考框。
-                      // 流式期 content 由 ChatArea 合并进 item，空=还在思考。
-                      thoughtDone={!!(item.content && item.content.trim())}
+                      isThinkingActive={isThinkingActive}
+                      isRethinking={isRethinking}
+                      // 思考阶段边界：非思考中且正文已有内容 → 立即收起思考框。
+                      // 若模型吐完正文后再次进入思考，isThinkingActive 切回 true 并自动重新展开。
+                      thoughtDone={!isThinkingActive && hasTrimmedContent}
                       onToggle={
                         onThoughtToggle
                           ? (expanding, height) =>
@@ -928,23 +935,42 @@ const ChatMessageItem = memo(
                 <SourcesList sources={item.sources} theme={theme} />
               )}
 
-              {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动 */}
+              {/* 复制 + 喇叭：吐字完成（ready）后才可点，之前只占位不跳动；
+                  模型吐完一段正文又回去思考时，复用这段隐藏槽位叠放提示，零高度跳动 */}
               {!isUser && hasContent && (
-                <MessageActions
-                  content={item.content}
-                  messageId={item.id}
-                  theme={theme}
-                  isPlaying={isPlaying}
-                  onPlayingChange={setPlayingMsgId}
-                  ready={!isStreaming}
-                  metaText={metaText}
-                  metaDetail={metaDetail}
-                  statsData={statsData}
-                  // 桌面 Web 用轻量 tooltip，APP / H5 用底部抽屉
-                  useTooltip={!compactMeta}
-                  // 窄屏单行（用户要求不折行）；桌面留 2 行放下完整统计
-                  metaLines={compactMeta ? 1 : 2}
-                />
+                <View style={chatMessageStyles.actionsSlot}>
+                  <MessageActions
+                    content={item.content}
+                    messageId={item.id}
+                    theme={theme}
+                    isPlaying={isPlaying}
+                    onPlayingChange={setPlayingMsgId}
+                    ready={!isStreaming}
+                    metaText={metaText}
+                    metaDetail={metaDetail}
+                    statsData={statsData}
+                    // 桌面 Web 悬停展示结构化统计浮层，APP / H5 点击弹底部抽屉
+                    useTooltip={!compactMeta}
+                    // 窄屏单行（用户要求不折行）；桌面留 2 行放下完整统计
+                    metaLines={compactMeta ? 1 : 2}
+                  />
+                  {isRethinking ? (
+                    <View style={chatMessageStyles.rethinkingHintOverlay}>
+                      <ThinkingPulseDot
+                        color={theme.isDark ? '#A855F7' : '#9333EA'}
+                        size={5}
+                      />
+                      <Text
+                        style={[
+                          chatMessageStyles.rethinkingHintText,
+                          { color: theme.textMuted }
+                        ]}
+                      >
+                        正在继续思考…
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               )}
             </View>
           )}
@@ -956,7 +982,10 @@ const ChatMessageItem = memo(
     prev.item.id === next.item.id &&
     prev.item.content === next.item.content &&
     prev.item.thought === next.item.thought &&
+    prev.item.streamingPhase === next.item.streamingPhase &&
+    prev.item.thoughtRound === next.item.thoughtRound &&
     prev.theme === next.theme &&
+    prev.isMobile === next.isMobile &&
     prev.isStreaming === next.isStreaming &&
     prev.isLast === next.isLast &&
     prev.item.systemNote === next.item.systemNote &&

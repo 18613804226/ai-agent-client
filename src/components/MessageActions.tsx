@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -8,9 +8,11 @@ import {
 } from 'react-native';
 import { HoverTouchable } from './HoverTouchable';
 import StatsDrawer, {
+  StatsDetailContent,
   type MessageStatsData,
   type StatsSection,
 } from './StatsDrawer';
+import { WebPortal } from './WebPortal';
 import * as Clipboard from 'expo-clipboard';
 import Svg, { Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
@@ -118,6 +120,7 @@ function HoverPopover({
   exitMs = 115,
   anchorStyle,
   cardStyle,
+  onCardLayout,
   children,
 }: {
   visible: boolean;
@@ -128,6 +131,7 @@ function HoverPopover({
   exitMs?: number;
   anchorStyle?: any;
   cardStyle?: any;
+  onCardLayout?: (e: any) => void;
   children: React.ReactNode;
 }) {
   const [rendered, setRendered] = useState(visible);
@@ -163,6 +167,7 @@ function HoverPopover({
   return (
     <View style={[anchorStyle, { pointerEvents: 'none' }]}>
       <View
+        onLayout={onCardLayout}
         style={[
           cardStyle,
           {
@@ -212,13 +217,51 @@ const MessageActions = memo(
     // 三个视觉状态：
     //   喇叭（未读） → 点击后「转圈」（正在请求/合成，还没出声）→ 「停止」（第一个音频真的开播）。
     const [preparing, setPreparing] = useState(false);
-    /** 「?」打开的底部抽屉；状态留在本组件，切消息不会串（key 是 msgId） */
+    /** 「?」打开的统计浮层 / 底部抽屉；状态留在本组件，切消息不会串（key 是 msgId） */
     const [showDetail, setShowDetail] = useState(false);
     /** 桌面 Web 上复制 / 喇叭按钮的悬停小气泡：当前悬停哪个 */
     const [btnTip, setBtnTip] = useState<'copy' | 'speaker' | null>(null);
+    const hasStatsDetail = !!(statsData || (metaDetail && metaDetail.length > 0));
+    /** 桌面 Web 悬停大浮层：挂到 body 做 fixed 定位，避免被列表裁剪和 contain 遮挡 */
+    const helpBtnWrapRef = useRef<any>(null);
+    const [anchorRect, setAnchorRect] = useState<{
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    } | null>(null);
+    const [statsCardHeight, setStatsCardHeight] = useState(0);
+
+    const measureHelpAnchor = useCallback(() => {
+      if (Platform.OS !== 'web') return;
+      const rect = helpBtnWrapRef.current?.getBoundingClientRect?.();
+      if (rect) {
+        setAnchorRect({
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        });
+      }
+    }, []);
+
     // 稳定引用：抽屉里的 Pan 手势在 worklet 里 runOnJS 调用它，
     // 每次渲染换函数会让 Gesture 对象白白重建
     const closeDetail = useCallback(() => setShowDetail(false), []);
+
+    // 滚动聊天列表或窗口尺寸变化时自动收起固定定位浮层，避免悬空错位
+    useEffect(() => {
+      if (!useTooltip || !showDetail || Platform.OS !== 'web') return;
+      const win = globalThis as any;
+      if (!win?.addEventListener) return;
+      const dismiss = () => setShowDetail(false);
+      win.addEventListener('scroll', dismiss, { capture: true, passive: true });
+      win.addEventListener('resize', dismiss);
+      return () => {
+        win.removeEventListener('scroll', dismiss, true);
+        win.removeEventListener('resize', dismiss);
+      };
+    }, [useTooltip, showDetail]);
 
     // 别的消息接管了播放 / 播放结束等 → 本条的「转圈」要复位，避免卡在转圈不消失
     useEffect(() => {
@@ -275,6 +318,67 @@ const MessageActions = memo(
       ? 'rgba(255, 255, 255, 0.12)'
       : 'rgba(0, 0, 0, 0.08)';
     const activeBg = 'rgba(29, 161, 242, 0.1)';
+    const statsTheme = {
+      isDark: theme.isDark,
+      textMain: theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
+      textMuted: theme.textMuted,
+      textSecondary: theme.textSecondary,
+      border: theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
+      borderSubtle: theme.borderSubtle,
+      surfaceElevated: theme.surfaceElevated,
+      primary: theme.primary,
+      primarySoft: theme.primarySoft,
+      primaryBorder: theme.primaryBorder,
+      warning: theme.warning,
+      danger: theme.danger,
+    };
+
+    const webStatsPopoverLayout = (() => {
+      if (!useTooltip || Platform.OS !== 'web' || !anchorRect) return null;
+      const win = globalThis as any;
+      const winW = win?.innerWidth || 1280;
+      const winH = win?.innerHeight || 800;
+      const cardW = Math.min(380, winW - 24);
+      const estH = statsCardHeight > 0 ? statsCardHeight : 480;
+      const edge = 12;
+      const gap = 8;
+
+      const clampX = (x: number) =>
+        Math.max(edge, Math.min(x, winW - cardW - edge));
+      const alignLeft = metaText
+        ? clampX(anchorRect.right - cardW)
+        : clampX(anchorRect.left);
+
+      let left = alignLeft;
+      let top = anchorRect.top - gap - estH;
+      let origin = metaText ? 'bottom right' : 'bottom left';
+      let offsetY = 6;
+
+      if (anchorRect.top - gap - estH >= edge) {
+        top = anchorRect.top - gap - estH;
+        origin = metaText ? 'bottom right' : 'bottom left';
+        offsetY = 6;
+      } else if (anchorRect.bottom + gap + estH <= winH - edge) {
+        top = anchorRect.bottom + gap;
+        origin = metaText ? 'top right' : 'top left';
+        offsetY = -6;
+      } else {
+        // 视口较矮上下都放不下：垂直钳制在视口内，水平避开 `?` 按钮避免挡住悬停源
+        top = Math.max(edge, Math.min(winH - estH - edge, anchorRect.top - estH / 2));
+        if (anchorRect.left - gap - cardW >= edge) {
+          left = anchorRect.left - gap - cardW;
+          origin = 'center right';
+        } else if (anchorRect.right + gap + cardW <= winW - edge) {
+          left = anchorRect.right + gap;
+          origin = 'center left';
+        } else {
+          left = alignLeft;
+        }
+        offsetY = 4;
+      }
+
+      return { cardW, left, top, origin, offsetY };
+    })();
 
     return (
       <View>
@@ -298,10 +402,11 @@ const MessageActions = memo(
             </View>
           ) : null}
 
-          {/* 「?」：桌面 Web hover 出轻量 tooltip，APP / H5 点开底部抽屉。
-              只有服务端真的带了统计数字（metaDetail 非空）才有这个按钮 */}
-          {metaDetail && metaDetail.length > 0 ? (
+          {/* 「?」：桌面 Web 移入出轻量结构化浮层（点击切换），APP / H5 点开底部抽屉。
+              只有服务端真的带了统计数字才有这个按钮 */}
+          {hasStatsDetail ? (
             <View
+              ref={helpBtnWrapRef}
               style={[
                 styles.item,
                 !metaText && styles.firstLeftItem,
@@ -317,11 +422,18 @@ const MessageActions = memo(
                 rippleColor={
                   theme.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'
                 }
-                onPress={() => setShowDetail((v) => (useTooltip ? !v : true))}
+                onPress={() => {
+                  if (useTooltip) measureHelpAnchor();
+                  setShowDetail((v) => (useTooltip ? !v : true));
+                }}
+                disabled={!ready}
                 // RNW 支持这两个 props；只在桌面传，原生 / H5 不传
                 {...(useTooltip
                   ? {
-                      onMouseEnter: () => setShowDetail(true),
+                      onMouseEnter: () => {
+                        measureHelpAnchor();
+                        setShowDetail(true);
+                      },
                       onMouseLeave: () => setShowDetail(false),
                     }
                   : {})}
@@ -337,60 +449,47 @@ const MessageActions = memo(
                 />
               </HoverTouchable>
 
-              <HoverPopover
-                visible={useTooltip && showDetail}
-                origin={metaText ? 'bottom right' : 'bottom left'}
-                anchorStyle={[
-                  styles.tooltipAnchor,
-                  !metaText && styles.tooltipAnchorLeft,
-                ]}
-                cardStyle={[
-                  styles.tooltip,
-                  {
-                    backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
-                    borderColor:
-                      theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
-                  },
-                ]}
-              >
-                {/* 不套 ScrollView：内容全量展示，不出滚动条 */}
-                <View>
-                  {metaDetail.map((s, idx) => (
-                    <View key={s.title} style={idx > 0 ? styles.tooltipSectionSpacing : null}>
-                      <Text
-                        style={[
-                          styles.tooltipTitle,
-                          {
-                            color:
-                              theme.textMain ||
-                              (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
-                          },
-                        ]}
-                      >
-                        {s.title}
-                      </Text>
-                      {s.rows.map((r, i) => (
-                        <Text
-                          key={i}
-                          style={[
-                            styles.tooltipRow,
-                            s.hint && styles.tooltipHintRow,
-                            {
-                              // 深色主题正文用纯白；浅色主题白底卡片
-                              // 纯白会隐形，退到深灰保持可读
-                              color: theme.isDark
-                                ? '#FFFFFF'
-                                : 'rgba(0,0,0,0.65)',
-                            },
-                          ]}
-                        >
-                          {r}
-                        </Text>
-                      ))}
-                    </View>
-                  ))}
-                </View>
-              </HoverPopover>
+              {useTooltip && webStatsPopoverLayout ? (
+                <WebPortal>
+                  <HoverPopover
+                    visible={useTooltip && showDetail}
+                    origin={webStatsPopoverLayout.origin}
+                    offsetY={webStatsPopoverLayout.offsetY}
+                    onCardLayout={(e) => {
+                      const h = Math.round(e?.nativeEvent?.layout?.height ?? 0);
+                      if (h > 0 && Math.abs(h - statsCardHeight) > 1) {
+                        setStatsCardHeight(h);
+                      }
+                    }}
+                    anchorStyle={{
+                      position: 'fixed' as any,
+                      left: webStatsPopoverLayout.left,
+                      top: webStatsPopoverLayout.top,
+                      zIndex: 9999,
+                    }}
+                    cardStyle={[
+                      styles.webStatsCard,
+                      {
+                        width: webStatsPopoverLayout.cardW,
+                        backgroundColor: theme.isDark ? '#1C1D20' : '#FFFFFF',
+                        borderColor: theme.isDark
+                          ? 'rgba(255, 255, 255, 0.14)'
+                          : 'rgba(0, 0, 0, 0.10)',
+                        boxShadow: theme.isDark
+                          ? '0 16px 40px rgba(0, 0, 0, 0.55)'
+                          : '0 12px 32px rgba(0, 0, 0, 0.16)',
+                      } as any,
+                    ]}
+                  >
+                    <StatsDetailContent
+                      compact
+                      sections={metaDetail || []}
+                      stats={statsData}
+                      theme={statsTheme}
+                    />
+                  </HoverPopover>
+                </WebPortal>
+              ) : null}
             </View>
           ) : null}
 
@@ -398,7 +497,7 @@ const MessageActions = memo(
           <View
             style={[
               styles.item,
-              !metaText && !(metaDetail && metaDetail.length > 0) && styles.firstLeftItem,
+              !metaText && !hasStatsDetail && styles.firstLeftItem,
               useTooltip && styles.tipAnchor,
             ]}
           >
@@ -526,25 +625,11 @@ const MessageActions = memo(
 
         {/* 详细统计与口径说明：挂到根视图的底部抽屉，不占聊天流布局 */}
         <StatsDrawer
-          visible={!useTooltip && showDetail && !!(metaDetail?.length || statsData)}
+          visible={!useTooltip && showDetail && hasStatsDetail}
           onClose={closeDetail}
           sections={metaDetail || []}
           stats={statsData}
-          theme={{
-            isDark: theme.isDark,
-            textMain:
-              theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
-            textMuted: theme.textMuted,
-            textSecondary: theme.textSecondary,
-            border: theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
-            borderSubtle: theme.borderSubtle,
-            surfaceElevated: theme.surfaceElevated,
-            primary: theme.primary,
-            primarySoft: theme.primarySoft,
-            primaryBorder: theme.primaryBorder,
-            warning: theme.warning,
-            danger: theme.danger,
-          }}
+          theme={statsTheme}
         />
       </View>
     );
@@ -588,36 +673,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
   },
-  /** tooltip 的定位锚点：只给「?」按钮这一层，不给整行 */
+  /** 悬停小气泡的定位锚点：挂在对应按钮这一层，不给整行 */
   tipAnchor: {
     position: 'relative' as const,
   },
-  /** 桌面 Web 的轻量浮层，浮在按钮上方，不弹抽屉、不占聊天流布局 */
-  tooltipAnchor: {
-    position: 'absolute' as const,
-    bottom: 36,
-    right: 0,
-    zIndex: 999,
-  },
-  tooltipAnchorLeft: {
-    left: 0,
-    right: undefined,
-  },
-  tooltip: {
-    width: 340,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    ...(Platform.OS === 'web'
-      ? ({ boxShadow: '0 8px 28px rgba(0,0,0,0.22)' } as any)
-      : null),
-  },
-  tooltipTitle: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-  },
-  tooltipSectionSpacing: { marginTop: 8 },
-  /** 复制 / 喇叭的迷你悬停气泡：小字，居中浮在按钮上方。
+  /** 复制 / 喇叭 / 统计的迷你悬停气泡：小字，居中浮在按钮上方。
    *  nowrap 必须有：绝对定位的 shrink-to-fit 可用宽度被锚容器（24px 按钮）
    *  减去 left 50% 后只剩十几像素，文字被迫逐字换行竖排；禁止换行后
    *  最小内容宽 = 整行文字宽，气泡溢出居中、单行展示 */
@@ -641,8 +701,11 @@ const styles = StyleSheet.create({
       : null),
   },
   miniTipText: { fontSize: 11, lineHeight: 16, textAlign: 'center' as const },
-  tooltipRow: { fontSize: 12, lineHeight: 18, fontVariant: ['tabular-nums'] },
-  tooltipHintRow: { fontSize: 11, lineHeight: 16 },
+  webStatsCard: {
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 12,
+  },
   item: { marginLeft: 8 },
   btn: {
     width: ACTION_BTN_SIZE,

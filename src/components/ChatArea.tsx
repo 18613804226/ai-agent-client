@@ -109,6 +109,8 @@ export default function ChatArea({
               ...msg,
               content: streamingRenderMsg.content || msg.content,
               thought: streamingRenderMsg.thought || msg.thought,
+              streamingPhase: streamingRenderMsg.activePhase,
+              thoughtRound: streamingRenderMsg.thoughtRound,
               isStreaming: true
             }
           }

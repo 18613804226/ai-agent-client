@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Platform, AppState, Vibration, Dimensions } from 'react-native'
 import { useAnimatedRef } from 'react-native-reanimated'
+import type { StreamingPhase, StreamingRenderMsg } from '../types/chat'
 import {
   api,
   baseURL,
@@ -129,7 +130,7 @@ export interface Conversation {
   messages?: Message[]
 }
 
-type StreamChunk = { type: 'thought' | 'content'; text: string }
+type StreamChunk = { type: 'thought' | 'content'; text: string; phaseSeq: number }
 
 export function useChatManager() {
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -144,11 +145,8 @@ export function useChatManager() {
   const toggleAutoRead = () => setAutoRead((prev) => !prev)
 
   // ==================== 流式相关 ====================
-  const [streamingRenderMsg, setStreamingRenderMsg] = useState<{
-    msgId: string
-    thought: string
-    content: string
-  } | null>(null)
+  const [streamingRenderMsg, setStreamingRenderMsg] =
+    useState<StreamingRenderMsg | null>(null)
 
   const queueRef = useRef<StreamChunk[]>([])
   const currentThoughtRef = useRef('')
@@ -189,6 +187,14 @@ export function useChatManager() {
    *  内容没变就别推 —— 否则模型停顿时每 50ms 白跑一次整屏重渲染。 */
   const lastPushedContentRef = useRef<string | null>(null)
   const lastPushedThoughtRef = useRef<string | null>(null)
+  /** SSE 侧已收到的最新阶段（thought / content）与单调序号，防止旧队列残留正文盖掉新一轮思考 */
+  const ssePhaseRef = useRef<StreamingPhase | null>(null)
+  const ssePhaseSeqRef = useRef(0)
+  /** UI 当前真实展示中的阶段 & 思考轮次 */
+  const activePhaseRef = useRef<StreamingPhase | null>(null)
+  const thoughtRoundRef = useRef(0)
+  const lastPushedPhaseRef = useRef<StreamingPhase | null>(null)
+  const lastPushedRoundRef = useRef(0)
 
   const autoFollowRef = useRef(true)
   const isAtBottomRef = useRef(true)
@@ -254,6 +260,12 @@ export function useChatManager() {
     lastPushTimeRef.current = 0
     lastPushedContentRef.current = null
     lastPushedThoughtRef.current = null
+    ssePhaseRef.current = null
+    ssePhaseSeqRef.current = 0
+    activePhaseRef.current = null
+    thoughtRoundRef.current = 0
+    lastPushedPhaseRef.current = null
+    lastPushedRoundRef.current = 0
     currentThoughtRef.current = ''
     currentContentRef.current = ''
     if (timerRef.current) {
@@ -289,6 +301,12 @@ export function useChatManager() {
     charCarryRef.current = 0
     lastFrameTimeRef.current = 0
     lastPushTimeRef.current = 0
+    ssePhaseRef.current = null
+    ssePhaseSeqRef.current = 0
+    activePhaseRef.current = null
+    thoughtRoundRef.current = 0
+    lastPushedPhaseRef.current = null
+    lastPushedRoundRef.current = 0
     currentStreamingMsgIdRef.current = ''
     setBackgroundStreamingActive(false)
     setStreamingRenderMsg(null)
@@ -659,22 +677,30 @@ export function useChatManager() {
         // 已结束且队列空，不再更新临时状态
         return
       }
-      // 这一帧没吐字（模型停顿 / 预算不够）→ 内容一个字没变就别推，
+      const activePhase = activePhaseRef.current ?? undefined
+      const thoughtRound = thoughtRoundRef.current
+      // 这一帧没吐字（模型停顿 / 预算不够）→ 内容与阶段都没变就别推，
       // 否则每 50ms 白跑一次 ChatArea + FlashList 的整屏 diff。
       // 用 null 当「还没推过」的哨兵：保证第一轮一定推（否则流式气泡不挂 isStreaming，
       // 自动朗读会盯上那条 "..." 占位消息）。
       if (
         content === lastPushedContentRef.current &&
-        thought === lastPushedThoughtRef.current
+        thought === lastPushedThoughtRef.current &&
+        activePhaseRef.current === lastPushedPhaseRef.current &&
+        thoughtRound === lastPushedRoundRef.current
       ) {
         return
       }
       lastPushedContentRef.current = content
       lastPushedThoughtRef.current = thought
+      lastPushedPhaseRef.current = activePhaseRef.current
+      lastPushedRoundRef.current = thoughtRound
       setStreamingRenderMsg({
         msgId,
         thought,
-        content
+        content,
+        activePhase,
+        thoughtRound
       })
     },
     []
@@ -827,11 +853,21 @@ export function useChatManager() {
         while (remain > 0 && queue.length > 0) {
           const chunk = queue[0]
           const take = Math.min(remain, chunk.text.length)
+          const slice = chunk.text.slice(0, take)
 
           if (chunk.type === 'thought') {
-            currentThoughtRef.current += chunk.text.slice(0, take)
+            currentThoughtRef.current += slice
           } else {
-            currentContentRef.current += chunk.text.slice(0, take)
+            currentContentRef.current += slice
+            // 只有当前仍是最新 content 阶段且有可见字符才切回 content：
+            // 防止上一轮残留正文把新一轮已到达的 thought 阶段盖回去
+            if (
+              chunk.phaseSeq === ssePhaseSeqRef.current &&
+              ssePhaseRef.current === 'content' &&
+              slice.trim().length > 0
+            ) {
+              activePhaseRef.current = 'content'
+            }
           }
           queueCharsRef.current -= take
 
@@ -843,8 +879,12 @@ export function useChatManager() {
           remain -= take
         }
 
-        // ===== 每帧推一次 React 状态（约 60fps），每帧只追加、不重排 =====
-        if (now - lastPushTimeRef.current >= FRAME_PUSH_INTERVAL) {
+        // ===== 每帧推一次 React 状态（约 60fps），阶段切换 / 队列排空时当帧立刻上屏 =====
+        if (
+          now - lastPushTimeRef.current >= FRAME_PUSH_INTERVAL ||
+          queue.length === 0 ||
+          activePhaseRef.current !== lastPushedPhaseRef.current
+        ) {
           lastPushTimeRef.current = now
           updateStreamingMarkdownState(
             currentContentRef.current,
@@ -891,6 +931,13 @@ export function useChatManager() {
               currentThoughtRef.current += remaining.text
             } else {
               currentContentRef.current += remaining.text
+              if (
+                remaining.phaseSeq === ssePhaseSeqRef.current &&
+                ssePhaseRef.current === 'content' &&
+                remaining.text.trim().length > 0
+              ) {
+                activePhaseRef.current = 'content'
+              }
             }
           }
           queueCharsRef.current = 0
@@ -913,7 +960,7 @@ export function useChatManager() {
       if (!text) return
       // 没有活跃 msgId = 当前没有在跑的流（旧流 abort 后可能还来最后几片）
       if (!currentStreamingMsgIdRef.current) return
-      queueRef.current.push({ type, text })
+      queueRef.current.push({ type, text, phaseSeq: ssePhaseSeqRef.current })
       queueCharsRef.current += text.length
 
       // 唤醒消费者
@@ -1015,6 +1062,23 @@ export function useChatManager() {
         // 否则它会按 99 字/秒的节奏揭示，在 ~1 秒内持续表现为「末尾被截断」
         // （每次截图缺的字数还不一样）。这里到达即完整写入、立即上屏，
         // 打字机效果只留给模型正文（content）。
+        if (chunkThought.trim().length > 0) {
+          if (ssePhaseRef.current !== 'thought') {
+            const wasContent = ssePhaseRef.current === 'content'
+            ssePhaseRef.current = 'thought'
+            ssePhaseSeqRef.current += 1
+            thoughtRoundRef.current += 1
+            if (
+              wasContent &&
+              currentThoughtRef.current.length > 0 &&
+              !currentThoughtRef.current.endsWith('\n') &&
+              !chunkThought.startsWith('\n')
+            ) {
+              currentThoughtRef.current += '\n\n'
+            }
+          }
+          activePhaseRef.current = 'thought'
+        }
         currentThoughtRef.current += chunkThought
         updateStreamingMarkdownState(
           currentContentRef.current,
@@ -1022,7 +1086,13 @@ export function useChatManager() {
           currentStreamingMsgIdRef.current
         )
       }
-      if (chunkContent) enqueue('content', chunkContent)
+      if (chunkContent) {
+        if (chunkContent.trim().length > 0 && ssePhaseRef.current !== 'content') {
+          ssePhaseRef.current = 'content'
+          ssePhaseSeqRef.current += 1
+        }
+        enqueue('content', chunkContent)
+      }
     } catch {
       // 解析失败忽略
     }

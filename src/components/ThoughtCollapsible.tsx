@@ -12,6 +12,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withRepeat,
+  withSequence,
+  cancelAnimation,
   Easing
 } from 'react-native-reanimated'
 import type { ThemeType } from '../types/chat'
@@ -31,11 +34,57 @@ interface ThoughtCollapsibleProps {
   theme: ThemeType
   /** 是否正在流式吐字：吐字结束自动收起思考框（兜底路径） */
   isStreaming?: boolean
-  /** 思考阶段是否已结束（正文开始吐字）—— 立即触发带动画的收起 */
+  /** 是否正处于活跃思考阶段（含首次思考与正文吐完后再次回到思考） */
+  isThinkingActive?: boolean
+  /** 是否已输出部分正文后再次回到思考阶段 */
+  isRethinking?: boolean
+  /** 思考阶段是否已结束（正文开始吐字）—— 立即触发带动画的收起（兜底兼容） */
   thoughtDone?: boolean
   /** 思考框展开/折叠时回调：(expanding, height) —— 用于外层留白同步补偿 */
   onToggle?: (expanding: boolean, height: number) => void
 }
+
+/** 活跃思考中的轻量呼吸指示点（仅思考中挂载，静止/历史消息零动画开销） */
+export const ThinkingPulseDot = memo(function ThinkingPulseDot({
+  color,
+  size = 6
+}: {
+  color: string
+  size?: number
+}) {
+  const pulse = useSharedValue(0.35)
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 650, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.28, { duration: 650, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      false
+    )
+    return () => cancelAnimation(pulse)
+  }, [pulse])
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: pulse.value,
+    transform: [{ scale: 0.82 + 0.28 * pulse.value }]
+  }))
+
+  return (
+    <Animated.View
+      style={[
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: color
+        },
+        dotStyle
+      ]}
+    />
+  )
+})
 
 /** 时长与曲线参数来自 utils/chatScroll（与钉顶补偿单点定义），这里只把曲线对象缓存一次 */
 const THOUGHT_EASING = Easing.bezier(...THOUGHT_ANIM_BEZIER)
@@ -50,13 +99,21 @@ const ThoughtCollapsible = memo(
     thought,
     theme,
     isStreaming = false,
+    isThinkingActive,
+    isRethinking = false,
     thoughtDone = false,
     onToggle
   }: ThoughtCollapsibleProps) {
-    /** 惰性初值：挂载时按 msgId 读回上次状态；没记录则流式展开 / 历史收起。
-     *  刻意不走 toggleOpen —— 初始化绝不能触发 onToggle 的钉顶补偿。 */
+    /** 优先认外部传入的流式阶段；未传时回退兼容 isStreaming && !thoughtDone */
+    const thinkingActive =
+      isThinkingActive !== undefined
+        ? isThinkingActive
+        : Boolean(isStreaming && !thoughtDone)
+
+    /** 惰性初值：挂载时按 msgId 读回上次状态；没记录则正在思考展开 / 其余收起。
+     *  刻意不走 setOpen —— 初始化绝不能触发 onToggle 的钉顶补偿。 */
     const [isOpen, setIsOpen] = useState(() =>
-      getThoughtOpen(messageId, isStreaming)
+      getThoughtOpen(messageId, thinkingActive)
     )
     const contentHeightRef = useRef(0)
     const progress = useSharedValue(isOpen ? 1 : 0)
@@ -79,17 +136,17 @@ const ThoughtCollapsible = memo(
     /** 未超过滚动阈值时的普通 View（还没有 ScrollView 可挂滚轮监听） */
     const plainWrapRef = useRef<any>(null)
 
-    // 内容重新布局：更新「是否需要内层滚动」；吐字期若停在底部则自动贴底
+    // 内容重新布局：更新「是否需要内层滚动」；活跃思考期间若停在底部则自动贴底
     const handleContentSize = useCallback(
       (h: number) => {
         contentHeightRef.current = h
         const canScroll = h > THOUGHT_SCROLL_MAX + 1
         setScrollable((prev) => (prev === canScroll ? prev : canScroll))
-        if (isStreaming && followThoughtBottom.current) {
+        if (thinkingActive && followThoughtBottom.current) {
           scrollViewportRef.current?.scrollToEnd?.({ animated: false })
         }
       },
-      [isStreaming]
+      [thinkingActive]
     )
 
     const handleThoughtScroll = useCallback((e: any) => {
@@ -109,7 +166,7 @@ const ThoughtCollapsible = memo(
     // 内容还没超过 200px 时没有 ScrollView，就把监听挂到普通 View 上：
     // 用户一开始上翻就先脱钩，避免内容刚涨过阈值翻成 ScrollView 的那一帧被贴一次底。
     useEffect(() => {
-      if (Platform.OS !== 'web' || !isStreaming) return
+      if (Platform.OS !== 'web' || !thinkingActive) return
       const scroller: any = scrollViewportRef.current
       const node: HTMLElement | null = scrollable
         ? (scroller?.getScrollableNode?.() ??
@@ -127,7 +184,7 @@ const ThoughtCollapsible = memo(
       }
       node.addEventListener('wheel', onWheel, { passive: true })
       return () => node.removeEventListener('wheel', onWheel)
-    }, [scrollable, isStreaming])
+    }, [scrollable, thinkingActive])
 
     const animateTo = (open: boolean) => {
       progress.value = withTiming(open ? 1 : 0, {
@@ -146,26 +203,37 @@ const ThoughtCollapsible = memo(
      *  收尾阶段才猛地一缩 —— 这就是「一下锁起来」的来源。 */
     const bodyHSV = useSharedValue(300)
 
-    /** 展开/折叠。总是走 onToggle 补偿：钉顶的留白与折叠动画同帧起步，
-     *  动画期间内容总高不变 → 不会被 clamp 拽动。 */
-    const toggleOpen = () => {
-      const nextState = !isOpen
+    const isOpenRef = useRef(isOpen)
+    isOpenRef.current = isOpen
+
+    /** 幂等设置展开/收起状态（始终同步更新 isOpenRef 防止同帧两个 effect 双重反转） */
+    const setOpen = (nextState: boolean) => {
+      if (isOpenRef.current === nextState) return
       const measured = openBodyHRef.current
-      const expandedH =
-        measured > 0
+      const latestTextCap =
+        contentHeightRef.current > 0
+          ? Math.min(contentHeightRef.current + 4, THOUGHT_SCROLL_MAX)
+          : 0
+      const expandedH = nextState
+        ? Math.max(measured, latestTextCap) || THOUGHT_SCROLL_MAX
+        : measured > 0
           ? measured
-          : contentHeightRef.current > 0
-            ? Math.min(contentHeightRef.current, THOUGHT_SCROLL_MAX)
-            : THOUGHT_SCROLL_MAX
+          : latestTextCap || THOUGHT_SCROLL_MAX
+      if (nextState && expandedH > bodyHSV.value) {
+        bodyHSV.value = expandedH
+      }
+      isOpenRef.current = nextState
       onToggle?.(nextState, expandedH)
       setThoughtOpen(messageId, nextState)
       setIsOpen(nextState)
       animateTo(nextState)
     }
 
+    const toggleOpen = () => setOpen(!isOpenRef.current)
+
     // ── 吐字结束自动折叠 ──────────────────────────────────────────────
     // 只在「流式中 → 结束」的边界触发一次（历史消息挂载时 isStreaming=false，不触发）。
-    // ⚠️ 必须走 toggleOpen() 带上 onToggle 补偿：钉顶模式下 handleThoughtToggle
+    // ⚠️ 必须走 setOpen(false) 带上 onToggle 补偿：钉顶模式下 handleThoughtToggle
     //    会把 expandedH 按同一条时间轴补进底部留白 / 推进 pinTarget → 动画期间
     //    内容总高恒定 → 不触发 clamp；直接改 progress 绕过补偿 = 视口被拽一下
     //    （历史上的「跳一下」就是这么来的）。
@@ -174,10 +242,10 @@ const ThoughtCollapsible = memo(
     const AUTO_COLLAPSE_DELAY_MS = 400
     const wasStreamingRef = useRef(isStreaming)
     const autoCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isOpenRef = useRef(isOpen)
-    isOpenRef.current = isOpen
-    const toggleOpenRef = useRef(toggleOpen)
-    toggleOpenRef.current = toggleOpen
+    const setOpenRef = useRef(setOpen)
+    setOpenRef.current = setOpen
+    const thinkingActiveRef = useRef(thinkingActive)
+    thinkingActiveRef.current = thinkingActive
 
     useEffect(() => {
       const was = wasStreamingRef.current
@@ -187,7 +255,7 @@ const ThoughtCollapsible = memo(
         autoCollapseTimerRef.current = setTimeout(() => {
           autoCollapseTimerRef.current = null
           // 延迟窗口内用户已手动收起 → 尊重当前状态，不重复动作
-          if (isOpenRef.current) toggleOpenRef.current()
+          if (isOpenRef.current) setOpenRef.current(false)
         }, AUTO_COLLAPSE_DELAY_MS)
       } else if (!was && isStreaming) {
         // 重新开始吐字（重新生成）：取消还没触发的折叠
@@ -195,10 +263,10 @@ const ThoughtCollapsible = memo(
           clearTimeout(autoCollapseTimerRef.current)
           autoCollapseTimerRef.current = null
         }
-        // 同一 msgId 原地重新生成时组件不卸载，Map 里还记着上一轮的「收起」——
-        // 不清掉的话这一轮思考全程看不见。走 toggleOpen 带钉顶补偿，
-        // 它内部会把新状态写回 Map。
-        if (!isOpenRef.current) toggleOpenRef.current()
+        // 同一 msgId 原地重新生成且当前处于思考阶段时自动展开
+        if (thinkingActiveRef.current && !isOpenRef.current) {
+          setOpenRef.current(true)
+        }
       }
       return () => {
         // 依赖只有 isStreaming：普通重渲染不会重跑本 effect，不会误杀定时器；
@@ -210,20 +278,36 @@ const ThoughtCollapsible = memo(
       }
     }, [isStreaming])
 
-    // ── 思考阶段结束（正文开始吐字）→ 顺手收起 ────────────────────────
-    // 流式层按 type: 'thought' | 'content' 分阶段推送；ChatMessageItem 传入的
-    // thoughtDone =「正文已有内容」，第一个 content 片段到达即阶段边界。
-    // 零延迟触发，但走正常时长动画（250ms）：正文刚开始吐字，折叠与补偿同步进行，
-    // 视觉上是「思考框退场、正文登场」，而不是被「啪」地锁上。
-    // 兜底路径（thought-only/中断：正文始终没来）仍走上面的 isStreaming 400ms。
-    const wasThoughtDoneRef = useRef(thoughtDone)
+    // ── 思考 <-> 正文阶段双向切换 ────────────────────────────────────────
+    // 1. 思考 → 正文（thinkingActive: true → false）：立即带动画平滑收起思考框；
+    // 2. 正文 → 再次思考（thinkingActive: false → true）：模型吐完一段正文后又回去
+    //    思考（工具调用/多轮思考），自动重新展开思考框并贴到底部展示最新思考；
+    // 3. 兜底路径（thought-only/中断）：流结束走上面的 isStreaming 400ms 延迟折叠。
+    const wasThinkingActiveRef = useRef(thinkingActive)
     useEffect(() => {
-      const was = wasThoughtDoneRef.current
-      wasThoughtDoneRef.current = thoughtDone
-      if (!was && thoughtDone && isOpenRef.current) {
-        toggleOpenRef.current()
+      const was = wasThinkingActiveRef.current
+      wasThinkingActiveRef.current = thinkingActive
+      if (!isStreaming) return
+      if (was && !thinkingActive) {
+        if (autoCollapseTimerRef.current) {
+          clearTimeout(autoCollapseTimerRef.current)
+          autoCollapseTimerRef.current = null
+        }
+        if (isOpenRef.current) setOpenRef.current(false)
+      } else if (!was && thinkingActive) {
+        if (autoCollapseTimerRef.current) {
+          clearTimeout(autoCollapseTimerRef.current)
+          autoCollapseTimerRef.current = null
+        }
+        followThoughtBottom.current = true
+        if (!isOpenRef.current) setOpenRef.current(true)
+        requestAnimationFrame(() => {
+          if (followThoughtBottom.current) {
+            scrollViewportRef.current?.scrollToEnd?.({ animated: false })
+          }
+        })
       }
-    }, [thoughtDone])
+    }, [thinkingActive, isStreaming])
 
     // 思考内容流式增长时自动贴到底部（见 handleContentSize：内容重排时贴底）
     // 手动点标题栏可随时展开/收起；自动折叠后想再看就点一下展开。
@@ -244,15 +328,41 @@ const ThoughtCollapsible = memo(
       transform: [{ rotate: `${progress.value * 180}deg` }]
     }))
 
+    const thoughtAccentColor = theme.isDark ? '#A855F7' : '#9333EA'
+    const activeBorderColor = theme.isDark
+      ? 'rgba(168, 85, 247, 0.36)'
+      : 'rgba(147, 51, 234, 0.28)'
+    const activeSurfaceBg = theme.isDark
+      ? 'rgba(168, 85, 247, 0.06)'
+      : 'rgba(147, 51, 234, 0.04)'
+    const idleSurfaceBg =
+      theme.surfaceElevated ??
+      (theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)')
+    const thoughtStatusTitle = thinkingActive
+      ? isRethinking
+        ? '🧠 继续思考中…'
+        : '🧠 深度思考中…'
+      : '🧠 已深度思考'
+    const headerTitleColor = thinkingActive
+      ? (theme.textSecondary ?? theme.textMain)
+      : theme.textMuted
+
     return (
       <View
         style={[
           styles.thoughtBox,
           {
-            borderColor: theme.borderSubtle ?? theme.border,
-            backgroundColor:
-              theme.surfaceElevated ??
-              (theme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)')
+            borderColor: thinkingActive
+              ? activeBorderColor
+              : (theme.borderSubtle ?? theme.border),
+            backgroundColor: thinkingActive ? activeSurfaceBg : idleSurfaceBg,
+            ...(Platform.OS === 'web'
+              ? ({
+                  transitionProperty: 'border-color, background-color',
+                  transitionDuration: '200ms',
+                  transitionTimingFunction: 'ease'
+                } as any)
+              : null)
           }
         ]}
       >
@@ -275,11 +385,19 @@ const ThoughtCollapsible = memo(
             }
             toggleOpen()
           }}
-          style={styles.thoughtHeader}
+          style={[
+            styles.thoughtHeader,
+            Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : null
+          ]}
         >
-          <Text style={[styles.thoughtTitle, { color: theme.textMuted }]}>
-            🧠 已深度思考
-          </Text>
+          <View style={styles.thoughtTitleRow}>
+            <Text style={[styles.thoughtTitle, { color: headerTitleColor }]}>
+              {thoughtStatusTitle}
+            </Text>
+            {thinkingActive ? (
+              <ThinkingPulseDot color={thoughtAccentColor} />
+            ) : null}
+          </View>
           <View style={styles.thoughtRightAction}>
             <Text
               style={{ color: theme.textMuted, fontSize: 12, marginRight: 4 }}
@@ -329,7 +447,7 @@ const ThoughtCollapsible = memo(
                   { color: theme.textMuted, marginTop: 4 }
                 ]}
               >
-                {isStreaming ? (
+                {thinkingActive ? (
                   <InkTailText
                     text={displayThought}
                     color={theme.textMuted}
@@ -358,8 +476,8 @@ const ThoughtCollapsible = memo(
                   { color: theme.textMuted, marginTop: 4 }
                 ]}
               >
-                {/* 流式期间：末尾挂「墨洇」，与正文一致；结束落定后回退纯文本 */}
-                {isStreaming ? (
+                {/* 活跃思考期：末尾挂「墨洇」，与正文一致；离开思考阶段后回退纯文本 */}
+                {thinkingActive ? (
                   <InkTailText
                     text={displayThought}
                     color={theme.textMuted}
@@ -380,6 +498,8 @@ const ThoughtCollapsible = memo(
     prev.thought === next.thought &&
     prev.theme === next.theme &&
     prev.isStreaming === next.isStreaming &&
+    prev.isThinkingActive === next.isThinkingActive &&
+    prev.isRethinking === next.isRethinking &&
     prev.thoughtDone === next.thoughtDone
 )
 
@@ -400,6 +520,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4
+  },
+  thoughtTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
   },
   thoughtTitle: {
     fontSize: 12,

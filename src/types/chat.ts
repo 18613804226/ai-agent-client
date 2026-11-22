@@ -1,12 +1,18 @@
 import type { PickedAttachment } from '../hooks/useImagePicker'
 import type { ChatSource } from '../utils/citations'
 
+export type StreamingPhase = 'thought' | 'content'
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   thought?: string
   isStreaming?: boolean
+  /** 流式期当前阶段：用于识别「吐完正文又回到思考」的多轮思考场景 */
+  streamingPhase?: StreamingPhase
+  /** 流式期当前处于第几轮思考（每从空白/正文进入一次 thought +1） */
+  thoughtRound?: number
   /** 系统类标记行（如「用户中止对话」），渲染为居中哥倩文本，不走气泡 */
   systemNote?: boolean
   images?: string[]
@@ -100,6 +106,8 @@ export interface StreamingRenderMsg {
   msgId: string
   thought: string
   content: string
+  activePhase?: StreamingPhase
+  thoughtRound?: number
 }
 
 export interface ChatAreaProps {

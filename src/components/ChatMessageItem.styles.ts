@@ -165,6 +165,25 @@ export const chatMessageStyles = StyleSheet.create({
   docCardTitle: { fontSize: 13, fontWeight: '600' },
   docCardHint: { fontSize: 11, marginTop: 2 },
   docCardArrow: { fontSize: 16, marginLeft: 8 },
+  /** 底部操作行槽位：流式期占位时可叠放「继续思考中…」提示，零高度跳动 */
+  actionsSlot: {
+    position: 'relative' as const
+  },
+  rethinkingHintOverlay: {
+    position: 'absolute' as const,
+    left: 0,
+    right: 0,
+    top: 8,
+    height: 30,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    pointerEvents: 'none' as const
+  },
+  rethinkingHintText: {
+    fontSize: 12,
+    fontStyle: 'italic' as const
+  },
 })
 
 /**
