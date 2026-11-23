@@ -411,7 +411,13 @@ export default function ChatScreen() {
                   { backgroundColor: theme.bgApp, pointerEvents: 'none' }
                 ]}
               />
-              <ChatGlowBackground isDark={isDarkMode} isGenerating={isGenerating} />
+              <ChatGlowBackground
+                isDark={isDarkMode}
+                isGenerating={isGenerating}
+                isEmpty={
+                  !isHistoryLoading && (currentChat?.messages?.length ?? 0) === 0
+                }
+              />
               <View style={styles.chatCenterContainer}>
                 {/* 🌐 全局知识库上传进度条：抽屉关闭时也能看到 */}
                 {isUploadingKnowledge && (
