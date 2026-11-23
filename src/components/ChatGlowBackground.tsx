@@ -43,32 +43,32 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 56% 32% at 50% 83%, rgba(30, 52, 138, 0.15) 0%, rgba(49, 46, 129, 0.08) 42%, rgba(24, 24, 68, 0.03) 68%, transparent 86%)',
-            filter: 'blur(96px)',
+              'radial-gradient(ellipse 60% 34% at 50% 83%, rgba(47, 125, 225, 0.22) 0%, rgba(79, 70, 229, 0.12) 42%, rgba(30, 27, 75, 0.04) 68%, transparent 86%)',
+            filter: 'blur(78px)',
           }
         : null,
     wingLeft:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 24% at 30% 82%, rgba(6, 182, 212, 0.16) 0%, rgba(20, 184, 166, 0.08) 38%, rgba(14, 116, 144, 0.025) 60%, transparent 76%)',
-            filter: 'blur(80px)',
+              'radial-gradient(ellipse 40% 26% at 28% 81%, rgba(56, 189, 248, 0.24) 0%, rgba(6, 182, 212, 0.13) 38%, rgba(14, 116, 144, 0.04) 62%, transparent 78%)',
+            filter: 'blur(62px)',
           }
         : null,
     wingRight:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 24% at 70% 82%, rgba(139, 92, 246, 0.16) 0%, rgba(192, 38, 211, 0.075) 38%, rgba(109, 40, 217, 0.025) 60%, transparent 76%)',
-            filter: 'blur(80px)',
+              'radial-gradient(ellipse 40% 26% at 72% 81%, rgba(124, 107, 240, 0.24) 0%, rgba(168, 85, 247, 0.13) 38%, rgba(139, 92, 246, 0.04) 62%, transparent 78%)',
+            filter: 'blur(62px)',
           }
         : null,
     core:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 15% at 50% 82%, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.055) 46%, transparent 78%)',
-            filter: 'blur(56px)',
+              'radial-gradient(ellipse 38% 16% at 50% 82%, rgba(47, 125, 225, 0.19) 0%, rgba(124, 107, 240, 0.09) 46%, transparent 78%)',
+            filter: 'blur(44px)',
           }
         : null,
   },
@@ -77,32 +77,32 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 56% 32% at 50% 83%, rgba(59, 130, 246, 0.08) 0%, rgba(99, 102, 241, 0.04) 44%, transparent 84%)',
-            filter: 'blur(96px)',
+              'radial-gradient(ellipse 60% 34% at 50% 83%, rgba(96, 165, 250, 0.14) 0%, rgba(129, 140, 248, 0.07) 44%, transparent 84%)',
+            filter: 'blur(78px)',
           }
         : null,
     wingLeft:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 24% at 30% 82%, rgba(6, 182, 212, 0.09) 0%, rgba(20, 184, 166, 0.045) 42%, transparent 76%)',
-            filter: 'blur(80px)',
+              'radial-gradient(ellipse 40% 26% at 28% 81%, rgba(56, 189, 248, 0.16) 0%, rgba(125, 211, 252, 0.08) 42%, transparent 78%)',
+            filter: 'blur(62px)',
           }
         : null,
     wingRight:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 24% at 70% 82%, rgba(139, 92, 246, 0.09) 0%, rgba(192, 38, 211, 0.04) 42%, transparent 76%)',
-            filter: 'blur(80px)',
+              'radial-gradient(ellipse 40% 26% at 72% 81%, rgba(124, 107, 240, 0.16) 0%, rgba(168, 85, 247, 0.08) 42%, transparent 78%)',
+            filter: 'blur(62px)',
           }
         : null,
     core:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 15% at 50% 82%, rgba(59, 130, 246, 0.08) 0%, rgba(99, 102, 241, 0.035) 46%, transparent 78%)',
-            filter: 'blur(56px)',
+              'radial-gradient(ellipse 38% 16% at 50% 82%, rgba(59, 130, 246, 0.13) 0%, rgba(129, 140, 248, 0.06) 46%, transparent 78%)',
+            filter: 'blur(44px)',
           }
         : null,
   },
@@ -112,90 +112,90 @@ const NATIVE_LAYERS: Record<GlowLayerId, NativeLayerConfig> = {
   outer: {
     cx: '50%',
     cy: '83%',
-    rx: '48%',
-    ry: '28%',
-    colorDark: '#1E348A',
-    colorLight: '#3B82F6',
+    rx: '50%',
+    ry: '30%',
+    colorDark: '#2F7DE1',
+    colorLight: '#60A5FA',
     stopsDark: [
-      { offset: '0%', opacity: 0.15 },
-      { offset: '20%', opacity: 0.105 },
-      { offset: '42%', opacity: 0.06 },
-      { offset: '64%', opacity: 0.025 },
-      { offset: '84%', opacity: 0.008 },
+      { offset: '0%', opacity: 0.2 },
+      { offset: '20%', opacity: 0.14 },
+      { offset: '42%', opacity: 0.08 },
+      { offset: '64%', opacity: 0.035 },
+      { offset: '84%', opacity: 0.01 },
       { offset: '100%', opacity: 0 },
     ],
     stopsLight: [
-      { offset: '0%', opacity: 0.08 },
-      { offset: '20%', opacity: 0.056 },
-      { offset: '42%', opacity: 0.032 },
-      { offset: '64%', opacity: 0.014 },
-      { offset: '84%', opacity: 0.004 },
+      { offset: '0%', opacity: 0.13 },
+      { offset: '20%', opacity: 0.09 },
+      { offset: '42%', opacity: 0.05 },
+      { offset: '64%', opacity: 0.02 },
+      { offset: '84%', opacity: 0.006 },
       { offset: '100%', opacity: 0 },
     ],
   },
   wingLeft: {
-    cx: '30%',
-    cy: '82%',
-    rx: '30%',
-    ry: '20%',
-    colorDark: '#06B6D4',
-    colorLight: '#06B6D4',
+    cx: '28%',
+    cy: '81%',
+    rx: '34%',
+    ry: '22%',
+    colorDark: '#38BDF8',
+    colorLight: '#7DD3FC',
     stopsDark: [
-      { offset: '0%', opacity: 0.15 },
-      { offset: '26%', opacity: 0.095 },
-      { offset: '54%', opacity: 0.042 },
-      { offset: '80%', opacity: 0.012 },
+      { offset: '0%', opacity: 0.2 },
+      { offset: '26%', opacity: 0.125 },
+      { offset: '54%', opacity: 0.055 },
+      { offset: '80%', opacity: 0.016 },
       { offset: '100%', opacity: 0 },
     ],
     stopsLight: [
-      { offset: '0%', opacity: 0.085 },
-      { offset: '26%', opacity: 0.055 },
-      { offset: '54%', opacity: 0.024 },
-      { offset: '80%', opacity: 0.006 },
+      { offset: '0%', opacity: 0.14 },
+      { offset: '26%', opacity: 0.088 },
+      { offset: '54%', opacity: 0.038 },
+      { offset: '80%', opacity: 0.01 },
       { offset: '100%', opacity: 0 },
     ],
   },
   wingRight: {
-    cx: '70%',
-    cy: '82%',
-    rx: '30%',
-    ry: '20%',
-    colorDark: '#A855F7',
-    colorLight: '#8B5CF6',
+    cx: '72%',
+    cy: '81%',
+    rx: '34%',
+    ry: '22%',
+    colorDark: '#7C6BF0',
+    colorLight: '#A5B4FC',
     stopsDark: [
-      { offset: '0%', opacity: 0.15 },
-      { offset: '26%', opacity: 0.095 },
-      { offset: '54%', opacity: 0.042 },
-      { offset: '80%', opacity: 0.012 },
+      { offset: '0%', opacity: 0.2 },
+      { offset: '26%', opacity: 0.125 },
+      { offset: '54%', opacity: 0.055 },
+      { offset: '80%', opacity: 0.016 },
       { offset: '100%', opacity: 0 },
     ],
     stopsLight: [
-      { offset: '0%', opacity: 0.085 },
-      { offset: '26%', opacity: 0.055 },
-      { offset: '54%', opacity: 0.024 },
-      { offset: '80%', opacity: 0.006 },
+      { offset: '0%', opacity: 0.14 },
+      { offset: '26%', opacity: 0.088 },
+      { offset: '54%', opacity: 0.038 },
+      { offset: '80%', opacity: 0.01 },
       { offset: '100%', opacity: 0 },
     ],
   },
   core: {
     cx: '50%',
     cy: '82%',
-    rx: '30%',
-    ry: '13%',
-    colorDark: '#3B82F6',
-    colorLight: '#3B82F6',
+    rx: '32%',
+    ry: '15%',
+    colorDark: '#2F7DE1',
+    colorLight: '#93C5FD',
     stopsDark: [
-      { offset: '0%', opacity: 0.11 },
-      { offset: '26%', opacity: 0.07 },
-      { offset: '54%', opacity: 0.03 },
-      { offset: '80%', opacity: 0.008 },
+      { offset: '0%', opacity: 0.17 },
+      { offset: '26%', opacity: 0.105 },
+      { offset: '54%', opacity: 0.045 },
+      { offset: '80%', opacity: 0.012 },
       { offset: '100%', opacity: 0 },
     ],
     stopsLight: [
-      { offset: '0%', opacity: 0.07 },
-      { offset: '26%', opacity: 0.045 },
-      { offset: '54%', opacity: 0.02 },
-      { offset: '80%', opacity: 0.005 },
+      { offset: '0%', opacity: 0.12 },
+      { offset: '26%', opacity: 0.075 },
+      { offset: '54%', opacity: 0.032 },
+      { offset: '80%', opacity: 0.008 },
       { offset: '100%', opacity: 0 },
     ],
   },
@@ -317,7 +317,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   }, [isGenerating, activeSV, genPulseSV, genOrbitSV, genOrbitAltSV]);
 
   const outerStyle = useAnimatedStyle(() => {
-    const idleOpacity = interpolate(outerBreatheSV.value, [0, 1], [0.7, 0.9]);
+    const idleOpacity = interpolate(outerBreatheSV.value, [0, 1], [0.78, 0.96]);
     const opacity = Math.min(
       1,
       idleOpacity + emptySV.value * 0.08 + activeSV.value * 0.18,
@@ -337,7 +337,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   const wingLeftStyle = useAnimatedStyle(() => {
     const opacity = Math.min(
       1,
-      interpolate(wingLeftBreatheSV.value, [0, 1], [0.66, 0.9]) +
+      interpolate(wingLeftBreatheSV.value, [0, 1], [0.76, 0.96]) +
         activeSV.value * 0.26,
     );
     const idleX = interpolate(wingLeftBreatheSV.value, [0, 1], [-16, 16]);
@@ -363,7 +363,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   const wingRightStyle = useAnimatedStyle(() => {
     const opacity = Math.min(
       1,
-      interpolate(wingRightBreatheSV.value, [0, 1], [0.66, 0.9]) +
+      interpolate(wingRightBreatheSV.value, [0, 1], [0.76, 0.96]) +
         activeSV.value * 0.26,
     );
     // 与左翼反向漂移，让常态呼吸更自然有流动感
@@ -388,7 +388,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   });
 
   const coreStyle = useAnimatedStyle(() => {
-    const idleOpacity = interpolate(coreBreatheSV.value, [0, 1], [0.62, 0.86]);
+    const idleOpacity = interpolate(coreBreatheSV.value, [0, 1], [0.74, 0.94]);
     const opacity = Math.min(
       1,
       idleOpacity + activeSV.value * (0.1 + 0.22 * genPulseSV.value),
