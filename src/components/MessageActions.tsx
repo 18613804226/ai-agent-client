@@ -40,8 +40,8 @@ export interface MessageActionsTheme {
 }
 
 /** 操作行整体高度固定：吐字完成前后布局完全一致，不会把气泡顶下去造成抖动 */
-const ACTION_ROW_HEIGHT = 30;
-const ACTION_BTN_SIZE = 28;
+const ACTION_ROW_HEIGHT = 32;
+const ACTION_BTN_SIZE = 30;
 
 interface MessageActionsProps {
   content: string;
@@ -683,7 +683,7 @@ const styles = StyleSheet.create({
    *  最小内容宽 = 整行文字宽，气泡溢出居中、单行展示 */
   miniTipAnchor: {
     position: 'absolute' as const,
-    bottom: 34,
+    bottom: 36,
     left: '50%' as const,
     transform: [{ translateX: '-50%' }],
     zIndex: 999,

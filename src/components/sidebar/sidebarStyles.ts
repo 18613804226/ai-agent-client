@@ -269,9 +269,23 @@ export const sidebarStyles = StyleSheet.create({
     marginBottom: 6,
     paddingHorizontal: 4
   },
+  appearanceLabelRowCompact: {
+    marginBottom: 4
+  },
   quotaText: {
     fontSize: 11,
     fontWeight: '600'
+  },
+  quotaBarTrack: {
+    height: 3,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginHorizontal: 4,
+    marginBottom: 7
+  },
+  quotaBarFill: {
+    height: '100%',
+    borderRadius: 2
   },
   appearanceLabel: {
     fontSize: 11,

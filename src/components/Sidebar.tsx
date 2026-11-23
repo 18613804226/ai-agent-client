@@ -315,6 +315,18 @@ export default function Sidebar({
       : quotaRatio >= 0.75
         ? (theme.warning ?? SEMANTIC_COLORS.warning)
         : theme.textMuted
+  const quotaBarColor =
+    quotaRatio >= 0.9
+      ? (theme.danger ?? SEMANTIC_COLORS.danger)
+      : quotaRatio >= 0.75
+        ? (theme.warning ?? SEMANTIC_COLORS.warning)
+        : primaryColor
+  const quotaTrackBg = isDarkMode
+    ? 'rgba(255, 255, 255, 0.08)'
+    : 'rgba(0, 0, 0, 0.08)'
+  const showQuotaBar = role !== 'admin' && hasQuota
+  const quotaFillPercent =
+    (device?.usedToday ?? 0) > 0 ? Math.max(quotaRatio * 100, 4) : 0
   const segmentTrackBg = isDarkMode
     ? 'rgba(255, 255, 255, 0.05)'
     : 'rgba(0, 0, 0, 0.045)'
@@ -775,7 +787,12 @@ export default function Sidebar({
 
           {/* 角色切换与外观切换共用统一「浅色滑块」分段控件，保持视觉体系一致 */}
           <View style={sidebarStyles.appearanceSection}>
-            <View style={sidebarStyles.appearanceLabelRow}>
+            <View
+              style={[
+                sidebarStyles.appearanceLabelRow,
+                showQuotaBar && sidebarStyles.appearanceLabelRowCompact
+              ]}
+            >
               <Text
                 style={[
                   sidebarStyles.appearanceLabel,
@@ -794,6 +811,24 @@ export default function Sidebar({
                 </Text>
               ) : null}
             </View>
+            {showQuotaBar ? (
+              <View
+                style={[
+                  sidebarStyles.quotaBarTrack,
+                  { backgroundColor: quotaTrackBg }
+                ]}
+              >
+                <View
+                  style={[
+                    sidebarStyles.quotaBarFill,
+                    {
+                      width: `${quotaFillPercent}%`,
+                      backgroundColor: quotaBarColor
+                    }
+                  ]}
+                />
+              </View>
+            ) : null}
             <SegmentedControl
               options={ROLE_OPTIONS}
               value={effectiveRole}

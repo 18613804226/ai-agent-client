@@ -1,6 +1,9 @@
 /** 🖥️ PC 网页端宽度断点（app/index.tsx 与 Sidebar 共用，避免两处漂移） */
 export const PC_WEB_BREAKPOINT = 768;
 
+/** 聊天内容列最大宽度（桌面宽屏居中阅读最佳列宽，ChatScreen 与 ChatInputBar 共用） */
+export const CHAT_MAX_WIDTH = 768;
+
 /** 是否为 PC 网页端宽度（> 断点） */
 export const isPCWebWidth = (width: number) => width > PC_WEB_BREAKPOINT;
 

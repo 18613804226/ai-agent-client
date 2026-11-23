@@ -8,8 +8,7 @@ import {
   PanResponder,
   AppState,
   BackHandler,
-  useWindowDimensions,
-  Dimensions
+  useWindowDimensions
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { RootSiblingParent } from 'react-native-root-siblings'
@@ -27,7 +26,11 @@ import Reanimated from 'react-native-reanimated'
 import { useKeyboardAnimation } from '../../src/hooks/useKeyboardAnimation'
 import { useImagePicker } from '../../src/hooks/useImagePicker'
 import { useTheme, useChat, useKnowledge } from '../../src/context/appContexts' // 💡 全局 Context（与 app/_layout 共用）
-import { isPCWebWidth, isMobileWebWidth } from '../../src/constants/theme'
+import {
+  isPCWebWidth,
+  isMobileWebWidth,
+  CHAT_MAX_WIDTH
+} from '../../src/constants/theme'
 import CustomActionSheet from '../../src/components/CustomActionSheet'
 import DocumentPanel from '../../src/components/chatDocument/DocumentPanel'
 import SelectionAskMenu from '../../src/components/SelectionAskMenu'
@@ -176,10 +179,9 @@ export default function ChatScreen() {
     handleSend
   ])
 
-  // 💡 三端精准判断
-  const screenWidth = Dimensions.get('window').width
-  const isPCWeb = Platform.OS === 'web' && isPCWebWidth(screenWidth) // 电脑端网页
-  const isMobileWeb = Platform.OS === 'web' && isMobileWebWidth(screenWidth) // 手机 H5 网页
+  // 💡 三端精准判断（基于 useWindowDimensions 的 width，缩放窗口时实时响应）
+  const isPCWeb = Platform.OS === 'web' && isPCWebWidth(width) // 电脑端网页
+  const isMobileWeb = Platform.OS === 'web' && isMobileWebWidth(width) // 手机 H5 网页
 
   // 右侧文档面板：宽屏 Web 打开时，聊天区与悬浮输入栏同步收缩，给面板让位
   // （宽度可拖拽调整，跟随面板状态实时变化）
@@ -244,8 +246,17 @@ export default function ChatScreen() {
   }, [isGenerating, isHistoryLoading, activeId])
 
   // 💡 针对三端各自配置不同的悬浮菜单坐标样式
+  const SIDEBAR_DESKTOP_WIDTH = 280
+  const chatPaneWidth = Math.max(
+    0,
+    width - SIDEBAR_DESKTOP_WIDTH - (docPanelOpen ? docPanelWidth : 0)
+  )
+  const pcSheetLeft =
+    SIDEBAR_DESKTOP_WIDTH +
+    Math.max(0, (chatPaneWidth - CHAT_MAX_WIDTH) / 2) +
+    16
   const sheetPositionStyle = isPCWeb
-    ? { bottom: sheetBottom, left: 'calc(50% - 270px)' } // 🖥️ PC 网页端：依据居中输入框进行精确定位
+    ? { bottom: sheetBottom, left: pcSheetLeft } // 🖥️ PC 网页端：跟随居中内容列左侧 + 号精确定位
     : isMobileWeb
       ? { bottom: sheetBottom, left: 16 } // 📱 手机 H5 端：依据移动网页的 + 号定位
       : { bottom: sheetBottom, left: 20 }
@@ -391,7 +402,7 @@ export default function ChatScreen() {
                   { backgroundColor: theme.bgApp, pointerEvents: 'none' }
                 ]}
               />
-              <ChatGlowBackground isDark={isDarkMode} />
+              <ChatGlowBackground isDark={isDarkMode} isGenerating={isGenerating} />
               <View style={styles.chatCenterContainer}>
                 {/* 🌐 全局知识库上传进度条：抽屉关闭时也能看到 */}
                 {isUploadingKnowledge && (
@@ -529,7 +540,7 @@ const styles = StyleSheet.create({
   },
   chatCenterContainer: {
     flex: 1,
-    maxWidth: 850,
+    maxWidth: CHAT_MAX_WIDTH,
     width: '100%',
     alignSelf: 'center',
     flexDirection: 'column'

@@ -740,8 +740,8 @@ const ChatMessageItem = memo(
         <View
           style={[
             chatMessageStyles.messageRow,
-            isLast && { marginBottom: 0 },
             isUser ? chatMessageStyles.rowUser : chatMessageStyles.rowAi,
+            isLast && { marginBottom: 0 },
             WEB_ROW_CONTAINMENT
           ]}
           onLayout={(e) => {

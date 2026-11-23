@@ -5,18 +5,17 @@ import { MONO_FONT } from './markdown/markdownRules'
 export const chatMessageStyles = StyleSheet.create({
   messageRow: {
     flexDirection: 'row',
-    marginBottom: 24,
     alignItems: 'flex-start'
   },
-  rowUser: { justifyContent: 'flex-end' },
-  rowAi: { justifyContent: 'flex-start' },
+  rowUser: { justifyContent: 'flex-end', marginBottom: 12 },
+  rowAi: { justifyContent: 'flex-start', marginBottom: 32 },
   /**
    * 用户气泡样式（暗色走主色渐变/提亮纯色，亮色走淡蓝气泡）。
    * AI 回复已去气泡化，不走这个样式。
    */
   bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: RADIUS.lg,
     maxWidth: '88%'
   },
@@ -174,7 +173,7 @@ export const chatMessageStyles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 8,
-    height: 30,
+    height: 32,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,

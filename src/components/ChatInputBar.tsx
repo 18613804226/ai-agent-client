@@ -28,6 +28,7 @@ import ImageViewer from './ImageViewer'
 import FilePreviewer from './FilePreviewer'
 import { HoverTouchable } from './HoverTouchable'
 import GlassSurface from './GlassSurface'
+import { CHAT_MAX_WIDTH } from '../constants/theme'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
 import { useSuppressBrowserCallout } from '../hooks/useSuppressBrowserCallout'
 import {
@@ -150,9 +151,9 @@ function ChatInputBar({
   /** 纱幕颜色与 pill / 应用底色一致：底部实色时和输入框、背景无缝，
    *  不会透出背后的光晕（否则下方会泛出蓝紫色）。 */
   const panelGradColor = theme.bgApp
-  /** 纱幕要铺满整个屏幕宽度：wrapper 被居中内容列（maxWidth 850）限制，
+  /** 纱幕要铺满整个屏幕宽度：wrapper 被居中内容列（CHAT_MAX_WIDTH）限制，
    *  宽屏上会比屏幕窄，这里按窗口宽度把两侧补齐，否则右侧会缺一块。 */
-  const panelLeft = -(width - Math.min(width, 850)) / 2
+  const panelLeft = -(width - Math.min(width, CHAT_MAX_WIDTH)) / 2
   /** 提示行固定占高，键盘升起时仅淡出，避免悬浮层高度跟着键盘抖动。 */
   const footerWrapStyle = useAnimatedStyle(() => {
     // keyboardProgress: 0=键盘收起 → 小字展开；1=键盘升起 → 小字收起。
