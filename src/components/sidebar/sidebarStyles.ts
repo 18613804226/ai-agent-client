@@ -23,6 +23,18 @@ export const sidebarStyles = StyleSheet.create({
   sidebarRoot: {
     flex: 1
   },
+  sidebarRootDesktop: {
+    overflow: 'hidden'
+  },
+  cornerGlow: {
+    position: 'absolute',
+    top: -76,
+    left: -76,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    pointerEvents: 'none'
+  },
   sidebarInner: {
     flex: 1,
     padding: SPACING.md,

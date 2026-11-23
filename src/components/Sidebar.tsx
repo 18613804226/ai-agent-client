@@ -10,6 +10,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { Path } from 'react-native-svg'
 import { useRouter } from 'expo-router'
+import Animated, {
+  cancelAnimation,
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming
+} from 'react-native-reanimated'
 import type { UploadedFile } from '../hooks/useKnowledgeFiles'
 import { isPCWebWidth, SEMANTIC_COLORS } from '../constants/theme'
 import type { ThemeMode, RoleMode } from '../context/appContexts'
@@ -34,6 +43,55 @@ import {
   ConfirmDeleteDialog,
   ConfirmDeleteConversationDialog
 } from './sidebar/ConfirmDialogs'
+
+/**
+ * Subtle breathing cyan ambient corner spot for the desktop Web permanent sidebar.
+ * Rendered only when `isPCWeb` is true so mobile drawer visuals stay unchanged.
+ */
+function SidebarCornerGlow({ isDarkMode }: { isDarkMode: boolean }) {
+  const breathe = useSharedValue(0)
+
+  useEffect(() => {
+    breathe.value = withRepeat(
+      withTiming(1, {
+        duration: 8000,
+        easing: Easing.inOut(Easing.sin)
+      }),
+      -1,
+      true
+    )
+
+    return () => {
+      cancelAnimation(breathe)
+    }
+  }, [breathe])
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(breathe.value, [0, 1], [0.72, 1]),
+    transform: [{ scale: interpolate(breathe.value, [0, 1], [1, 1.08]) }]
+  }))
+
+  const webGlowStyle =
+    Platform.OS === 'web'
+      ? ({
+          backgroundImage: isDarkMode
+            ? 'radial-gradient(circle, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.04) 46%, transparent 72%)'
+            : 'radial-gradient(circle, rgba(56, 189, 248, 0.10) 0%, rgba(56, 189, 248, 0.03) 46%, transparent 72%)',
+          filter: 'blur(30px)'
+        } as any)
+      : {
+          backgroundColor: isDarkMode
+            ? 'rgba(56, 189, 248, 0.08)'
+            : 'rgba(56, 189, 248, 0.06)'
+        }
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[sidebarStyles.cornerGlow, webGlowStyle, animatedStyle]}
+    />
+  )
+}
 
 const ROLE_OPTIONS: readonly SegmentedOption<RoleMode>[] = [
   { value: 'user', label: 'User' },
@@ -334,8 +392,26 @@ export default function Sidebar({
   return (
     <View
       ref={sidebarRef}
-      style={[sidebarStyles.sidebarRoot, { backgroundColor: theme.bgSidebar }]}
+      style={[
+        sidebarStyles.sidebarRoot,
+        isPCWeb
+          ? [
+              sidebarStyles.sidebarRootDesktop,
+              {
+                backgroundColor: isDarkMode ? '#0C0D12' : '#F4F7FB',
+                ...(Platform.OS === 'web'
+                  ? ({
+                      backgroundImage: isDarkMode
+                        ? 'linear-gradient(180deg, #101218 0%, #090A0E 100%)'
+                        : 'linear-gradient(180deg, #F7F9FC 0%, #F1F5F9 100%)'
+                    } as any)
+                  : null)
+              }
+            ]
+          : { backgroundColor: theme.bgSidebar }
+      ]}
     >
+      {isPCWeb ? <SidebarCornerGlow isDarkMode={isDarkMode} /> : null}
       <View
         style={[
           sidebarStyles.sidebarInner,
