@@ -21,6 +21,10 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 type GlowLayerId = 'outer' | 'wingLeft' | 'wingRight' | 'core';
 
+const IS_WEB = Platform.OS === 'web';
+const ORBIT_OUTER_X = IS_WEB ? 16 : 24;
+const ORBIT_INNER_X = IS_WEB ? 64 : 96;
+
 type GradientStop = {
   offset: string;
   opacity: number;
@@ -43,7 +47,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 60% 34% at 50% 83%, rgba(47, 125, 225, 0.22) 0%, rgba(79, 70, 229, 0.12) 42%, rgba(30, 27, 75, 0.04) 68%, transparent 86%)',
+              'radial-gradient(ellipse min(54%, 500px) min(30%, 280px) at 50% 83%, rgba(47, 125, 225, 0.15) 0%, rgba(79, 70, 229, 0.08) 42%, rgba(30, 27, 75, 0.025) 68%, transparent 84%)',
             filter: 'blur(78px)',
           }
         : null,
@@ -51,7 +55,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 40% 26% at 28% 81%, rgba(56, 189, 248, 0.24) 0%, rgba(6, 182, 212, 0.13) 38%, rgba(14, 116, 144, 0.04) 62%, transparent 78%)',
+              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% - min(19%, 210px)) 81%, rgba(56, 189, 248, 0.16) 0%, rgba(6, 182, 212, 0.085) 38%, rgba(14, 116, 144, 0.025) 62%, transparent 76%)',
             filter: 'blur(62px)',
           }
         : null,
@@ -59,7 +63,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 40% 26% at 72% 81%, rgba(124, 107, 240, 0.24) 0%, rgba(168, 85, 247, 0.13) 38%, rgba(139, 92, 246, 0.04) 62%, transparent 78%)',
+              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% + min(19%, 210px)) 81%, rgba(124, 107, 240, 0.16) 0%, rgba(168, 85, 247, 0.085) 38%, rgba(139, 92, 246, 0.025) 62%, transparent 76%)',
             filter: 'blur(62px)',
           }
         : null,
@@ -67,7 +71,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 16% at 50% 82%, rgba(47, 125, 225, 0.19) 0%, rgba(124, 107, 240, 0.09) 46%, transparent 78%)',
+              'radial-gradient(ellipse min(32%, 280px) min(15%, 140px) at 50% 82%, rgba(47, 125, 225, 0.13) 0%, rgba(124, 107, 240, 0.06) 46%, transparent 78%)',
             filter: 'blur(44px)',
           }
         : null,
@@ -77,7 +81,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 60% 34% at 50% 83%, rgba(96, 165, 250, 0.14) 0%, rgba(129, 140, 248, 0.07) 44%, transparent 84%)',
+              'radial-gradient(ellipse min(54%, 500px) min(30%, 280px) at 50% 83%, rgba(96, 165, 250, 0.10) 0%, rgba(129, 140, 248, 0.05) 44%, transparent 84%)',
             filter: 'blur(78px)',
           }
         : null,
@@ -85,7 +89,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 40% 26% at 28% 81%, rgba(56, 189, 248, 0.16) 0%, rgba(125, 211, 252, 0.08) 42%, transparent 78%)',
+              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% - min(19%, 210px)) 81%, rgba(56, 189, 248, 0.11) 0%, rgba(125, 211, 252, 0.055) 42%, transparent 76%)',
             filter: 'blur(62px)',
           }
         : null,
@@ -93,7 +97,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 40% 26% at 72% 81%, rgba(124, 107, 240, 0.16) 0%, rgba(168, 85, 247, 0.08) 42%, transparent 78%)',
+              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% + min(19%, 210px)) 81%, rgba(124, 107, 240, 0.11) 0%, rgba(168, 85, 247, 0.055) 42%, transparent 76%)',
             filter: 'blur(62px)',
           }
         : null,
@@ -101,7 +105,7 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 38% 16% at 50% 82%, rgba(59, 130, 246, 0.13) 0%, rgba(129, 140, 248, 0.06) 46%, transparent 78%)',
+              'radial-gradient(ellipse min(32%, 280px) min(15%, 140px) at 50% 82%, rgba(59, 130, 246, 0.09) 0%, rgba(129, 140, 248, 0.04) 46%, transparent 78%)',
             filter: 'blur(44px)',
           }
         : null,
@@ -342,7 +346,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
     );
     const idleX = interpolate(wingLeftBreatheSV.value, [0, 1], [-16, 16]);
     const idleY = interpolate(wingLeftBreatheSV.value, [0, 1], [-6, 6]);
-    const orbitX = interpolate(genOrbitSV.value, [0, 1], [-24, 96]);
+    const orbitX = interpolate(genOrbitSV.value, [0, 1], [-ORBIT_OUTER_X, ORBIT_INNER_X]);
     const orbitY = interpolate(genOrbitSV.value, [0, 0.5, 1], [-22, -6, -22]);
     const rot = activeSV.value * interpolate(genOrbitSV.value, [0, 1], [-4, 4]);
     const scale =
@@ -369,7 +373,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
     // 与左翼反向漂移，让常态呼吸更自然有流动感
     const idleX = interpolate(wingRightBreatheSV.value, [0, 1], [16, -16]);
     const idleY = interpolate(wingRightBreatheSV.value, [0, 1], [6, -6]);
-    const orbitX = interpolate(genOrbitAltSV.value, [0, 1], [24, -96]);
+    const orbitX = interpolate(genOrbitAltSV.value, [0, 1], [ORBIT_OUTER_X, -ORBIT_INNER_X]);
     const orbitY = interpolate(genOrbitAltSV.value, [0, 0.5, 1], [-20, -4, -20]);
     const rot = activeSV.value * interpolate(genOrbitAltSV.value, [0, 1], [4, -4]);
     const scale =
