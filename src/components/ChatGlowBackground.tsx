@@ -54,54 +54,55 @@ function buildWebLayerStyles(
   const layerW = chatW * 1.3;
   const layerH = Math.max(480, winHeight) * 1.3;
 
-  const outerRx = Math.round(Math.min(layerW * 0.46, 500));
-  const outerRy = Math.round(Math.min(layerH * 0.28, 260));
-  const wingRx = Math.round(Math.min(layerW * 0.3, 300));
-  const wingRy = Math.round(Math.min(layerH * 0.22, 200));
-  const coreRx = Math.round(Math.min(layerW * 0.28, 280));
-  const coreRy = Math.round(Math.min(layerH * 0.14, 136));
+  const outerRx = Math.round(Math.min(layerW * 0.52, 680));
+  const outerRy = Math.round(Math.min(layerH * 0.3, 270));
+  const wingRx = Math.round(Math.min(layerW * 0.34, 420));
+  const wingRy = Math.round(Math.min(layerH * 0.24, 220));
+  const coreRx = Math.round(Math.min(layerW * 0.32, 380));
+  const coreRy = Math.round(Math.min(layerH * 0.16, 150));
 
-  const offsetPct = Math.round(Math.min(18, (210 / layerW) * 100) * 10) / 10;
+  const offsetPx = Math.min(chatW * 0.28, 320);
+  const offsetPct = Math.round((offsetPx / layerW) * 1000) / 10;
   const leftPct = +(50 - offsetPct).toFixed(1);
   const rightPct = +(50 + offsetPct).toFixed(1);
 
   if (isDark) {
     return {
       outer: {
-        backgroundImage: `radial-gradient(ellipse ${outerRx}px ${outerRy}px at 50% 83%, rgba(47, 125, 225, 0.17) 0%, rgba(79, 70, 229, 0.09) 42%, rgba(30, 27, 75, 0.03) 68%, transparent 86%)`,
-        filter: 'blur(70px)',
+        backgroundImage: `radial-gradient(ellipse ${outerRx}px ${outerRy}px at 50% 83%, rgba(47, 125, 225, 0.19) 0%, rgba(79, 70, 229, 0.105) 42%, rgba(30, 27, 75, 0.038) 68%, transparent 86%)`,
+        filter: 'blur(74px)',
       },
       wingLeft: {
-        backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${leftPct}% 81%, rgba(56, 189, 248, 0.19) 0%, rgba(6, 182, 212, 0.10) 38%, rgba(14, 116, 144, 0.03) 62%, transparent 78%)`,
-        filter: 'blur(54px)',
+        backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${leftPct}% 81%, rgba(56, 189, 248, 0.22) 0%, rgba(6, 182, 212, 0.12) 40%, rgba(14, 116, 144, 0.04) 64%, transparent 82%)`,
+        filter: 'blur(58px)',
       },
       wingRight: {
-        backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${rightPct}% 81%, rgba(124, 107, 240, 0.19) 0%, rgba(168, 85, 247, 0.10) 38%, rgba(139, 92, 246, 0.03) 62%, transparent 78%)`,
-        filter: 'blur(54px)',
+        backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${rightPct}% 81%, rgba(124, 107, 240, 0.22) 0%, rgba(168, 85, 247, 0.12) 40%, rgba(139, 92, 246, 0.04) 64%, transparent 82%)`,
+        filter: 'blur(58px)',
       },
       core: {
-        backgroundImage: `radial-gradient(ellipse ${coreRx}px ${coreRy}px at 50% 82%, rgba(47, 125, 225, 0.14) 0%, rgba(124, 107, 240, 0.065) 46%, transparent 78%)`,
-        filter: 'blur(38px)',
+        backgroundImage: `radial-gradient(ellipse ${coreRx}px ${coreRy}px at 50% 82%, rgba(47, 125, 225, 0.16) 0%, rgba(124, 107, 240, 0.075) 48%, transparent 80%)`,
+        filter: 'blur(42px)',
       },
     };
   }
 
   return {
     outer: {
-      backgroundImage: `radial-gradient(ellipse ${outerRx}px ${outerRy}px at 50% 83%, rgba(96, 165, 250, 0.11) 0%, rgba(129, 140, 248, 0.055) 44%, transparent 84%)`,
-      filter: 'blur(70px)',
+      backgroundImage: `radial-gradient(ellipse ${outerRx}px ${outerRy}px at 50% 83%, rgba(96, 165, 250, 0.12) 0%, rgba(129, 140, 248, 0.06) 44%, transparent 86%)`,
+      filter: 'blur(74px)',
     },
     wingLeft: {
-      backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${leftPct}% 81%, rgba(56, 189, 248, 0.13) 0%, rgba(125, 211, 252, 0.065) 42%, transparent 78%)`,
-      filter: 'blur(54px)',
+      backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${leftPct}% 81%, rgba(56, 189, 248, 0.14) 0%, rgba(125, 211, 252, 0.075) 42%, transparent 82%)`,
+      filter: 'blur(58px)',
     },
     wingRight: {
-      backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${rightPct}% 81%, rgba(124, 107, 240, 0.13) 0%, rgba(168, 85, 247, 0.065) 42%, transparent 78%)`,
-      filter: 'blur(54px)',
+      backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${rightPct}% 81%, rgba(124, 107, 240, 0.14) 0%, rgba(168, 85, 247, 0.075) 42%, transparent 82%)`,
+      filter: 'blur(58px)',
     },
     core: {
-      backgroundImage: `radial-gradient(ellipse ${coreRx}px ${coreRy}px at 50% 82%, rgba(59, 130, 246, 0.095) 0%, rgba(129, 140, 248, 0.045) 46%, transparent 78%)`,
-      filter: 'blur(38px)',
+      backgroundImage: `radial-gradient(ellipse ${coreRx}px ${coreRy}px at 50% 82%, rgba(59, 130, 246, 0.105) 0%, rgba(129, 140, 248, 0.05) 48%, transparent 80%)`,
+      filter: 'blur(42px)',
     },
   };
 }
