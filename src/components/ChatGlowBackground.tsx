@@ -1,5 +1,5 @@
-import React, { memo, useEffect } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import React, { memo, useEffect, useMemo } from 'react';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -41,76 +41,70 @@ type NativeLayerConfig = {
   stopsLight: ReadonlyArray<GradientStop>;
 };
 
-const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
-  dark: {
-    outer:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(54%, 500px) min(30%, 280px) at 50% 83%, rgba(47, 125, 225, 0.15) 0%, rgba(79, 70, 229, 0.08) 42%, rgba(30, 27, 75, 0.025) 68%, transparent 84%)',
-            filter: 'blur(78px)',
-          }
-        : null,
-    wingLeft:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% - min(19%, 210px)) 81%, rgba(56, 189, 248, 0.16) 0%, rgba(6, 182, 212, 0.085) 38%, rgba(14, 116, 144, 0.025) 62%, transparent 76%)',
-            filter: 'blur(62px)',
-          }
-        : null,
-    wingRight:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% + min(19%, 210px)) 81%, rgba(124, 107, 240, 0.16) 0%, rgba(168, 85, 247, 0.085) 38%, rgba(139, 92, 246, 0.025) 62%, transparent 76%)',
-            filter: 'blur(62px)',
-          }
-        : null,
-    core:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(32%, 280px) min(15%, 140px) at 50% 82%, rgba(47, 125, 225, 0.13) 0%, rgba(124, 107, 240, 0.06) 46%, transparent 78%)',
-            filter: 'blur(44px)',
-          }
-        : null,
-  },
-  light: {
-    outer:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(54%, 500px) min(30%, 280px) at 50% 83%, rgba(96, 165, 250, 0.10) 0%, rgba(129, 140, 248, 0.05) 44%, transparent 84%)',
-            filter: 'blur(78px)',
-          }
-        : null,
-    wingLeft:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% - min(19%, 210px)) 81%, rgba(56, 189, 248, 0.11) 0%, rgba(125, 211, 252, 0.055) 42%, transparent 76%)',
-            filter: 'blur(62px)',
-          }
-        : null,
-    wingRight:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(34%, 310px) min(23%, 210px) at calc(50% + min(19%, 210px)) 81%, rgba(124, 107, 240, 0.11) 0%, rgba(168, 85, 247, 0.055) 42%, transparent 76%)',
-            filter: 'blur(62px)',
-          }
-        : null,
-    core:
-      Platform.OS === 'web'
-        ? {
-            backgroundImage:
-              'radial-gradient(ellipse min(32%, 280px) min(15%, 140px) at 50% 82%, rgba(59, 130, 246, 0.09) 0%, rgba(129, 140, 248, 0.04) 46%, transparent 78%)',
-            filter: 'blur(44px)',
-          }
-        : null,
-  },
-};
+function buildWebLayerStyles(
+  isDark: boolean,
+  winWidth: number,
+  winHeight: number,
+): Record<GlowLayerId, any> {
+  if (!IS_WEB) {
+    return { outer: null, wingLeft: null, wingRight: null, core: null };
+  }
+
+  const chatW = winWidth >= 768 ? Math.max(320, winWidth - 280) : Math.max(320, winWidth);
+  const layerW = chatW * 1.3;
+  const layerH = Math.max(480, winHeight) * 1.3;
+
+  const outerRx = Math.round(Math.min(layerW * 0.46, 500));
+  const outerRy = Math.round(Math.min(layerH * 0.28, 260));
+  const wingRx = Math.round(Math.min(layerW * 0.3, 300));
+  const wingRy = Math.round(Math.min(layerH * 0.22, 200));
+  const coreRx = Math.round(Math.min(layerW * 0.28, 280));
+  const coreRy = Math.round(Math.min(layerH * 0.14, 136));
+
+  const offsetPct = Math.round(Math.min(18, (210 / layerW) * 100) * 10) / 10;
+  const leftPct = +(50 - offsetPct).toFixed(1);
+  const rightPct = +(50 + offsetPct).toFixed(1);
+
+  if (isDark) {
+    return {
+      outer: {
+        backgroundImage: `radial-gradient(ellipse ${outerRx}px ${outerRy}px at 50% 83%, rgba(47, 125, 225, 0.17) 0%, rgba(79, 70, 229, 0.09) 42%, rgba(30, 27, 75, 0.03) 68%, transparent 86%)`,
+        filter: 'blur(70px)',
+      },
+      wingLeft: {
+        backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${leftPct}% 81%, rgba(56, 189, 248, 0.19) 0%, rgba(6, 182, 212, 0.10) 38%, rgba(14, 116, 144, 0.03) 62%, transparent 78%)`,
+        filter: 'blur(54px)',
+      },
+      wingRight: {
+        backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${rightPct}% 81%, rgba(124, 107, 240, 0.19) 0%, rgba(168, 85, 247, 0.10) 38%, rgba(139, 92, 246, 0.03) 62%, transparent 78%)`,
+        filter: 'blur(54px)',
+      },
+      core: {
+        backgroundImage: `radial-gradient(ellipse ${coreRx}px ${coreRy}px at 50% 82%, rgba(47, 125, 225, 0.14) 0%, rgba(124, 107, 240, 0.065) 46%, transparent 78%)`,
+        filter: 'blur(38px)',
+      },
+    };
+  }
+
+  return {
+    outer: {
+      backgroundImage: `radial-gradient(ellipse ${outerRx}px ${outerRy}px at 50% 83%, rgba(96, 165, 250, 0.11) 0%, rgba(129, 140, 248, 0.055) 44%, transparent 84%)`,
+      filter: 'blur(70px)',
+    },
+    wingLeft: {
+      backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${leftPct}% 81%, rgba(56, 189, 248, 0.13) 0%, rgba(125, 211, 252, 0.065) 42%, transparent 78%)`,
+      filter: 'blur(54px)',
+    },
+    wingRight: {
+      backgroundImage: `radial-gradient(ellipse ${wingRx}px ${wingRy}px at ${rightPct}% 81%, rgba(124, 107, 240, 0.13) 0%, rgba(168, 85, 247, 0.065) 42%, transparent 78%)`,
+      filter: 'blur(54px)',
+    },
+    core: {
+      backgroundImage: `radial-gradient(ellipse ${coreRx}px ${coreRy}px at 50% 82%, rgba(59, 130, 246, 0.095) 0%, rgba(129, 140, 248, 0.045) 46%, transparent 78%)`,
+      filter: 'blur(38px)',
+    },
+  };
+}
 
 const NATIVE_LAYERS: Record<GlowLayerId, NativeLayerConfig> = {
   outer: {
@@ -254,6 +248,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   isGenerating = false,
   isEmpty = false,
 }: ChatGlowBackgroundProps) {
+  const { width: winWidth, height: winHeight } = useWindowDimensions();
   const outerBreatheSV = useSharedValue(0);
   const wingLeftBreatheSV = useSharedValue(0);
   const wingRightBreatheSV = useSharedValue(0);
@@ -408,7 +403,10 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
     };
   });
 
-  const webPalette = isDark ? WEB_LAYER_STYLES.dark : WEB_LAYER_STYLES.light;
+  const webPalette = useMemo(
+    () => buildWebLayerStyles(isDark, winWidth, winHeight),
+    [isDark, winWidth, winHeight],
+  );
   const layerAnimatedStyles: Record<GlowLayerId, any> = {
     outer: outerStyle,
     wingLeft: wingLeftStyle,
