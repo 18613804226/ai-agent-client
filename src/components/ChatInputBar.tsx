@@ -18,8 +18,12 @@ import {
 } from 'react-native'
 import { Svg, Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 import Reanimated, {
+  cancelAnimation,
+  Easing,
   useSharedValue,
   useAnimatedStyle,
+  withSequence,
+  withSpring,
   withTiming
 } from 'react-native-reanimated'
 import { InputBarIcon } from './InputBarIcon'
@@ -206,16 +210,41 @@ function ChatInputBar({
       : 'rgba(31, 31, 31, 0.32)'
     : '#FFFFFF'
 
+  const sendScale = useSharedValue(1)
+  useEffect(() => () => cancelAnimation(sendScale), [sendScale])
+  const sendBounceStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: sendScale.value }]
+  }))
+
+  const handleSendPressIn = useCallback(() => {
+    if (isSendDisabled) return
+    sendScale.value = withTiming(0.88, {
+      duration: 90,
+      easing: Easing.out(Easing.quad)
+    })
+  }, [isSendDisabled, sendScale])
+
+  const handleSendPressOut = useCallback(() => {
+    sendScale.value = withSpring(1, {
+      damping: 14,
+      stiffness: 320,
+      mass: 0.6
+    })
+  }, [sendScale])
+
   const handleSendOrStop = useCallback(() => {
+    if (!isGenerating && !canSubmit) return
+    sendScale.value = withSequence(
+      withTiming(0.88, { duration: 85, easing: Easing.out(Easing.quad) }),
+      withSpring(1, { damping: 14, stiffness: 320, mass: 0.6 })
+    )
     if (isGenerating) {
       onStop()
       return
     }
-    if (canSubmit) {
-      Keyboard.dismiss()
-      onSend()
-    }
-  }, [isGenerating, canSubmit, onStop, onSend])
+    Keyboard.dismiss()
+    onSend()
+  }, [isGenerating, canSubmit, onStop, onSend, sendScale])
 
   /* ---------- 模式切换 ---------- */
   const toggleVoiceMode = useCallback(() => {
@@ -556,59 +585,65 @@ function ChatInputBar({
         )}
 
         {/* 发送 / 停止 按钮 */}
-        {Platform.OS === 'android' ? (
-          // 📱 Android：Material 白色水波纹（彩色按钮上），圆形裁剪
-          <Pressable
-            style={[
-              inputBarStyles.sendButton,
-              { backgroundColor: sendColor, overflow: 'hidden' }
-            ]}
-            android_ripple={{
-              color: 'rgba(255, 255, 255, 0.35)',
-              foreground: true,
-              borderless: false
-            }}
-            onPress={handleSendOrStop}
-            disabled={isSendDisabled}
-          >
-            <InputBarIcon
-              name={isStopMode ? 'square' : 'arrow-up'}
-              size={20}
-              color={sendIconColor}
-            />
-          </Pressable>
-        ) : (
-          <TouchableOpacity
-            style={
-              [
+        <Reanimated.View style={sendBounceStyle}>
+          {Platform.OS === 'android' ? (
+            // 📱 Android：Material 白色水波纹（彩色按钮上），圆形裁剪
+            <Pressable
+              style={[
                 inputBarStyles.sendButton,
-                { backgroundColor: sendColor },
-                isWeb && {
-                  transitionProperty: 'background-color, transform',
-                  transitionDuration: '0.2s',
-                  transitionTimingFunction: 'ease',
-                  cursor: isStopMode || canSubmit ? 'pointer' : 'default'
-                },
-                isWeb && isHovered && (canSubmit || isStopMode)
-                  ? { transform: [{ scale: 1.05 }] }
-                  : null
-              ] as any
-            }
-            onPress={handleSendOrStop}
-            disabled={isSendDisabled}
-            activeOpacity={0.8}
-            // @ts-ignore
-            onMouseEnter={() => setIsHovered(true)}
-            // @ts-ignore
-            onMouseLeave={() => setIsHovered(false)}
-          >
-            <InputBarIcon
-              name={isStopMode ? 'square' : 'arrow-up'}
-              size={20}
-              color={sendIconColor}
-            />
-          </TouchableOpacity>
-        )}
+                { backgroundColor: sendColor, overflow: 'hidden' }
+              ]}
+              android_ripple={{
+                color: 'rgba(255, 255, 255, 0.35)',
+                foreground: true,
+                borderless: false
+              }}
+              onPressIn={handleSendPressIn}
+              onPressOut={handleSendPressOut}
+              onPress={handleSendOrStop}
+              disabled={isSendDisabled}
+            >
+              <InputBarIcon
+                name={isStopMode ? 'square' : 'arrow-up'}
+                size={20}
+                color={sendIconColor}
+              />
+            </Pressable>
+          ) : (
+            <TouchableOpacity
+              style={
+                [
+                  inputBarStyles.sendButton,
+                  { backgroundColor: sendColor },
+                  isWeb && {
+                    transitionProperty: 'background-color, transform',
+                    transitionDuration: '0.2s',
+                    transitionTimingFunction: 'ease',
+                    cursor: isStopMode || canSubmit ? 'pointer' : 'default'
+                  },
+                  isWeb && isHovered && (canSubmit || isStopMode)
+                    ? { transform: [{ scale: 1.05 }] }
+                    : null
+                ] as any
+              }
+              onPressIn={handleSendPressIn}
+              onPressOut={handleSendPressOut}
+              onPress={handleSendOrStop}
+              disabled={isSendDisabled}
+              activeOpacity={0.8}
+              // @ts-ignore
+              onMouseEnter={() => setIsHovered(true)}
+              // @ts-ignore
+              onMouseLeave={() => setIsHovered(false)}
+            >
+              <InputBarIcon
+                name={isStopMode ? 'square' : 'arrow-up'}
+                size={20}
+                color={sendIconColor}
+              />
+            </TouchableOpacity>
+          )}
+        </Reanimated.View>
         </View>
       </GlassSurface>
 

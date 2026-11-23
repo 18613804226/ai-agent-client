@@ -14,7 +14,15 @@ import StatsDrawer, {
 } from './StatsDrawer';
 import { WebPortal } from './WebPortal';
 import * as Clipboard from 'expo-clipboard';
-import Svg, { Rect } from 'react-native-svg';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { MyToast } from './GlobalToast';
 import { markdownToPlainText } from '../utils/markdownToPlain';
 import { playText, stopSpeech } from '../services/speechPlayer';
@@ -82,6 +90,18 @@ const CopyIcon = ({ color, size = 15 }: { color: string; size?: number }) => (
       rx="2.5"
       stroke={color}
       strokeWidth="2"
+    />
+  </Svg>
+);
+
+const CheckIcon = ({ color, size = 15 }: { color: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M20 6L9 17l-5-5"
+      stroke={color}
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     />
   </Svg>
 );
@@ -221,6 +241,31 @@ const MessageActions = memo(
     const [showDetail, setShowDetail] = useState(false);
     /** 桌面 Web 上复制 / 喇叭按钮的悬停小气泡：当前悬停哪个 */
     const [btnTip, setBtnTip] = useState<'copy' | 'speaker' | null>(null);
+    const [copied, setCopied] = useState(false);
+    const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const copyScale = useSharedValue(1);
+    const copyIconStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: copyScale.value }],
+    }));
+
+    useEffect(() => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+      setCopied(false);
+      copyScale.value = 1;
+    }, [messageId, copyScale]);
+
+    useEffect(() => {
+      return () => {
+        if (copyTimerRef.current) {
+          clearTimeout(copyTimerRef.current);
+          copyTimerRef.current = null;
+        }
+        cancelAnimation(copyScale);
+      };
+    }, [copyScale]);
     const hasStatsDetail = !!(statsData || (metaDetail && metaDetail.length > 0));
     /** 桌面 Web 悬停大浮层：挂到 body 做 fixed 定位，避免被列表裁剪和 contain 遮挡 */
     const helpBtnWrapRef = useRef<any>(null);
@@ -272,11 +317,22 @@ const MessageActions = memo(
       try {
         // 复制纯文本：用户粘贴出来是正常文字，不再带 **/#/``` 等 Markdown 标记
         await Clipboard.setStringAsync(markdownToPlainText(content));
+        setCopied(true);
+        copyScale.value = 0.82;
+        copyScale.value = withSequence(
+          withTiming(1.12, { duration: 130, easing: Easing.out(Easing.cubic) }),
+          withTiming(1, { duration: 140, easing: Easing.out(Easing.quad) }),
+        );
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = setTimeout(() => {
+          copyTimerRef.current = null;
+          setCopied(false);
+        }, 1500);
         MyToast.show('已复制到剪贴板');
       } catch {
         MyToast.show('复制失败，请稍后重试');
       }
-    }, [content]);
+    }, [content, copyScale]);
 
     const handleToggleSpeech = useCallback(async () => {
       // 正在播放或准备中（点击时已置 playingMsgId）→ 中断（喇叭位变「停止」，可随时点掉）
@@ -318,6 +374,11 @@ const MessageActions = memo(
       ? 'rgba(255, 255, 255, 0.12)'
       : 'rgba(0, 0, 0, 0.08)';
     const activeBg = 'rgba(29, 161, 242, 0.1)';
+    const copiedColor = theme.isDark ? '#34D399' : '#10B981';
+    const copiedBg = theme.isDark
+      ? 'rgba(52, 211, 153, 0.12)'
+      : 'rgba(16, 185, 129, 0.10)';
+    const copyTipLabel = copied ? '已复制' : '复制';
     const statsTheme = {
       isDark: theme.isDark,
       textMain: theme.textMain || (theme.isDark ? '#FFFFFF' : '#1A1A1A'),
@@ -502,14 +563,14 @@ const MessageActions = memo(
             ]}
           >
             <HoverTouchable
-              style={styles.btn}
-              hoverBg={hoverBg}
+              style={[styles.btn, copied ? { backgroundColor: copiedBg } : null]}
+              hoverBg={copied ? copiedBg : hoverBg}
               rippleColor={theme.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'}
               onPress={handleCopy}
               disabled={!ready}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               accessibilityRole="button"
-              accessibilityLabel="复制内容"
+              accessibilityLabel={copied ? '已复制' : '复制内容'}
               {...(useTooltip
                 ? {
                     onMouseEnter: () => setBtnTip('copy'),
@@ -517,7 +578,13 @@ const MessageActions = memo(
                   }
                 : {})}
             >
-              <CopyIcon color={idleColor} />
+              <Animated.View style={copyIconStyle}>
+                {copied ? (
+                  <CheckIcon color={copiedColor} />
+                ) : (
+                  <CopyIcon color={idleColor} />
+                )}
+              </Animated.View>
             </HoverTouchable>
             <HoverPopover
               visible={useTooltip && btnTip === 'copy'}
@@ -530,7 +597,7 @@ const MessageActions = memo(
               cardStyle={[
                 styles.miniTip,
                 {
-                  width: miniTipWidth('复制'),
+                  width: miniTipWidth(copyTipLabel),
                   backgroundColor: theme.isDark ? '#212225' : '#FFFFFF',
                   borderColor:
                     theme.border || (theme.isDark ? '#333333' : '#DDDDDD'),
@@ -546,7 +613,7 @@ const MessageActions = memo(
                   },
                 ]}
               >
-                复制
+                {copyTipLabel}
               </Text>
             </HoverPopover>
           </View>

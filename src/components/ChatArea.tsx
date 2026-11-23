@@ -180,6 +180,11 @@ export default function ChatArea({
     displayMessagesRef
   })
 
+  const lastAiIdForAnim = useMemo(() => {
+    const last = displayMessages[displayMessages.length - 1]
+    return last?.role === 'assistant' ? last.id : null
+  }, [displayMessages])
+
   /** FlashList 只在这些值变化时需要重算 cell；流式内容通过 data 本身更新 */
   const listExtraData = useMemo(
     () => ({
@@ -189,7 +194,8 @@ export default function ChatArea({
       selectionSuppressed,
       theme,
       messageCount: displayMessages.length,
-      animateInUserId: lastUserIdForAnim
+      animateInUserId: lastUserIdForAnim,
+      animateInAiId: lastAiIdForAnim
     }),
     [
       playingMsgId,
@@ -198,7 +204,8 @@ export default function ChatArea({
       selectionSuppressed,
       theme,
       displayMessages.length,
-      lastUserIdForAnim
+      lastUserIdForAnim,
+      lastAiIdForAnim
     ]
   )
 
@@ -264,8 +271,8 @@ export default function ChatArea({
           isLast={index === extra.messageCount - 1}
           animateIn={
             !!extra.isGenerating &&
-            item.role === 'user' &&
-            item.id === extra.animateInUserId
+            ((item.role === 'user' && item.id === extra.animateInUserId) ||
+              (item.role === 'assistant' && item.id === extra.animateInAiId))
           }
           isPlaying={item.id === extra.playingMsgId}
           setPlayingMsgId={handlePlayingChange}

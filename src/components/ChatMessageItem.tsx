@@ -1,9 +1,15 @@
 import React, { memo, useEffect, useMemo, useState } from 'react'
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native'
+import { StyleSheet, Text, View, TouchableOpacity, Platform, Image } from 'react-native'
 import { InputBarIcon } from './InputBarIcon'
 import Animated, {
+  cancelAnimation,
+  Easing,
+  interpolate,
   useSharedValue,
   useAnimatedStyle,
+  withDelay,
+  withRepeat,
+  withSequence,
   withTiming
 } from 'react-native-reanimated'
 import { INVERTED_CHAT_LIST, CELL_INVERSION_STYLE } from '../utils/chatScroll'
@@ -42,6 +48,50 @@ function formatDurationMs(ms: number): string {
   const m = Math.floor(s / 60)
   const sec = Math.round(s % 60)
   return `${m}m${sec}s`
+}
+
+function TypingDot({ color, index }: { color: string; index: number }) {
+  const p = useSharedValue(0)
+
+  useEffect(() => {
+    p.value = withDelay(
+      index * 140,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 300, easing: Easing.out(Easing.quad) }),
+          withTiming(0, { duration: 300, easing: Easing.in(Easing.quad) }),
+          withTiming(0, { duration: 300 })
+        ),
+        -1
+      )
+    )
+    return () => cancelAnimation(p)
+  }, [index, p])
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(p.value, [0, 1], [0.35, 1]),
+    transform: [
+      { translateY: interpolate(p.value, [0, 1], [0, -3.5]) },
+      { scale: interpolate(p.value, [0, 1], [0.88, 1.08]) }
+    ]
+  }))
+
+  return (
+    <Animated.View
+      style={[chatMessageStyles.typingDot, { backgroundColor: color }, dotStyle]}
+    />
+  )
+}
+
+/** 首字到达前显示的三点波浪跳动指示器，替代生硬的原生转圈 */
+function TypingDots({ color }: { color: string }) {
+  return (
+    <View style={chatMessageStyles.typingDotsRow}>
+      {[0, 1, 2].map((index) => (
+        <TypingDot key={index} color={color} index={index} />
+      ))}
+    </View>
+  )
 }
 
 // ===================== ChatMessageItem =====================
@@ -88,19 +138,27 @@ const ChatMessageItem = memo(
     /** 思考框展开/折叠时回调：(msgId, expanding, height) —— 外层留白同步补偿 */
     onThoughtToggle?: (msgId: string, expanding: boolean, height: number) => void
   }) => {
+    const isUser = item.role === 'user'
+    const slideDistance = isUser ? 8 : Platform.OS === 'web' ? 6 : 0
     const entrance = useSharedValue(animateIn ? 0 : 1)
     useEffect(() => {
       // FlashList 会复用 cell：item 变化时必须把入场值重置，否则新消息可能继承上一条的 0/1
       entrance.value = animateIn ? 0 : 1
       if (!animateIn) return
-      entrance.value = withTiming(1, { duration: 200 })
-    }, [animateIn, entrance, item.id])
-    const entranceStyle = useAnimatedStyle(() => ({
-      opacity: entrance.value,
-      transform: [{ translateY: (1 - entrance.value) * 10 }],
-    }))
-
-    const isUser = item.role === 'user'
+      entrance.value = withTiming(1, {
+        duration: isUser ? 200 : 220,
+        easing: Easing.out(Easing.cubic)
+      })
+      return () => cancelAnimation(entrance)
+    }, [animateIn, entrance, isUser, item.id])
+    const entranceStyle = useAnimatedStyle(() =>
+      slideDistance > 0
+        ? {
+            opacity: entrance.value,
+            transform: [{ translateY: (1 - entrance.value) * slideDistance }]
+          }
+        : { opacity: entrance.value }
+    )
     const hasContent = !!(item.content && item.content !== '...')
     const hasTrimmedContent = !!(item.content && item.content.trim())
     const hasThought = !!item.thought
@@ -817,11 +875,7 @@ const ChatMessageItem = memo(
             <View style={bubbleStyle}>
               {isThinking ? (
                 <View style={chatMessageStyles.thinkingContainer}>
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.textMuted}
-                    style={{ marginRight: 8 }}
-                  />
+                  <TypingDots color={theme.isDark ? '#93C5FD' : '#3B82F6'} />
                   <Text
                     style={[
                       chatMessageStyles.messageText,

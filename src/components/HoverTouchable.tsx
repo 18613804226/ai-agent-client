@@ -94,7 +94,7 @@ export const HoverTouchable = React.forwardRef<any, HoverTouchableProps>(
         style={[
           style,
           Platform.OS === 'web' && {
-            transitionProperty: 'background-color',
+            transitionProperty: 'background-color, border-color',
             transitionDuration: '0.15s',
             transitionTimingFunction: 'ease',
             cursor: 'pointer',

@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -24,20 +24,11 @@ import Svg, {
  * 1. Layer 1：6 段高斯衰减多层极光 + Web 端 blur(38px) 消除硬椭圆边，带 8s 常驻呼吸；
  * 2. Layer 2：输入框背后居中收束的「底座双层柔光」（纯 RadialGradient 彻底无几何轮廓）；
  * 3. Layer 3：错落星空微点阵（4 组独立相位错落闪烁 + ±1.5px 深空慢速微漂移）；
- * 4. Layer 4：桌面 Web 鼠标粘滞跟随光斑（0.05 缓动追随，静止零 CPU，移动端跳过）；
- * 5. 生成态呼应：isGenerating 时极光、底座柔光与星空微亮并柔和脉动反馈。
+ * 4. 生成态呼应：isGenerating 时极光、底座柔光与星空柔和提亮并启动节奏脉动反馈。
  */
-
-const CAN_HOVER_WEB =
-  Platform.OS === 'web' &&
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(hover: hover)').matches;
 
 const WEB_GLOW_BLUR =
   Platform.OS === 'web' ? ({ filter: 'blur(38px)' } as any) : null;
-const WEB_FOLLOW_BLUR =
-  Platform.OS === 'web' ? ({ filter: 'blur(36px)' } as any) : null;
 
 type GlowSpec = {
   id: string;
@@ -502,145 +493,6 @@ const StarfieldLayers = memo(function StarfieldLayers({
   );
 });
 
-/** Layer 4：桌面 Web 鼠标粘滞跟随光斑（0.05 缓动追随，静止自动停止 rAF，移动端跳过） */
-function MouseFollowGlow({
-  containerRef,
-  width,
-  height,
-  isDark,
-}: {
-  containerRef: React.RefObject<any>;
-  width: number;
-  height: number;
-  isDark: boolean;
-}) {
-  const glowElRef = useRef<any>(null);
-  const spotW = 500;
-  const spotH = 420;
-
-  useEffect(() => {
-    if (!CAN_HOVER_WEB || width <= 0 || height <= 0) return;
-    const win = globalThis as any;
-    const doc = win?.document;
-    if (!win?.addEventListener || !doc?.addEventListener) return;
-
-    const restX = width * 0.65;
-    const restY = height * 0.85;
-    let targetX = restX;
-    let targetY = restY;
-    let curX = restX;
-    let curY = restY;
-    let targetOpacity = 0;
-    let curOpacity = 0;
-    let rafId = 0;
-
-    const applyDom = () => {
-      const node = glowElRef.current;
-      if (!node?.style) return;
-      node.style.transform = `translate3d(${(curX - spotW / 2).toFixed(1)}px, ${(curY - spotH / 2).toFixed(1)}px, 0)`;
-      node.style.opacity = curOpacity.toFixed(3);
-    };
-
-    const tick = () => {
-      const dx = targetX - curX;
-      const dy = targetY - curY;
-      const dop = targetOpacity - curOpacity;
-      curX += dx * 0.05;
-      curY += dy * 0.05;
-      curOpacity += dop * 0.08;
-      applyDom();
-
-      if (Math.abs(dx) < 0.35 && Math.abs(dy) < 0.35 && Math.abs(dop) < 0.005) {
-        curX = targetX;
-        curY = targetY;
-        curOpacity = targetOpacity;
-        applyDom();
-        rafId = 0;
-        return;
-      }
-      rafId = win.requestAnimationFrame(tick);
-    };
-
-    const scheduleTick = () => {
-      if (!rafId) {
-        rafId = win.requestAnimationFrame(tick);
-      }
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      const rect = containerRef.current?.getBoundingClientRect?.();
-      if (!rect) return;
-      const rx = e.clientX - rect.left;
-      const ry = e.clientY - rect.top;
-      if (rx >= -40 && rx <= rect.width + 40 && ry >= -40 && ry <= rect.height + 40) {
-        targetX = rx;
-        targetY = ry;
-        targetOpacity = 1;
-      } else {
-        targetOpacity = 0;
-      }
-      scheduleTick();
-    };
-
-    const onMouseLeave = () => {
-      targetX = restX;
-      targetY = restY;
-      targetOpacity = 0;
-      scheduleTick();
-    };
-
-    applyDom();
-    win.addEventListener('mousemove', onMouseMove, { passive: true });
-    doc.addEventListener('mouseleave', onMouseLeave);
-
-    return () => {
-      if (rafId) win.cancelAnimationFrame(rafId);
-      win.removeEventListener('mousemove', onMouseMove);
-      doc.removeEventListener('mouseleave', onMouseLeave);
-    };
-  }, [containerRef, width, height]);
-
-  if (!CAN_HOVER_WEB) return null;
-
-  const gradPrimary = `mouse-indigo-${isDark ? 'd' : 'l'}`;
-  const gradAccent = `mouse-cyan-${isDark ? 'd' : 'l'}`;
-
-  return (
-    <View
-      ref={glowElRef}
-      style={[
-        {
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: spotW,
-          height: spotH,
-          opacity: 0,
-        },
-        WEB_FOLLOW_BLUR,
-      ]}
-    >
-      <Svg width={spotW} height={spotH}>
-        <Defs>
-          <RadialGradient id={gradPrimary} cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={isDark ? 0.15 : 0.1} />
-            <Stop offset="36%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={isDark ? 0.08 : 0.05} />
-            <Stop offset="72%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={0.02} />
-            <Stop offset="100%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={0} />
-          </RadialGradient>
-          <RadialGradient id={gradAccent} cx="54%" cy="54%" r="44%">
-            <Stop offset="0%" stopColor={isDark ? '#38bdf8' : '#7dd3fc'} stopOpacity={isDark ? 0.09 : 0.06} />
-            <Stop offset="50%" stopColor={isDark ? '#38bdf8' : '#7dd3fc'} stopOpacity={0.03} />
-            <Stop offset="100%" stopColor={isDark ? '#38bdf8' : '#7dd3fc'} stopOpacity={0} />
-          </RadialGradient>
-        </Defs>
-        <Ellipse cx="50%" cy="50%" rx="50%" ry="44%" fill={`url(#${gradPrimary})`} />
-        <Ellipse cx="54%" cy="54%" rx="44%" ry="38%" fill={`url(#${gradAccent})`} />
-      </Svg>
-    </View>
-  );
-}
-
 type ChatGlowBackgroundProps = {
   isDark: boolean;
   /** 模型正在思考/吐字时轻微提亮极光并启动温和呼应脉动 */
@@ -651,7 +503,6 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   isDark,
   isGenerating = false,
 }: ChatGlowBackgroundProps) {
-  const containerRef = useRef<any>(null);
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const activeSV = useSharedValue(isGenerating ? 1 : 0);
   const idleBreatheSV = useSharedValue(0);
@@ -702,7 +553,6 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
 
   return (
     <View
-      ref={containerRef}
       style={styles.container}
       onLayout={(e) => {
         const w = e.nativeEvent.layout.width;
@@ -735,12 +585,6 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
             height={layout.height}
             isDark={isDark}
             activeSV={activeSV}
-          />
-          <MouseFollowGlow
-            containerRef={containerRef}
-            width={layout.width}
-            height={layout.height}
-            isDark={isDark}
           />
         </>
       )}

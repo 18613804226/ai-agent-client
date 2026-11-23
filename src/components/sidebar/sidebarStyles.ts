@@ -216,6 +216,16 @@ export const sidebarStyles = StyleSheet.create({
     marginBottom: 3,
     overflow: 'hidden'
   },
+  historyActivePill: {
+    position: 'absolute',
+    left: 4,
+    top: '50%',
+    width: 3,
+    height: 16,
+    marginTop: -8,
+    borderRadius: 2,
+    pointerEvents: 'none'
+  },
   historyText: {
     fontSize: 14
   },
@@ -284,9 +294,26 @@ export const sidebarStyles = StyleSheet.create({
   appearanceLabelRowCompact: {
     marginBottom: 4
   },
+  quotaTextRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
   quotaText: {
     fontSize: 11,
+    lineHeight: 15,
     fontWeight: '600'
+  },
+  rollingNumWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  rollingNumPrev: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center'
   },
   quotaBarTrack: {
     height: 3,

@@ -93,6 +93,147 @@ function SidebarCornerGlow({ isDarkMode }: { isDarkMode: boolean }) {
   )
 }
 
+/** 选中历史对话项左侧的激活细条，切会话时轻微淡入展开 */
+function HistoryActiveBar({
+  active,
+  color
+}: {
+  active: boolean
+  color: string
+}) {
+  const progress = useSharedValue(active ? 1 : 0)
+
+  useEffect(() => {
+    progress.value = withTiming(active ? 1 : 0, {
+      duration: 200,
+      easing: Easing.out(Easing.cubic)
+    })
+    return () => cancelAnimation(progress)
+  }, [active, progress])
+
+  const barStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scaleY: 0.35 + 0.65 * progress.value }]
+  }))
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        sidebarStyles.historyActivePill,
+        { backgroundColor: color },
+        barStyle
+      ]}
+    />
+  )
+}
+
+/** 今日额度进度条：宽度变化时做平滑过渡 */
+function AnimatedQuotaBar({
+  percent,
+  color,
+  trackBg
+}: {
+  percent: number
+  color: string
+  trackBg: string
+}) {
+  const fillSV = useSharedValue(percent)
+  const trackW = useSharedValue(0)
+
+  useEffect(() => {
+    fillSV.value = withTiming(percent, {
+      duration: 420,
+      easing: Easing.out(Easing.cubic)
+    })
+    return () => cancelAnimation(fillSV)
+  }, [percent, fillSV])
+
+  const fillStyle = useAnimatedStyle(() => {
+    const clamped = Math.max(0, Math.min(100, fillSV.value))
+    return {
+      width:
+        trackW.value > 0
+          ? (trackW.value * clamped) / 100
+          : (`${clamped}%` as `${number}%`)
+    }
+  })
+
+  return (
+    <View
+      style={[sidebarStyles.quotaBarTrack, { backgroundColor: trackBg }]}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width
+        if (w > 0) trackW.value = w
+      }}
+    >
+      <Animated.View
+        style={[
+          sidebarStyles.quotaBarFill,
+          { backgroundColor: color },
+          fillStyle
+        ]}
+      />
+    </View>
+  )
+}
+
+/** 数字变化时做轻量的上下滚动切换，初始挂载直接静止展示 */
+function RollingNumber({ value, color }: { value: number; color: string }) {
+  const prevRef = useRef(value)
+  const [prev, setPrev] = useState<number | null>(null)
+  const [dir, setDir] = useState<1 | -1>(1)
+  const progress = useSharedValue(1)
+
+  useEffect(() => {
+    if (prevRef.current === value) return
+    const oldVal = prevRef.current
+    prevRef.current = value
+    setPrev(oldVal)
+    setDir(value >= oldVal ? 1 : -1)
+    progress.value = 0
+    progress.value = withTiming(1, {
+      duration: 280,
+      easing: Easing.out(Easing.cubic)
+    })
+    const timer = setTimeout(() => setPrev(null), 300)
+    return () => {
+      clearTimeout(timer)
+      cancelAnimation(progress)
+    }
+  }, [value, progress])
+
+  const curStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: (1 - progress.value) * 9 * dir }]
+  }))
+
+  const oldStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+    transform: [{ translateY: -progress.value * 9 * dir }]
+  }))
+
+  return (
+    <View style={sidebarStyles.rollingNumWrap}>
+      {prev !== null ? (
+        <Animated.Text
+          style={[
+            sidebarStyles.quotaText,
+            sidebarStyles.rollingNumPrev,
+            { color },
+            oldStyle
+          ]}
+        >
+          {prev}
+        </Animated.Text>
+      ) : null}
+      <Animated.Text style={[sidebarStyles.quotaText, { color }, curStyle]}>
+        {value}
+      </Animated.Text>
+    </View>
+  )
+}
+
 const ROLE_OPTIONS: readonly SegmentedOption<RoleMode>[] = [
   { value: 'user', label: 'User' },
   { value: 'admin', label: 'Admin' }
@@ -767,6 +908,7 @@ export default function Sidebar({
                       : undefined
                   }
                 >
+                  <HistoryActiveBar active={isActive} color={primaryColor} />
                   <Text
                     style={[
                       sidebarStyles.historyText,
@@ -882,28 +1024,26 @@ export default function Sidebar({
                   无额度限制
                 </Text>
               ) : hasQuota ? (
-                <Text style={[sidebarStyles.quotaText, { color: quotaTextColor }]}>
-                  今日额度 {device!.usedToday}/{device!.dailyQuota}
-                </Text>
+                <View style={sidebarStyles.quotaTextRow}>
+                  <Text style={[sidebarStyles.quotaText, { color: quotaTextColor }]}>
+                    今日额度{' '}
+                  </Text>
+                  <RollingNumber
+                    value={device!.usedToday!}
+                    color={quotaTextColor}
+                  />
+                  <Text style={[sidebarStyles.quotaText, { color: quotaTextColor }]}>
+                    /{device!.dailyQuota}
+                  </Text>
+                </View>
               ) : null}
             </View>
             {showQuotaBar ? (
-              <View
-                style={[
-                  sidebarStyles.quotaBarTrack,
-                  { backgroundColor: quotaTrackBg }
-                ]}
-              >
-                <View
-                  style={[
-                    sidebarStyles.quotaBarFill,
-                    {
-                      width: `${quotaFillPercent}%`,
-                      backgroundColor: quotaBarColor
-                    }
-                  ]}
-                />
-              </View>
+              <AnimatedQuotaBar
+                percent={quotaFillPercent}
+                color={quotaBarColor}
+                trackBg={quotaTrackBg}
+              />
             ) : null}
             <SegmentedControl
               options={ROLE_OPTIONS}

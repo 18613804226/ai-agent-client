@@ -40,6 +40,18 @@ export const chatMessageStyles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 6
   },
+  typingDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginRight: 10,
+    height: 18
+  },
+  typingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5
+  },
   messageText: { fontSize: 15, lineHeight: 23, fontWeight: '400' },
   /** 用户消息里的引用追问小卡片 */
   userQuoteWrap: {
