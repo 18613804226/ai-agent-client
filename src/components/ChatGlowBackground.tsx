@@ -1,5 +1,5 @@
-import React, { memo, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -15,18 +15,29 @@ import Svg, {
   Circle,
   Defs,
   Ellipse,
-  LinearGradient,
   RadialGradient,
   Stop,
 } from 'react-native-svg';
 
 /**
- * 聊天页「方向 A」光学氛围背景（无穿模细线 / 无贴边硬裁，全 UI 线程驱动）：
- * 1. Layer 1：聚拢上抬的对称椭圆极光（左青 / 中蓝 / 右紫 + 顶部微弱天光），避开底部黑色纱幕；
- * 2. Layer 2：输入框背后居中收束的「底座水平漫反射光带」（15%~85% 内自然衰减至 0）；
- * 3. Layer 3：输入框上方光晕过渡区精密微点阵（近看有科技星阵纹理，远看隐于背景不扰阅读）；
- * 4. Layer 4：生成态能量扫光（isGenerating 时柔和唤醒极光与底座扫光，平时沉稳克制）。
+ * 聊天页光学氛围背景（5 层组合方案，全 UI 线程驱动 + 零 React 重渲染）：
+ * 1. Layer 1：6 段高斯衰减多层极光 + Web 端 blur(38px) 消除硬椭圆边，带 8s 常驻呼吸；
+ * 2. Layer 2：输入框背后居中收束的「底座双层柔光」（纯 RadialGradient 彻底无几何轮廓）；
+ * 3. Layer 3：错落星空微点阵（4 组独立相位错落闪烁 + ±1.5px 深空慢速微漂移）；
+ * 4. Layer 4：桌面 Web 鼠标粘滞跟随光斑（0.05 缓动追随，静止零 CPU，移动端跳过）；
+ * 5. Layer 5：AI 生成态呼应脉动 + 底座能量扫光（isGenerating 时作为状态反馈柔和唤醒）。
  */
+
+const CAN_HOVER_WEB =
+  Platform.OS === 'web' &&
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(hover: hover)').matches;
+
+const WEB_GLOW_BLUR =
+  Platform.OS === 'web' ? ({ filter: 'blur(38px)' } as any) : null;
+const WEB_FOLLOW_BLUR =
+  Platform.OS === 'web' ? ({ filter: 'blur(36px)' } as any) : null;
 
 type GlowSpec = {
   id: string;
@@ -57,16 +68,16 @@ const GLOW_SPECS: GlowSpec[] = [
     colorLight: '#38bdf8',
     widthRatio: 0.56,
     aspectRatio: 0.72,
-    xOffsetRatio: -0.24,
-    bottomOffset: 112,
-    tiltDeg: -7,
+    xOffsetRatio: -0.22,
+    bottomOffset: 118,
+    tiltDeg: -8,
     driftX: 28,
     driftY: 18,
-    durationMs: 7800,
-    breathMs: 4900,
-    breathScale: 1.12,
-    opacityDark: 0.22,
-    opacityLight: 0.15,
+    durationMs: 8200,
+    breathMs: 5200,
+    breathScale: 1.11,
+    opacityDark: 0.18,
+    opacityLight: 0.13,
     startDelayMs: 0,
   },
   {
@@ -74,36 +85,54 @@ const GLOW_SPECS: GlowSpec[] = [
     colorDark: '#2F7DE1',
     colorLight: '#60a5fa',
     widthRatio: 0.68,
-    aspectRatio: 0.66,
-    xOffsetRatio: 0,
-    bottomOffset: 92,
-    tiltDeg: 0,
+    aspectRatio: 0.68,
+    xOffsetRatio: -0.02,
+    bottomOffset: 94,
+    tiltDeg: 2,
     driftX: 24,
     driftY: 18,
-    durationMs: 10800,
-    breathMs: 6200,
-    breathScale: 1.14,
-    opacityDark: 0.26,
-    opacityLight: 0.17,
-    startDelayMs: 850,
+    durationMs: 11000,
+    breathMs: 6400,
+    breathScale: 1.12,
+    opacityDark: 0.2,
+    opacityLight: 0.14,
+    startDelayMs: 900,
   },
   {
-    id: 'glow-violet',
+    id: 'glow-indigo',
+    colorDark: '#6366f1',
+    colorLight: '#818cf8',
+    widthRatio: 0.58,
+    aspectRatio: 0.72,
+    xOffsetRatio: 0.19,
+    bottomOffset: 114,
+    tiltDeg: 7,
+    driftX: 28,
+    driftY: 16,
+    durationMs: 9600,
+    breathMs: 5600,
+    breathScale: 1.11,
+    opacityDark: 0.18,
+    opacityLight: 0.13,
+    startDelayMs: 1600,
+  },
+  {
+    id: 'glow-violet-offset',
     colorDark: '#8b5cf6',
     colorLight: '#a78bfa',
-    widthRatio: 0.56,
-    aspectRatio: 0.72,
-    xOffsetRatio: 0.24,
-    bottomOffset: 116,
-    tiltDeg: 7,
-    driftX: 30,
-    driftY: 18,
-    durationMs: 9200,
-    breathMs: 5400,
-    breathScale: 1.12,
-    opacityDark: 0.22,
-    opacityLight: 0.15,
-    startDelayMs: 1650,
+    widthRatio: 0.46,
+    aspectRatio: 0.76,
+    xOffsetRatio: 0.27,
+    bottomOffset: 136,
+    tiltDeg: -5,
+    driftX: 22,
+    driftY: 14,
+    durationMs: 12200,
+    breathMs: 6800,
+    breathScale: 1.1,
+    opacityDark: 0.13,
+    opacityLight: 0.1,
+    startDelayMs: 2400,
   },
   {
     id: 'glow-sky-top',
@@ -112,15 +141,15 @@ const GLOW_SPECS: GlowSpec[] = [
     widthRatio: 0.52,
     aspectRatio: 0.78,
     xOffsetRatio: 0.28,
-    topRatio: -0.12,
+    topRatio: -0.1,
     tiltDeg: -10,
     driftX: 26,
     driftY: 16,
-    durationMs: 13000,
-    breathMs: 7000,
-    breathScale: 1.09,
-    opacityDark: 0.09,
-    opacityLight: 0.06,
+    durationMs: 13600,
+    breathMs: 7400,
+    breathScale: 1.08,
+    opacityDark: 0.08,
+    opacityLight: 0.055,
     startDelayMs: 400,
   },
 ];
@@ -162,10 +191,10 @@ function GlowBlob({
       { scale: interpolate(breath.value, [0, 1], [1, spec.breathScale]) },
       { rotate: `${spec.tiltDeg}deg` },
     ],
-    opacity: interpolate(drift.value, [0, 0.5, 1], [1, 0.8, 1]),
+    opacity: interpolate(drift.value, [0, 0.5, 1], [1, 0.82, 1]),
   }));
 
-  const focalSpan = Math.min(width, 960);
+  const focalSpan = Math.min(width, 980);
   const blobW = Math.round(focalSpan * spec.widthRatio);
   const blobH = Math.round(blobW * spec.aspectRatio);
   const centerX =
@@ -196,35 +225,38 @@ function GlowBlob({
         <Svg width={blobW} height={blobH}>
           <Defs>
             <RadialGradient id={gradientId} cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor={color} stopOpacity={0.8} />
-              <Stop offset="28%" stopColor={color} stopOpacity={0.44} />
-              <Stop offset="58%" stopColor={color} stopOpacity={0.15} />
-              <Stop offset="84%" stopColor={color} stopOpacity={0.03} />
+              <Stop offset="0%" stopColor={color} stopOpacity={0.72} />
+              <Stop offset="22%" stopColor={color} stopOpacity={0.44} />
+              <Stop offset="46%" stopColor={color} stopOpacity={0.18} />
+              <Stop offset="70%" stopColor={color} stopOpacity={0.05} />
+              <Stop offset="88%" stopColor={color} stopOpacity={0.01} />
               <Stop offset="100%" stopColor={color} stopOpacity={0} />
             </RadialGradient>
           </Defs>
-          <Ellipse cx="50%" cy="50%" rx="50%" ry="38%" fill={`url(#${gradientId})`} />
+          <Ellipse cx="50%" cy="50%" rx="50%" ry="46%" fill={`url(#${gradientId})`} />
         </Svg>
       </Animated.View>
     </View>
   );
 }
 
-/** Layer 2：输入框正背后的「底座水平漫反射光带」（15% ~ 85% 内自然衰减至 0，无任何穿模细线） */
+/** Layer 2：输入框背后的「底座双层柔光」（纯 RadialGradient 错位叠加，彻底无硬椭圆边缘） */
 function DockDiffusionBand({
   width,
   isDark,
   activeSV,
+  genPulseSV,
 }: {
   width: number;
   isDark: boolean;
   activeSV: SharedValue<number>;
+  genPulseSV: SharedValue<number>;
 }) {
   const pulse = useSharedValue(0);
 
   useEffect(() => {
     pulse.value = withRepeat(
-      withTiming(1, { duration: 4400, easing: Easing.inOut(Easing.sin) }),
+      withTiming(1, { duration: 4800, easing: Easing.inOut(Easing.sin) }),
       -1,
       true,
     );
@@ -232,15 +264,17 @@ function DockDiffusionBand({
   }, [pulse]);
 
   const bandStyle = useAnimatedStyle(() => {
-    const base = isDark ? 0.62 : 0.48;
-    const breathAmp = isDark ? 0.14 : 0.1;
+    const base = isDark ? 0.56 : 0.42;
+    const idleAmp = isDark ? 0.14 : 0.1;
+    const genBoost = activeSV.value * (0.2 + 0.18 * genPulseSV.value);
     return {
-      opacity: base + breathAmp * pulse.value + activeSV.value * 0.26,
+      opacity: base + idleAmp * pulse.value + genBoost,
+      transform: [{ scale: 1 + activeSV.value * 0.04 * genPulseSV.value }],
     };
   });
 
-  const dockW = Math.min(Math.round(width * 0.74), 860);
-  const dockH = 112;
+  const dockW = Math.min(Math.round(width * 0.78), 880);
+  const dockH = 156;
   const dockLeft = Math.round((width - dockW) / 2);
   const gradSuffix = isDark ? 'd' : 'l';
 
@@ -250,40 +284,129 @@ function DockDiffusionBand({
         {
           position: 'absolute',
           left: dockLeft,
-          bottom: 34,
+          bottom: 18,
           width: dockW,
           height: dockH,
         },
+        WEB_GLOW_BLUR,
         bandStyle,
       ]}
     >
       <Svg width={dockW} height={dockH}>
         <Defs>
-          <LinearGradient id={`dock-wide-${gradSuffix}`} x1="0%" y1="0%" x2="100%" y2="0%">
-            <Stop offset="0%" stopColor={isDark ? '#06b6d4' : '#38bdf8'} stopOpacity={0} />
-            <Stop offset="16%" stopColor={isDark ? '#06b6d4' : '#38bdf8'} stopOpacity={0.22} />
-            <Stop offset="50%" stopColor={isDark ? '#2F7DE1' : '#3b82f6'} stopOpacity={0.34} />
-            <Stop offset="84%" stopColor={isDark ? '#8b5cf6' : '#8b5cf6'} stopOpacity={0.22} />
-            <Stop offset="100%" stopColor={isDark ? '#8b5cf6' : '#8b5cf6'} stopOpacity={0} />
-          </LinearGradient>
-          <RadialGradient id={`dock-core-${gradSuffix}`} cx="50%" cy="56%" r="50%">
-            <Stop offset="0%" stopColor={isDark ? '#7dd3fc' : '#60a5fa'} stopOpacity={0.42} />
-            <Stop offset="42%" stopColor={isDark ? '#2F7DE1' : '#3b82f6'} stopOpacity={0.18} />
-            <Stop offset="78%" stopColor={isDark ? '#2F7DE1' : '#3b82f6'} stopOpacity={0.03} />
-            <Stop offset="100%" stopColor={isDark ? '#2F7DE1' : '#3b82f6'} stopOpacity={0} />
+          <RadialGradient id={`dock-cyan-${gradSuffix}`} cx="38%" cy="54%" r="48%">
+            <Stop offset="0%" stopColor={isDark ? '#38bdf8' : '#38bdf8'} stopOpacity={0.34} />
+            <Stop offset="24%" stopColor={isDark ? '#06b6d4' : '#38bdf8'} stopOpacity={0.2} />
+            <Stop offset="50%" stopColor={isDark ? '#2F7DE1' : '#60a5fa'} stopOpacity={0.08} />
+            <Stop offset="76%" stopColor={isDark ? '#2F7DE1' : '#60a5fa'} stopOpacity={0.02} />
+            <Stop offset="100%" stopColor={isDark ? '#2F7DE1' : '#60a5fa'} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id={`dock-indigo-${gradSuffix}`} cx="62%" cy="52%" r="48%">
+            <Stop offset="0%" stopColor={isDark ? '#6366f1' : '#818cf8'} stopOpacity={0.36} />
+            <Stop offset="24%" stopColor={isDark ? '#8b5cf6' : '#818cf8'} stopOpacity={0.2} />
+            <Stop offset="50%" stopColor={isDark ? '#6366f1' : '#a5b4fc'} stopOpacity={0.08} />
+            <Stop offset="76%" stopColor={isDark ? '#6366f1' : '#a5b4fc'} stopOpacity={0.02} />
+            <Stop offset="100%" stopColor={isDark ? '#6366f1' : '#a5b4fc'} stopOpacity={0} />
           </RadialGradient>
         </Defs>
-        {/* 外层宽幅漫反射：仅作用于中间 74% 区域，确保在边缘之前平滑衰减为 0 */}
-        <Ellipse cx="50%" cy="56%" rx="48%" ry="44%" fill={`url(#dock-wide-${gradSuffix})`} />
-        {/* 内层紧致悬浮底座柔光 */}
-        <Ellipse cx="50%" cy="58%" rx="34%" ry="24%" fill={`url(#dock-core-${gradSuffix})`} />
+        {/* 填满全 SVG 矩形画布：仅靠 RadialGradient 本身在到达边缘前自然归零 */}
+        <Ellipse cx="38%" cy="54%" rx="48%" ry="46%" fill={`url(#dock-cyan-${gradSuffix})`} />
+        <Ellipse cx="62%" cy="52%" rx="48%" ry="46%" fill={`url(#dock-indigo-${gradSuffix})`} />
       </Svg>
     </Animated.View>
   );
 }
 
-/** Layer 3：上移至输入框上方光晕过渡区的精密微点阵 */
-const TechDotMatrix = memo(function TechDotMatrix({
+/** Layer 3：错落星空微点阵（4 个独立相位组错落闪烁 + ±1.5px 缓慢微漂移） */
+type StarPoint = {
+  key: string;
+  x: number;
+  y: number;
+  r: number;
+  alpha: number;
+  color: string;
+};
+
+type StarGroupSpec = {
+  twinkleMs: number;
+  delayMs: number;
+  driftMs: number;
+  driftX: number;
+  driftY: number;
+};
+
+const STAR_GROUPS: StarGroupSpec[] = [
+  { twinkleMs: 3200, delayMs: 0, driftMs: 10500, driftX: 1.4, driftY: 1.0 },
+  { twinkleMs: 4100, delayMs: 700, driftMs: 12200, driftX: -1.3, driftY: 1.2 },
+  { twinkleMs: 4900, delayMs: 1500, driftMs: 13800, driftX: 1.1, driftY: -1.3 },
+  { twinkleMs: 5700, delayMs: 2300, driftMs: 15000, driftX: -1.5, driftY: -0.9 },
+];
+
+/** 确定性伪随机（避免每次重渲染星点跳位置） */
+function hash01(seed: number): number {
+  const s = Math.sin(seed * 127.1 + 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+}
+
+function StarPhaseLayer({
+  stars,
+  bandW,
+  bandH,
+  spec,
+}: {
+  stars: StarPoint[];
+  bandW: number;
+  bandH: number;
+  spec: StarGroupSpec;
+}) {
+  const twinkle = useSharedValue(0);
+  const drift = useSharedValue(0);
+
+  useEffect(() => {
+    const ease = Easing.inOut(Easing.sin);
+    twinkle.value = withDelay(
+      spec.delayMs,
+      withRepeat(withTiming(1, { duration: spec.twinkleMs, easing: ease }), -1, true),
+    );
+    drift.value = withDelay(
+      Math.round(spec.delayMs * 0.5),
+      withRepeat(withTiming(1, { duration: spec.driftMs, easing: ease }), -1, true),
+    );
+    return () => {
+      cancelAnimation(twinkle);
+      cancelAnimation(drift);
+    };
+  }, [twinkle, drift, spec]);
+
+  const layerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(twinkle.value, [0, 1], [0.3, 1]),
+    transform: [
+      { translateX: interpolate(drift.value, [0, 1], [-spec.driftX, spec.driftX]) },
+      { translateY: interpolate(drift.value, [0, 1], [-spec.driftY, spec.driftY]) },
+    ],
+  }));
+
+  if (stars.length === 0) return null;
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, layerStyle]}>
+      <Svg width={bandW} height={bandH}>
+        {stars.map((s) => (
+          <Circle
+            key={s.key}
+            cx={s.x}
+            cy={s.y}
+            r={s.r}
+            fill={s.color}
+            fillOpacity={s.alpha}
+          />
+        ))}
+      </Svg>
+    </Animated.View>
+  );
+}
+
+const StarfieldLayers = memo(function StarfieldLayers({
   width,
   height,
   isDark,
@@ -294,42 +417,64 @@ const TechDotMatrix = memo(function TechDotMatrix({
   isDark: boolean;
   activeSV: SharedValue<number>;
 }) {
-  const bandW = Math.min(Math.round(width * 0.8), 900);
-  const bandH = Math.min(230, Math.round(height * 0.34));
+  const bandW = Math.min(Math.round(width * 0.86), 960);
+  const bandH = Math.min(340, Math.round(height * 0.48));
   const bandLeft = Math.round((width - bandW) / 2);
 
-  const dots = useMemo(() => {
-    if (bandW <= 0 || bandH <= 0) return [];
-    const step = 24;
-    const cx = bandW * 0.5;
-    const cy = bandH * 0.76;
-    const rx = Math.max(150, bandW * 0.44);
-    const ry = Math.max(95, bandH * 0.78);
-    const peak = isDark ? 0.24 : 0.14;
-    const startX = (bandW % step) / 2 + step * 0.5;
-    const list: { key: string; x: number; y: number; alpha: number }[] = [];
+  const groupedStars = useMemo(() => {
+    const groups: StarPoint[][] = [[], [], [], []];
+    if (bandW <= 0 || bandH <= 0) return groups;
 
-    for (let y = 14; y <= bandH - 8; y += step) {
+    const totalCandidates = 76;
+    const cx = bandW * 0.5;
+    const cy = bandH * 0.78;
+    const rx = Math.max(160, bandW * 0.47);
+    const ry = Math.max(120, bandH * 0.78);
+    const peak = isDark ? 0.36 : 0.15;
+
+    for (let i = 0; i < totalCandidates; i++) {
+      const u = hash01(i * 3 + 1);
+      const v = hash01(i * 3 + 2);
+      const w = hash01(i * 3 + 3);
+
+      // 主星云偏重中下部（v^0.78），保留少量远星自然向上延伸
+      const x = 14 + u * (bandW - 28);
+      const y = 12 + Math.pow(v, 0.78) * (bandH - 24);
+
+      const nx = (x - cx) / rx;
       const ny = (y - cy) / ry;
-      for (let x = startX; x < bandW - 8; x += step) {
-        const nx = (x - cx) / rx;
-        const distSq = nx * nx + ny * ny;
-        if (distSq >= 1) continue;
-        const falloff = Math.pow(1 - distSq, 1.45);
-        const alpha = Number((peak * falloff).toFixed(3));
-        if (alpha < 0.018) continue;
-        list.push({ key: `${Math.round(x)}-${y}`, x, y, alpha });
-      }
+      const distSq = nx * nx + ny * ny;
+      if (distSq >= 1) continue;
+
+      const falloff = Math.pow(1 - distSq, 1.35);
+      const size = Number((0.7 + w * 0.65).toFixed(2));
+      const baseAlpha = peak * (0.48 + 0.52 * w) * falloff;
+      const alpha = Number(baseAlpha.toFixed(3));
+      if (alpha < 0.025) continue;
+
+      const color = isDark
+        ? i % 3 === 0
+          ? '#c7d2fe'
+          : '#e0f2fe'
+        : i % 3 === 0
+          ? '#818cf8'
+          : '#60a5fa';
+
+      groups[i % 4].push({
+        key: `star-${i}`,
+        x: Number(x.toFixed(1)),
+        y: Number(y.toFixed(1)),
+        r: size,
+        alpha,
+        color,
+      });
     }
-    return list;
+    return groups;
   }, [bandW, bandH, isDark]);
 
-  const matrixStyle = useAnimatedStyle(() => ({
-    opacity: 0.92 + activeSV.value * 0.25,
+  const wrapperStyle = useAnimatedStyle(() => ({
+    opacity: 0.92 + activeSV.value * 0.22,
   }));
-
-  if (dots.length === 0) return null;
-  const dotColor = isDark ? '#bae6fd' : '#3b82f6';
 
   return (
     <Animated.View
@@ -337,30 +482,166 @@ const TechDotMatrix = memo(function TechDotMatrix({
         {
           position: 'absolute',
           left: bandLeft,
-          bottom: 58,
+          bottom: 52,
           width: bandW,
           height: bandH,
         },
-        matrixStyle,
+        wrapperStyle,
       ]}
     >
-      <Svg width={bandW} height={bandH}>
-        {dots.map((d) => (
-          <Circle
-            key={d.key}
-            cx={d.x}
-            cy={d.y}
-            r={1.05}
-            fill={dotColor}
-            fillOpacity={d.alpha}
-          />
-        ))}
-      </Svg>
+      {STAR_GROUPS.map((spec, idx) => (
+        <StarPhaseLayer
+          key={idx}
+          stars={groupedStars[idx]}
+          bandW={bandW}
+          bandH={bandH}
+          spec={spec}
+        />
+      ))}
     </Animated.View>
   );
 });
 
-/** Layer 4：生成态能量扫光（限制在居中输入框底座区间内，绝不扫进侧边栏） */
+/** Layer 4：桌面 Web 鼠标粘滞跟随光斑（0.05 缓动追随，静止自动停止 rAF，移动端跳过） */
+function MouseFollowGlow({
+  containerRef,
+  width,
+  height,
+  isDark,
+}: {
+  containerRef: React.RefObject<any>;
+  width: number;
+  height: number;
+  isDark: boolean;
+}) {
+  const glowElRef = useRef<any>(null);
+  const spotW = 500;
+  const spotH = 420;
+
+  useEffect(() => {
+    if (!CAN_HOVER_WEB || width <= 0 || height <= 0) return;
+    const win = globalThis as any;
+    const doc = win?.document;
+    if (!win?.addEventListener || !doc?.addEventListener) return;
+
+    const restX = width * 0.65;
+    const restY = height * 0.85;
+    let targetX = restX;
+    let targetY = restY;
+    let curX = restX;
+    let curY = restY;
+    let targetOpacity = 0;
+    let curOpacity = 0;
+    let rafId = 0;
+
+    const applyDom = () => {
+      const node = glowElRef.current;
+      if (!node?.style) return;
+      node.style.transform = `translate3d(${(curX - spotW / 2).toFixed(1)}px, ${(curY - spotH / 2).toFixed(1)}px, 0)`;
+      node.style.opacity = curOpacity.toFixed(3);
+    };
+
+    const tick = () => {
+      const dx = targetX - curX;
+      const dy = targetY - curY;
+      const dop = targetOpacity - curOpacity;
+      curX += dx * 0.05;
+      curY += dy * 0.05;
+      curOpacity += dop * 0.08;
+      applyDom();
+
+      if (Math.abs(dx) < 0.35 && Math.abs(dy) < 0.35 && Math.abs(dop) < 0.005) {
+        curX = targetX;
+        curY = targetY;
+        curOpacity = targetOpacity;
+        applyDom();
+        rafId = 0;
+        return;
+      }
+      rafId = win.requestAnimationFrame(tick);
+    };
+
+    const scheduleTick = () => {
+      if (!rafId) {
+        rafId = win.requestAnimationFrame(tick);
+      }
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect?.();
+      if (!rect) return;
+      const rx = e.clientX - rect.left;
+      const ry = e.clientY - rect.top;
+      if (rx >= -40 && rx <= rect.width + 40 && ry >= -40 && ry <= rect.height + 40) {
+        targetX = rx;
+        targetY = ry;
+        targetOpacity = 1;
+      } else {
+        targetOpacity = 0;
+      }
+      scheduleTick();
+    };
+
+    const onMouseLeave = () => {
+      targetX = restX;
+      targetY = restY;
+      targetOpacity = 0;
+      scheduleTick();
+    };
+
+    applyDom();
+    win.addEventListener('mousemove', onMouseMove, { passive: true });
+    doc.addEventListener('mouseleave', onMouseLeave);
+
+    return () => {
+      if (rafId) win.cancelAnimationFrame(rafId);
+      win.removeEventListener('mousemove', onMouseMove);
+      doc.removeEventListener('mouseleave', onMouseLeave);
+    };
+  }, [containerRef, width, height]);
+
+  if (!CAN_HOVER_WEB) return null;
+
+  const gradPrimary = `mouse-indigo-${isDark ? 'd' : 'l'}`;
+  const gradAccent = `mouse-cyan-${isDark ? 'd' : 'l'}`;
+
+  return (
+    <View
+      ref={glowElRef}
+      style={[
+        {
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: spotW,
+          height: spotH,
+          opacity: 0,
+        },
+        WEB_FOLLOW_BLUR,
+      ]}
+    >
+      <Svg width={spotW} height={spotH}>
+        <Defs>
+          <RadialGradient id={gradPrimary} cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={isDark ? 0.15 : 0.1} />
+            <Stop offset="36%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={isDark ? 0.08 : 0.05} />
+            <Stop offset="72%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={0.02} />
+            <Stop offset="100%" stopColor={isDark ? '#6366f1' : '#60a5fa'} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id={gradAccent} cx="54%" cy="54%" r="44%">
+            <Stop offset="0%" stopColor={isDark ? '#38bdf8' : '#7dd3fc'} stopOpacity={isDark ? 0.09 : 0.06} />
+            <Stop offset="50%" stopColor={isDark ? '#38bdf8' : '#7dd3fc'} stopOpacity={0.03} />
+            <Stop offset="100%" stopColor={isDark ? '#38bdf8' : '#7dd3fc'} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Ellipse cx="50%" cy="50%" rx="50%" ry="44%" fill={`url(#${gradPrimary})`} />
+        <Ellipse cx="54%" cy="54%" rx="44%" ry="38%" fill={`url(#${gradAccent})`} />
+      </Svg>
+    </View>
+  );
+}
+
+/** Layer 5：生成态能量扫光（限制在居中输入框底座区间内，绝不扫进侧边栏） */
 function ActivePlasmaSweep({
   width,
   isDark,
@@ -373,10 +654,10 @@ function ActivePlasmaSweep({
   activeSV: SharedValue<number>;
 }) {
   const sweep = useSharedValue(0);
-  const dockW = Math.min(Math.round(width * 0.74), 820);
+  const dockW = Math.min(Math.round(width * 0.76), 820);
   const dockLeft = Math.round((width - dockW) / 2);
   const beamW = Math.min(280, Math.round(dockW * 0.42));
-  const beamH = 76;
+  const beamH = 84;
 
   useEffect(() => {
     if (isGenerating) {
@@ -396,7 +677,7 @@ function ActivePlasmaSweep({
     const startX = -beamW;
     const endX = dockW;
     const edgeFade = Math.min(1, sweep.value * 3.5, (1 - sweep.value) * 3.5);
-    const peak = isDark ? 0.62 : 0.42;
+    const peak = isDark ? 0.58 : 0.4;
     return {
       opacity: activeSV.value * edgeFade * peak,
       transform: [{ translateX: interpolate(sweep.value, [0, 1], [startX, endX]) }],
@@ -410,7 +691,7 @@ function ActivePlasmaSweep({
       style={{
         position: 'absolute',
         left: dockLeft,
-        bottom: 44,
+        bottom: 40,
         width: dockW,
         height: beamH,
         overflow: 'hidden',
@@ -431,12 +712,13 @@ function ActivePlasmaSweep({
         <Svg width={beamW} height={beamH}>
           <Defs>
             <RadialGradient id={gradId} cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor={isDark ? '#7dd3fc' : '#38bdf8'} stopOpacity={0.9} />
-              <Stop offset="38%" stopColor={isDark ? '#2F7DE1' : '#2563eb'} stopOpacity={0.38} />
+              <Stop offset="0%" stopColor={isDark ? '#7dd3fc' : '#38bdf8'} stopOpacity={0.85} />
+              <Stop offset="34%" stopColor={isDark ? '#2F7DE1' : '#2563eb'} stopOpacity={0.38} />
+              <Stop offset="70%" stopColor="#2F7DE1" stopOpacity={0.08} />
               <Stop offset="100%" stopColor="#2F7DE1" stopOpacity={0} />
             </RadialGradient>
           </Defs>
-          <Ellipse cx="50%" cy="50%" rx="50%" ry="44%" fill={`url(#${gradId})`} />
+          <Ellipse cx="50%" cy="50%" rx="50%" ry="46%" fill={`url(#${gradId})`} />
         </Svg>
       </Animated.View>
     </View>
@@ -445,7 +727,7 @@ function ActivePlasmaSweep({
 
 type ChatGlowBackgroundProps = {
   isDark: boolean;
-  /** 模型正在思考/吐字时轻微提亮极光并唤醒底部水平能量扫光 */
+  /** 模型正在思考/吐字时轻微提亮极光、加快呼应脉动并唤醒底部水平扫光 */
   isGenerating?: boolean;
 };
 
@@ -453,23 +735,58 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   isDark,
   isGenerating = false,
 }: ChatGlowBackgroundProps) {
+  const containerRef = useRef<any>(null);
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const activeSV = useSharedValue(isGenerating ? 1 : 0);
+  const idleBreatheSV = useSharedValue(0);
+  const genPulseSV = useSharedValue(0);
 
+  // 8s 常驻呼吸底色
+  useEffect(() => {
+    idleBreatheSV.value = withRepeat(
+      withTiming(1, { duration: 8000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(idleBreatheSV);
+  }, [idleBreatheSV]);
+
+  // AI 生成态呼应：提亮极光并启动温和节奏脉动，完成后平滑回落
   useEffect(() => {
     activeSV.value = withTiming(isGenerating ? 1 : 0, {
-      duration: isGenerating ? 650 : 800,
+      duration: isGenerating ? 550 : 750,
       easing: Easing.out(Easing.cubic),
     });
-    return () => cancelAnimation(activeSV);
-  }, [isGenerating, activeSV]);
+    if (isGenerating) {
+      genPulseSV.value = 0;
+      genPulseSV.value = withRepeat(
+        withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.sin) }),
+        -1,
+        true,
+      );
+    } else {
+      cancelAnimation(genPulseSV);
+      genPulseSV.value = withTiming(0, { duration: 400 });
+    }
+    return () => {
+      cancelAnimation(activeSV);
+      cancelAnimation(genPulseSV);
+    };
+  }, [isGenerating, activeSV, genPulseSV]);
 
-  const auroraBoostStyle = useAnimatedStyle(() => ({
-    opacity: 1 + activeSV.value * 0.32,
-  }));
+  const ambientBreathStyle = useAnimatedStyle(() => {
+    const baseBreath = interpolate(idleBreatheSV.value, [0, 1], [0.74, 1]);
+    const scaleIdle = interpolate(idleBreatheSV.value, [0, 1], [1, 1.06]);
+    const genBoost = activeSV.value * (0.24 + 0.18 * genPulseSV.value);
+    return {
+      opacity: baseBreath + genBoost,
+      transform: [{ scale: scaleIdle + activeSV.value * 0.03 * genPulseSV.value }],
+    };
+  });
 
   return (
     <View
+      ref={containerRef}
       style={styles.container}
       onLayout={(e) => {
         const w = e.nativeEvent.layout.width;
@@ -480,7 +797,7 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
     >
       {layout.width > 0 && layout.height > 0 && (
         <>
-          <Animated.View style={[StyleSheet.absoluteFill, auroraBoostStyle]}>
+          <Animated.View style={[StyleSheet.absoluteFill, WEB_GLOW_BLUR, ambientBreathStyle]}>
             {GLOW_SPECS.map((spec) => (
               <GlowBlob
                 key={spec.id}
@@ -491,12 +808,23 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
               />
             ))}
           </Animated.View>
-          <DockDiffusionBand width={layout.width} isDark={isDark} activeSV={activeSV} />
-          <TechDotMatrix
+          <DockDiffusionBand
+            width={layout.width}
+            isDark={isDark}
+            activeSV={activeSV}
+            genPulseSV={genPulseSV}
+          />
+          <StarfieldLayers
             width={layout.width}
             height={layout.height}
             isDark={isDark}
             activeSV={activeSV}
+          />
+          <MouseFollowGlow
+            containerRef={containerRef}
+            width={layout.width}
+            height={layout.height}
+            isDark={isDark}
           />
           <ActivePlasmaSweep
             width={layout.width}
