@@ -20,12 +20,12 @@ import Svg, {
 } from 'react-native-svg';
 
 /**
- * 聊天页光学氛围背景（5 层组合方案，全 UI 线程驱动 + 零 React 重渲染）：
+ * 聊天页光学氛围背景（全 UI 线程驱动 + 零 React 重渲染）：
  * 1. Layer 1：6 段高斯衰减多层极光 + Web 端 blur(38px) 消除硬椭圆边，带 8s 常驻呼吸；
  * 2. Layer 2：输入框背后居中收束的「底座双层柔光」（纯 RadialGradient 彻底无几何轮廓）；
  * 3. Layer 3：错落星空微点阵（4 组独立相位错落闪烁 + ±1.5px 深空慢速微漂移）；
  * 4. Layer 4：桌面 Web 鼠标粘滞跟随光斑（0.05 缓动追随，静止零 CPU，移动端跳过）；
- * 5. Layer 5：AI 生成态呼应脉动 + 底座能量扫光（isGenerating 时作为状态反馈柔和唤醒）。
+ * 5. 生成态呼应：isGenerating 时极光、底座柔光与星空微亮并柔和脉动反馈。
  */
 
 const CAN_HOVER_WEB =
@@ -641,93 +641,9 @@ function MouseFollowGlow({
   );
 }
 
-/** Layer 5：生成态能量扫光（限制在居中输入框底座区间内，绝不扫进侧边栏） */
-function ActivePlasmaSweep({
-  width,
-  isDark,
-  isGenerating,
-  activeSV,
-}: {
-  width: number;
-  isDark: boolean;
-  isGenerating: boolean;
-  activeSV: SharedValue<number>;
-}) {
-  const sweep = useSharedValue(0);
-  const dockW = Math.min(Math.round(width * 0.76), 820);
-  const dockLeft = Math.round((width - dockW) / 2);
-  const beamW = Math.min(280, Math.round(dockW * 0.42));
-  const beamH = 84;
-
-  useEffect(() => {
-    if (isGenerating) {
-      sweep.value = 0;
-      sweep.value = withRepeat(
-        withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.quad) }),
-        -1,
-        false,
-      );
-    } else {
-      cancelAnimation(sweep);
-    }
-    return () => cancelAnimation(sweep);
-  }, [isGenerating, sweep]);
-
-  const sweepStyle = useAnimatedStyle(() => {
-    const startX = -beamW;
-    const endX = dockW;
-    const edgeFade = Math.min(1, sweep.value * 3.5, (1 - sweep.value) * 3.5);
-    const peak = isDark ? 0.58 : 0.4;
-    return {
-      opacity: activeSV.value * edgeFade * peak,
-      transform: [{ translateX: interpolate(sweep.value, [0, 1], [startX, endX]) }],
-    };
-  });
-
-  const gradId = `plasma-sweep-${isDark ? 'd' : 'l'}`;
-
-  return (
-    <View
-      style={{
-        position: 'absolute',
-        left: dockLeft,
-        bottom: 40,
-        width: dockW,
-        height: beamH,
-        overflow: 'hidden',
-      }}
-    >
-      <Animated.View
-        style={[
-          {
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: beamW,
-            height: beamH,
-          },
-          sweepStyle,
-        ]}
-      >
-        <Svg width={beamW} height={beamH}>
-          <Defs>
-            <RadialGradient id={gradId} cx="50%" cy="50%" r="50%">
-              <Stop offset="0%" stopColor={isDark ? '#7dd3fc' : '#38bdf8'} stopOpacity={0.85} />
-              <Stop offset="34%" stopColor={isDark ? '#2F7DE1' : '#2563eb'} stopOpacity={0.38} />
-              <Stop offset="70%" stopColor="#2F7DE1" stopOpacity={0.08} />
-              <Stop offset="100%" stopColor="#2F7DE1" stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Ellipse cx="50%" cy="50%" rx="50%" ry="46%" fill={`url(#${gradId})`} />
-        </Svg>
-      </Animated.View>
-    </View>
-  );
-}
-
 type ChatGlowBackgroundProps = {
   isDark: boolean;
-  /** 模型正在思考/吐字时轻微提亮极光、加快呼应脉动并唤醒底部水平扫光 */
+  /** 模型正在思考/吐字时轻微提亮极光并启动温和呼应脉动 */
   isGenerating?: boolean;
 };
 
@@ -825,12 +741,6 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
             width={layout.width}
             height={layout.height}
             isDark={isDark}
-          />
-          <ActivePlasmaSweep
-            width={layout.width}
-            isDark={isDark}
-            isGenerating={isGenerating}
-            activeSV={activeSV}
           />
         </>
       )}
