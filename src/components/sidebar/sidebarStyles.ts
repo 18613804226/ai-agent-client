@@ -216,16 +216,6 @@ export const sidebarStyles = StyleSheet.create({
     marginBottom: 3,
     overflow: 'hidden'
   },
-  historyActivePill: {
-    position: 'absolute',
-    left: 4,
-    top: '50%',
-    width: 3,
-    height: 16,
-    marginTop: -8,
-    borderRadius: 2,
-    pointerEvents: 'none'
-  },
   historyText: {
     fontSize: 14
   },

@@ -93,41 +93,6 @@ function SidebarCornerGlow({ isDarkMode }: { isDarkMode: boolean }) {
   )
 }
 
-/** 选中历史对话项左侧的激活细条，切会话时轻微淡入展开 */
-function HistoryActiveBar({
-  active,
-  color
-}: {
-  active: boolean
-  color: string
-}) {
-  const progress = useSharedValue(active ? 1 : 0)
-
-  useEffect(() => {
-    progress.value = withTiming(active ? 1 : 0, {
-      duration: 200,
-      easing: Easing.out(Easing.cubic)
-    })
-    return () => cancelAnimation(progress)
-  }, [active, progress])
-
-  const barStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ scaleY: 0.35 + 0.65 * progress.value }]
-  }))
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        sidebarStyles.historyActivePill,
-        { backgroundColor: color },
-        barStyle
-      ]}
-    />
-  )
-}
-
 /** 今日额度进度条：宽度变化时做平滑过渡 */
 function AnimatedQuotaBar({
   percent,
@@ -908,7 +873,6 @@ export default function Sidebar({
                       : undefined
                   }
                 >
-                  <HistoryActiveBar active={isActive} color={primaryColor} />
                   <Text
                     style={[
                       sidebarStyles.historyText,
