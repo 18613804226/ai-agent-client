@@ -12,11 +12,11 @@ import Animated, {
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 /**
- * 聊天页 Gemini 风格「输入框围绕式」4 层光学氛围背景（全 UI 线程驱动 + 零星点 + 全视口无黑边）：
- * 1. Layer 1（outer）：底部居中的宽幅外层柔光基底，10s 慢速呼吸；
- * 2. Layer 2（wingLeft）：左翼宝蓝/青色柔光团，独立相位呼吸；思考/生成时横向游走摆动；
- * 3. Layer 3（wingRight）：右翼靛紫/紫罗兰柔光团，反向异相呼吸；生成时与左翼非谐波错位交织环绕；
- * 4. Layer 4（core）：贴近输入框上沿与两侧的紧致核心光环，生成时柔和心跳脉动与上浮唤醒。
+ * 聊天页 Gemini 风格「输入框围绕式」4 层多色光学氛围背景（全 UI 线程驱动 + 零星点 + 全视口无黑边）：
+ * 1. Layer 1（outer）：底部居中的克制深靛蓝宽幅基底，10s 慢速呼吸；
+ * 2. Layer 2（wingLeft）：向左发散的青碧/湖蓝柔光团，独立相位轻飘；思考时大跨度横移交织；
+ * 3. Layer 3（wingRight）：向右发散的紫罗兰/粉紫柔光团，反向异相呼吸；思考时与左翼交织唤醒；
+ * 4. Layer 4（core）：贴合输入框的平缓宝石蓝衔接微光，思考时柔和脉动上浮。
  */
 
 type GlowLayerId = 'outer' | 'wingLeft' | 'wingRight' | 'core';
@@ -43,32 +43,32 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 68% 42% at 50% 82%, rgba(37, 68, 178, 0.28) 0%, rgba(49, 46, 129, 0.16) 36%, rgba(30, 27, 75, 0.06) 64%, transparent 86%)',
-            filter: 'blur(90px)',
+              'radial-gradient(ellipse 56% 32% at 50% 83%, rgba(30, 52, 138, 0.15) 0%, rgba(49, 46, 129, 0.08) 42%, rgba(24, 24, 68, 0.03) 68%, transparent 86%)',
+            filter: 'blur(96px)',
           }
         : null,
     wingLeft:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 42% 28% at 41% 81%, rgba(37, 99, 235, 0.24) 0%, rgba(14, 165, 233, 0.11) 42%, transparent 76%)',
-            filter: 'blur(72px)',
+              'radial-gradient(ellipse 38% 24% at 30% 82%, rgba(6, 182, 212, 0.16) 0%, rgba(20, 184, 166, 0.08) 38%, rgba(14, 116, 144, 0.025) 60%, transparent 76%)',
+            filter: 'blur(80px)',
           }
         : null,
     wingRight:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 42% 28% at 59% 81%, rgba(99, 102, 241, 0.24) 0%, rgba(124, 58, 237, 0.11) 42%, transparent 76%)',
-            filter: 'blur(72px)',
+              'radial-gradient(ellipse 38% 24% at 70% 82%, rgba(139, 92, 246, 0.16) 0%, rgba(192, 38, 211, 0.075) 38%, rgba(109, 40, 217, 0.025) 60%, transparent 76%)',
+            filter: 'blur(80px)',
           }
         : null,
     core:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 30% 16% at 50% 80%, rgba(96, 165, 250, 0.24) 0%, rgba(79, 70, 229, 0.12) 45%, transparent 78%)',
-            filter: 'blur(46px)',
+              'radial-gradient(ellipse 38% 15% at 50% 82%, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.055) 46%, transparent 78%)',
+            filter: 'blur(56px)',
           }
         : null,
   },
@@ -77,32 +77,32 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 68% 42% at 50% 82%, rgba(59, 130, 246, 0.14) 0%, rgba(99, 102, 241, 0.07) 40%, transparent 82%)',
-            filter: 'blur(90px)',
+              'radial-gradient(ellipse 56% 32% at 50% 83%, rgba(59, 130, 246, 0.08) 0%, rgba(99, 102, 241, 0.04) 44%, transparent 84%)',
+            filter: 'blur(96px)',
           }
         : null,
     wingLeft:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 42% 28% at 41% 81%, rgba(37, 99, 235, 0.12) 0%, rgba(56, 189, 248, 0.06) 44%, transparent 76%)',
-            filter: 'blur(72px)',
+              'radial-gradient(ellipse 38% 24% at 30% 82%, rgba(6, 182, 212, 0.09) 0%, rgba(20, 184, 166, 0.045) 42%, transparent 76%)',
+            filter: 'blur(80px)',
           }
         : null,
     wingRight:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 42% 28% at 59% 81%, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.06) 44%, transparent 76%)',
-            filter: 'blur(72px)',
+              'radial-gradient(ellipse 38% 24% at 70% 82%, rgba(139, 92, 246, 0.09) 0%, rgba(192, 38, 211, 0.04) 42%, transparent 76%)',
+            filter: 'blur(80px)',
           }
         : null,
     core:
       Platform.OS === 'web'
         ? {
             backgroundImage:
-              'radial-gradient(ellipse 30% 16% at 50% 80%, rgba(59, 130, 246, 0.14) 0%, rgba(99, 102, 241, 0.06) 46%, transparent 78%)',
-            filter: 'blur(46px)',
+              'radial-gradient(ellipse 38% 15% at 50% 82%, rgba(59, 130, 246, 0.08) 0%, rgba(99, 102, 241, 0.035) 46%, transparent 78%)',
+            filter: 'blur(56px)',
           }
         : null,
   },
@@ -111,91 +111,91 @@ const WEB_LAYER_STYLES: Record<'dark' | 'light', Record<GlowLayerId, any>> = {
 const NATIVE_LAYERS: Record<GlowLayerId, NativeLayerConfig> = {
   outer: {
     cx: '50%',
-    cy: '82%',
-    rx: '54%',
-    ry: '34%',
-    colorDark: '#2544B2',
+    cy: '83%',
+    rx: '48%',
+    ry: '28%',
+    colorDark: '#1E348A',
     colorLight: '#3B82F6',
     stopsDark: [
-      { offset: '0%', opacity: 0.26 },
-      { offset: '20%', opacity: 0.19 },
-      { offset: '42%', opacity: 0.11 },
-      { offset: '64%', opacity: 0.05 },
-      { offset: '84%', opacity: 0.015 },
-      { offset: '100%', opacity: 0 },
-    ],
-    stopsLight: [
-      { offset: '0%', opacity: 0.13 },
-      { offset: '20%', opacity: 0.095 },
-      { offset: '42%', opacity: 0.055 },
+      { offset: '0%', opacity: 0.15 },
+      { offset: '20%', opacity: 0.105 },
+      { offset: '42%', opacity: 0.06 },
       { offset: '64%', opacity: 0.025 },
       { offset: '84%', opacity: 0.008 },
       { offset: '100%', opacity: 0 },
     ],
+    stopsLight: [
+      { offset: '0%', opacity: 0.08 },
+      { offset: '20%', opacity: 0.056 },
+      { offset: '42%', opacity: 0.032 },
+      { offset: '64%', opacity: 0.014 },
+      { offset: '84%', opacity: 0.004 },
+      { offset: '100%', opacity: 0 },
+    ],
   },
   wingLeft: {
-    cx: '41%',
-    cy: '81%',
-    rx: '36%',
-    ry: '24%',
-    colorDark: '#2563EB',
-    colorLight: '#2563EB',
+    cx: '30%',
+    cy: '82%',
+    rx: '30%',
+    ry: '20%',
+    colorDark: '#06B6D4',
+    colorLight: '#06B6D4',
     stopsDark: [
-      { offset: '0%', opacity: 0.22 },
-      { offset: '26%', opacity: 0.14 },
-      { offset: '54%', opacity: 0.06 },
-      { offset: '80%', opacity: 0.015 },
+      { offset: '0%', opacity: 0.15 },
+      { offset: '26%', opacity: 0.095 },
+      { offset: '54%', opacity: 0.042 },
+      { offset: '80%', opacity: 0.012 },
       { offset: '100%', opacity: 0 },
     ],
     stopsLight: [
-      { offset: '0%', opacity: 0.11 },
-      { offset: '26%', opacity: 0.07 },
-      { offset: '54%', opacity: 0.03 },
-      { offset: '80%', opacity: 0.008 },
+      { offset: '0%', opacity: 0.085 },
+      { offset: '26%', opacity: 0.055 },
+      { offset: '54%', opacity: 0.024 },
+      { offset: '80%', opacity: 0.006 },
       { offset: '100%', opacity: 0 },
     ],
   },
   wingRight: {
-    cx: '59%',
-    cy: '81%',
-    rx: '36%',
-    ry: '24%',
-    colorDark: '#6366F1',
-    colorLight: '#6366F1',
+    cx: '70%',
+    cy: '82%',
+    rx: '30%',
+    ry: '20%',
+    colorDark: '#A855F7',
+    colorLight: '#8B5CF6',
     stopsDark: [
-      { offset: '0%', opacity: 0.22 },
-      { offset: '26%', opacity: 0.14 },
-      { offset: '54%', opacity: 0.06 },
-      { offset: '80%', opacity: 0.015 },
+      { offset: '0%', opacity: 0.15 },
+      { offset: '26%', opacity: 0.095 },
+      { offset: '54%', opacity: 0.042 },
+      { offset: '80%', opacity: 0.012 },
       { offset: '100%', opacity: 0 },
     ],
     stopsLight: [
-      { offset: '0%', opacity: 0.11 },
-      { offset: '26%', opacity: 0.07 },
-      { offset: '54%', opacity: 0.03 },
-      { offset: '80%', opacity: 0.008 },
+      { offset: '0%', opacity: 0.085 },
+      { offset: '26%', opacity: 0.055 },
+      { offset: '54%', opacity: 0.024 },
+      { offset: '80%', opacity: 0.006 },
       { offset: '100%', opacity: 0 },
     ],
   },
   core: {
     cx: '50%',
-    cy: '80%',
-    rx: '26%',
-    ry: '15%',
-    colorDark: '#60A5FA',
+    cy: '82%',
+    rx: '30%',
+    ry: '13%',
+    colorDark: '#3B82F6',
     colorLight: '#3B82F6',
     stopsDark: [
-      { offset: '0%', opacity: 0.22 },
-      { offset: '26%', opacity: 0.14 },
-      { offset: '54%', opacity: 0.06 },
-      { offset: '80%', opacity: 0.015 },
+      { offset: '0%', opacity: 0.11 },
+      { offset: '26%', opacity: 0.07 },
+      { offset: '54%', opacity: 0.03 },
+      { offset: '80%', opacity: 0.008 },
       { offset: '100%', opacity: 0 },
     ],
     stopsLight: [
-      { offset: '0%', opacity: 0.13 },
-      { offset: '26%', opacity: 0.08 },
-      { offset: '54%', opacity: 0.035 },
-      { offset: '80%', opacity: 0.008 },
+      { offset: '0%', opacity: 0.07 },
+      { offset: '26%', opacity: 0.045 },
+      { offset: '54%', opacity: 0.02 },
+      { offset: '80%', opacity: 0.005 },
       { offset: '100%', opacity: 0 },
     ],
   },
@@ -317,10 +317,10 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   }, [isGenerating, activeSV, genPulseSV, genOrbitSV, genOrbitAltSV]);
 
   const outerStyle = useAnimatedStyle(() => {
-    const idleOpacity = interpolate(outerBreatheSV.value, [0, 1], [0.78, 1]);
+    const idleOpacity = interpolate(outerBreatheSV.value, [0, 1], [0.7, 0.9]);
     const opacity = Math.min(
       1,
-      idleOpacity + emptySV.value * 0.08 + activeSV.value * 0.16,
+      idleOpacity + emptySV.value * 0.08 + activeSV.value * 0.18,
     );
     const scale =
       interpolate(outerBreatheSV.value, [0, 1], [1, 1.04]) +
@@ -337,13 +337,14 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   const wingLeftStyle = useAnimatedStyle(() => {
     const opacity = Math.min(
       1,
-      interpolate(wingLeftBreatheSV.value, [0, 1], [0.72, 1]) + activeSV.value * 0.2,
+      interpolate(wingLeftBreatheSV.value, [0, 1], [0.66, 0.9]) +
+        activeSV.value * 0.26,
     );
-    const idleX = interpolate(wingLeftBreatheSV.value, [0, 1], [-14, 14]);
+    const idleX = interpolate(wingLeftBreatheSV.value, [0, 1], [-16, 16]);
     const idleY = interpolate(wingLeftBreatheSV.value, [0, 1], [-6, 6]);
-    const orbitX = interpolate(genOrbitSV.value, [0, 1], [-42, 72]);
+    const orbitX = interpolate(genOrbitSV.value, [0, 1], [-24, 96]);
     const orbitY = interpolate(genOrbitSV.value, [0, 0.5, 1], [-22, -6, -22]);
-    const rot = activeSV.value * interpolate(genOrbitSV.value, [0, 1], [-5, 5]);
+    const rot = activeSV.value * interpolate(genOrbitSV.value, [0, 1], [-4, 4]);
     const scale =
       interpolate(wingLeftBreatheSV.value, [0, 1], [0.98, 1.04]) +
       activeSV.value * (0.08 + 0.06 * genPulseSV.value);
@@ -362,14 +363,15 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   const wingRightStyle = useAnimatedStyle(() => {
     const opacity = Math.min(
       1,
-      interpolate(wingRightBreatheSV.value, [0, 1], [0.72, 1]) + activeSV.value * 0.2,
+      interpolate(wingRightBreatheSV.value, [0, 1], [0.66, 0.9]) +
+        activeSV.value * 0.26,
     );
     // 与左翼反向漂移，让常态呼吸更自然有流动感
-    const idleX = interpolate(wingRightBreatheSV.value, [0, 1], [14, -14]);
+    const idleX = interpolate(wingRightBreatheSV.value, [0, 1], [16, -16]);
     const idleY = interpolate(wingRightBreatheSV.value, [0, 1], [6, -6]);
-    const orbitX = interpolate(genOrbitAltSV.value, [0, 1], [42, -72]);
+    const orbitX = interpolate(genOrbitAltSV.value, [0, 1], [24, -96]);
     const orbitY = interpolate(genOrbitAltSV.value, [0, 0.5, 1], [-20, -4, -20]);
-    const rot = activeSV.value * interpolate(genOrbitAltSV.value, [0, 1], [5, -5]);
+    const rot = activeSV.value * interpolate(genOrbitAltSV.value, [0, 1], [4, -4]);
     const scale =
       interpolate(wingRightBreatheSV.value, [0, 1], [0.98, 1.04]) +
       activeSV.value * (0.08 + 0.06 * genPulseSV.value);
@@ -386,10 +388,10 @@ const ChatGlowBackground = memo(function ChatGlowBackground({
   });
 
   const coreStyle = useAnimatedStyle(() => {
-    const idleOpacity = interpolate(coreBreatheSV.value, [0, 1], [0.68, 0.94]);
+    const idleOpacity = interpolate(coreBreatheSV.value, [0, 1], [0.62, 0.86]);
     const opacity = Math.min(
       1,
-      idleOpacity + activeSV.value * (0.06 + 0.26 * genPulseSV.value),
+      idleOpacity + activeSV.value * (0.1 + 0.22 * genPulseSV.value),
     );
     const translateY = activeSV.value * -8;
     const scale =
