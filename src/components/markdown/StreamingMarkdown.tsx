@@ -13,6 +13,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets'
 import { splitStableBlocks } from './streamingSplit'
 import { normalizeInlineEmphasis } from '../../utils/normalizeEmphasis'
+import { breakLazyContinuations } from '../../utils/normalizeMarkdownBlocks'
 import { toSuperscriptCitations } from '../../utils/citations'
 import {
   hasInlineMarkup,
@@ -622,7 +623,9 @@ export const StreamingMarkdown = memo(function StreamingMarkdown({
     // 同时清掉结尾的换行与空格。文本只增不减，trimStart 后的结果仍随 token 单调
     // 增长，下面的增量缓存判据（startsWith / lastCut）不受影响。
     const raw = streaming ? content.trimStart() : content.trim()
-    const c = normalizeInlineEmphasis(raw)
+    const c = breakLazyContinuations(normalizeInlineEmphasis(raw), {
+      streaming
+    })
     const cache = cacheRef.current
     if (c === cache.content) {
       return { blocks: cache.blocks, tail: cache.tail }
